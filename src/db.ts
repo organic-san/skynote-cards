@@ -144,6 +144,8 @@ export class CardIndex {
   private db: Database.Database;
   private readonly indexPath: string;
   private readonly corpusPath: string;
+  /** 同一句 SQL 只準備一次。換資料庫時整個清掉。 */
+  private stmts = new Map<string, Database.Statement>();
 
   constructor(indexPath: string, corpusPath: string) {
     this.indexPath = indexPath;
@@ -153,7 +155,25 @@ export class CardIndex {
   }
 
   close(): void {
+    this.stmts.clear();
     this.db.close();
+  }
+
+  /**
+   * 取得一句 SQL 的 prepared statement。
+   *
+   * prepare 要解析與規劃，每次查詢都重做一次是白費工；更要緊的是那會
+   * 製造大量短命的 Statement 物件，全部要等垃圾回收去清。
+   * 這裡的 SQL 都是固定字串（動態的部分只有少數幾種組合），所以以
+   * SQL 當鍵是安全的，快取不會無限長大。
+   */
+  private s(sql: string): Database.Statement {
+    let stmt = this.stmts.get(sql);
+    if (stmt === undefined) {
+      stmt = this.db.prepare(sql);
+      this.stmts.set(sql, stmt);
+    }
+    return stmt;
   }
 
   get handle(): Database.Database {
@@ -165,13 +185,12 @@ export class CardIndex {
   /** 把一張卡片寫進索引。同 ID 先清掉舊的列，所以可重複呼叫。 */
   putCard(card: Card): void {
     const tx = this.db.transaction((c: Card) => {
-      this.db.prepare('DELETE FROM cards WHERE id = ?').run(c.id);
-      this.db.prepare('DELETE FROM tags WHERE card_id = ?').run(c.id);
-      this.db.prepare('DELETE FROM links WHERE source_id = ?').run(c.id);
-      this.db.prepare('DELETE FROM cards_fts WHERE id = ?').run(c.id);
+      this.s('DELETE FROM cards WHERE id = ?').run(c.id);
+      this.s('DELETE FROM tags WHERE card_id = ?').run(c.id);
+      this.s('DELETE FROM links WHERE source_id = ?').run(c.id);
+      this.s('DELETE FROM cards_fts WHERE id = ?').run(c.id);
 
-      this.db
-        .prepare(
+      this.s(
           `INSERT INTO cards
              (id, type, created, title, url, provenance, revised, body, link_count, tag_count)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -189,18 +208,17 @@ export class CardIndex {
           c.tags.length,
         );
 
-      const insTag = this.db.prepare('INSERT INTO tags (card_id, tag) VALUES (?, ?)');
+      const insTag = this.s('INSERT INTO tags (card_id, tag) VALUES (?, ?)');
       for (const t of c.tags) insTag.run(c.id, t);
 
       // 壞連結照實寫進索引：索引是檔案的等價投影，不是檔案的修訂版。
       // 哪些連結壞掉由重建報告指出。
-      const insLink = this.db.prepare(
+      const insLink = this.s(
         'INSERT INTO links (source_id, target_id, rel) VALUES (?, ?, ?)',
       );
       for (const l of c.links) insLink.run(c.id, l.to, l.rel);
 
-      this.db
-        .prepare('INSERT INTO cards_fts (id, title, body) VALUES (?, ?, ?)')
+      this.s('INSERT INTO cards_fts (id, title, body) VALUES (?, ?, ?)')
         .run(c.id, segmentCjk(c.title), segmentCjk(c.body));
     });
     tx(card);
@@ -209,11 +227,11 @@ export class CardIndex {
   // -------------------------------------------------------------- 查詢
 
   countCards(): number {
-    return (this.db.prepare('SELECT COUNT(*) AS n FROM cards').get() as { n: number }).n;
+    return (this.s('SELECT COUNT(*) AS n FROM cards').get() as { n: number }).n;
   }
 
   getCard(id: string): CardRowWithTags | null {
-    const row = this.db.prepare('SELECT * FROM cards WHERE id = ?').get(id) as
+    const row = this.s('SELECT * FROM cards WHERE id = ?').get(id) as
       | CardRow
       | undefined;
     if (!row) return null;
@@ -222,14 +240,14 @@ export class CardIndex {
 
   tagsOf(id: string): string[] {
     return (
-      this.db.prepare('SELECT tag FROM tags WHERE card_id = ? ORDER BY rowid').all(id) as {
+      this.s('SELECT tag FROM tags WHERE card_id = ? ORDER BY rowid').all(id) as {
         tag: string;
       }[]
     ).map((r) => r.tag);
   }
 
   typeOf(id: string): string | null {
-    const row = this.db.prepare('SELECT type FROM cards WHERE id = ?').get(id) as
+    const row = this.s('SELECT type FROM cards WHERE id = ?').get(id) as
       | { type: string }
       | undefined;
     return row?.type ?? null;
@@ -253,11 +271,10 @@ export class CardIndex {
     const whereSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
 
     const total = (
-      this.db.prepare(`SELECT COUNT(*) AS n ${from}${whereSql}`).get(...params) as { n: number }
+      this.s(`SELECT COUNT(*) AS n ${from}${whereSql}`).get(...params) as { n: number }
     ).n;
 
-    const rows = this.db
-      .prepare(
+    const rows = this.s(
         `SELECT c.* ${from}${whereSql} ORDER BY c.created DESC, ${idDesc('c.id')} LIMIT ? OFFSET ?`,
       )
       .all(...params, opts.limit, opts.offset) as CardRow[];
@@ -267,8 +284,7 @@ export class CardIndex {
 
   /** 出向連結：這張卡指向誰。target 不存在時 title 為 null。 */
   outLinks(id: string): LinkRow[] {
-    return this.db
-      .prepare(
+    return this.s(
         `SELECT l.rel AS rel, l.target_id AS id,
                 c.title AS title, c.type AS type, c.created AS created, c.body AS body
            FROM links l LEFT JOIN cards c ON c.id = l.target_id
@@ -284,8 +300,7 @@ export class CardIndex {
    * 「誰用了我、誰推翻了我」完全無知。
    */
   backLinks(id: string): LinkRow[] {
-    return this.db
-      .prepare(
+    return this.s(
         `SELECT l.rel AS rel, l.source_id AS id,
                 c.title AS title, c.type AS type, c.created AS created, c.body AS body
            FROM links l JOIN cards c ON c.id = l.source_id
@@ -336,15 +351,13 @@ export class CardIndex {
   }
 
   tagCounts(): { tag: string; n: number }[] {
-    return this.db
-      .prepare('SELECT tag, COUNT(*) AS n FROM tags GROUP BY tag ORDER BY n DESC, tag ASC')
+    return this.s('SELECT tag, COUNT(*) AS n FROM tags GROUP BY tag ORDER BY n DESC, tag ASC')
       .all() as { tag: string; n: number }[];
   }
 
   /** type = 'thinking' 且沒有任何連結的卡片：目前所有沒有依據的信念。 */
   orphans(): CardRowWithTags[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.s(
         `SELECT * FROM cards WHERE type = 'thinking' AND link_count = 0
           ORDER BY created DESC, ${idDesc('id')}`,
       )
@@ -357,8 +370,7 @@ export class CardIndex {
     if (!match) return [];
     let rows: CardRow[];
     try {
-      rows = this.db
-        .prepare(
+      rows = this.s(
           `SELECT c.* FROM cards_fts f JOIN cards c ON c.id = f.id
             WHERE cards_fts MATCH ? ORDER BY rank LIMIT ?`,
         )
@@ -378,8 +390,7 @@ export class CardIndex {
     const term = q.trim();
     if (term === '') return [];
     const like = `%${term.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
-    return this.db
-      .prepare(
+    return this.s(
         `SELECT * FROM cards
           WHERE id = ? OR title LIKE ? ESCAPE '\\'
           ORDER BY (id = ?) DESC, created DESC, ${idDesc('id')}
@@ -497,6 +508,7 @@ export class CardIndex {
     }
 
     fresh.close();
+    this.stmts.clear();
     this.db.close();
     replaceFile(tmpPath, this.indexPath);
     this.db = openDb(this.indexPath);

@@ -12,3 +12,12 @@ User=append
 Group=append
 WorkingDirectory=/srv/app
 ExecStart=/bin/bash /srv/app/deploy/pull-deploy.sh
+
+# 建置是背景雜事，不該跟線上服務搶。記憶體不夠時第一個被砍的應該是它。
+OOMScoreAdjust=500
+# tsc 尖峰吃得多，允許它用 swap——慢沒關係，重點是不要把伺服器擠死。
+MemoryMax=500M
+MemorySwapMax=1G
+Nice=10
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle

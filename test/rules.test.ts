@@ -829,6 +829,36 @@ describe('中文全文檢索', () => {
   });
 });
 
+describe('prepared statement 快取', () => {
+  test('同一句 SQL 不會重複 prepare', async () => {
+    const h = await fresh();
+    const db = h.app.index.handle;
+    let prepared = 0;
+    const real = db.prepare.bind(db);
+    (db as unknown as { prepare: unknown }).prepare = (sql: string) => {
+      prepared += 1;
+      return real(sql);
+    };
+
+    for (let i = 0; i < 30; i += 1) h.app.index.countCards();
+    assert.equal(prepared, 1, '三十次查詢只該準備一次');
+  });
+
+  test('重建索引之後，舊的 statement 不會被拿來用', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'thinking', title: '重建前', body: 'x' });
+    assert.equal(h.app.index.countCards(), 1);
+
+    // rebuild 會 close 舊的資料庫再開新的。快取沒清的話，
+    // 下一次查詢會拿著已關閉資料庫的 statement，直接炸掉。
+    h.app.index.rebuild();
+
+    assert.equal(h.app.index.countCards(), 1);
+    assert.equal(h.app.index.getCard(id)?.title, '重建前');
+    assert.equal((await h.app.fastify.inject(`/c/${id}`)).statusCode, 200);
+  });
+});
+
 describe('索引的耐久性設定', () => {
   test('索引用 WAL，而且不為了可拋棄的快取付最高耐久成本', async () => {
     const h = await fresh();
@@ -880,4 +910,3 @@ describe('分欄的斷點', () => {
     assert.match(js, /wide\.matches \? 'col' : 'row'/);
   });
 });
-

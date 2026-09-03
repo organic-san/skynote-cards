@@ -22,13 +22,19 @@ Environment=INDEX_PATH=/srv/index.db
 Environment=GIT_AUTHOR_NAME=append-cards
 Environment=GIT_AUTHOR_EMAIL=append-cards@localhost
 # 語料庫 repo 用獨立的 deploy key 推上去。
-Environment=GIT_SSH_COMMAND=ssh -i /srv/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
+# 值裡面有空白，一定要整串加引號——不加的話 systemd 會照空白切開，
+# 只有 ssh 兩個字傳得進去，後面的 -i /srv/deploy_key 全部被當成無效的
+# 環境變數指派丟掉（journalctl 會印 Invalid environment assignment）。
+Environment="GIT_SSH_COMMAND=ssh -i /srv/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 
-# 這個服務的記憶體永遠不進 swap。
-# 機器只有 1GB，swappiness 預設會把閒置的匿名頁換出去換 page cache；
-# 於是閒置一陣子之後、或旁邊的 git 要記憶體的時候，Node 就被換出去，
-# 下一個請求得一頁一頁換回來，慢到 cloudflared 直接回 502。
-# swap 留給 npm ci 用，線上服務不該碰它。
+# 這台機器只有 1GB，而 pull-deploy 的 npm ci / tsc 動輒吃掉數百 MB。
+# 核心在記憶體不足時會挑 RSS 最大的下手，那多半就是這支伺服器本身——
+# 症狀是 cloudflared 報 connection refused 或 EOF，因為行程真的不在了。
+# 明確告訴核心：要犧牲也先犧牲建置那一邊，不要動線上服務。
+OOMScoreAdjust=-700
+
+# 記憶體不進 swap：換出去之後下一個請求要一頁一頁換回來，會慢到被判 502。
+# 上面的 OOMScoreAdjust 已經把「沒有 swap 當逃生口就被砍掉」的風險擋掉了。
 MemorySwapMax=0
 
 NoNewPrivileges=true

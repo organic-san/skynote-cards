@@ -340,9 +340,47 @@ grep -E 'VmRSS|VmSwap' /proc/$PID/status
 systemctl show -p MemorySwapMax skynote-cards   # 應該是 0
 ```
 
-如果服務是被砍掉重啟而不是變慢，`journalctl -u skynote-cards` 會看到
-`Main process exited`，再用 `sudo dmesg -T | grep -i oom` 確認是不是
-記憶體不足。
+**cloudflared 說 `connection refused` 或 `EOF` 的話，不是慢，是行程不在了。**
+前者代表連埠都沒人聽，後者代表處理到一半死掉——兩個都是崩潰加重啟，
+不是 swap（swap 只會慢，不會拒絕連線）。原因去另一個 unit 找：
+
+```bash
+journalctl -u skynote-cards --since '1 hour ago' --no-pager   | grep -vE 'incoming request|request completed'
+sudo dmesg -T | grep -iE 'out of memory|oom-kill|Killed process'
+```
+
+| 看到什麼 | 病因 |
+|---|---|
+| `Killed process ... (node)` | 記憶體不足，被核心砍掉 |
+| `JavaScript heap out of memory` | Node 自己的堆爆掉 |
+| JS 堆疊加 `Main process exited, status=1` | 程式碼裡有未捕捉的例外 |
+| `Assertion failed` 加 `status=6/ABRT` 與原生堆疊 | 原生模組（better-sqlite3）跟 Node 版本不合 |
+
+最後一種長這樣，而且**記憶體與 CPU 都很正常**——不要被 502 誤導成資源問題：
+
+```
+#  Assertion failed: (env) != nullptr
+   Statement::~Statement() [better-sqlite3/build/Release/better_sqlite3.node]
+skynote-cards.service: Main process exited, code=dumped, status=6/ABRT
+```
+
+崩在 `Statement` 的解構子代表是垃圾回收在清理 prepared statement 時炸的，
+時間點會跟請求對不上（那是 GC 的節奏）。解法是把 better-sqlite3 升到
+支援當前 Node 版本的版次；`npm ci` 之後看 `systemctl` 有沒有再出現
+`status=6/ABRT` 就知道修好沒有。
+
+1GB 的機器上最常見的是第一種，而最大的來源是 pull-deploy 的 `tsc`——
+它一次吃掉數百 MB，核心挑受害者時會挑 RSS 最大的，那多半就是伺服器本身。
+兩個 unit 檔裡的 `OOMScoreAdjust` 就是為了把這件事講清楚：
+伺服器是 `-700`（最後才動），建置是 `+500`（第一個犧牲），
+而且建置那邊有 `MemoryMax=500M` 把尖峰壓住。
+
+確認有生效：
+
+```bash
+systemctl show -p OOMScoreAdjust -p MemorySwapMax skynote-cards
+systemctl show -p OOMScoreAdjust -p MemoryMax skynote-cards-deploy
+```
 
 沒有備份索引的必要，沒有資料庫遷移，沒有要清的暫存。
 真的壞掉的話：砍掉 `/srv/index.db*`、重啟，或整台機器重灌再 clone 兩個 repo。
