@@ -242,6 +242,11 @@ journalctl -u skynote-cards-deploy -n 20
 正常情況，不是壞掉。
 
 之後的日常流程就是：`git push` 到 `main`，最多等五分鐘，VM 自己會跟上。
+
+**`npm ci` 不是每次更新都跑。** 它會整個刪掉 `node_modules` 重裝，
+在 1GB RAM 的機器上很貴，所以腳本只在這次抓到的 commit 範圍內真的動到
+`package.json` 或 `package-lock.json` 時才跑；只改程式碼或模板的更新
+只做 `npm run build` 加重啟，快很多。
 不想等的話，隨時可以自己 SSH 進去 `sudo systemctl start skynote-cards-deploy`。
 
 ---

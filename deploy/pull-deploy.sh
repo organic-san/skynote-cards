@@ -15,6 +15,12 @@ if [ "$before" = "$after" ]; then
 fi
 
 echo "deploy: $before -> $after"
-npm ci
+
+# npm ci 每次都會整個刪掉 node_modules 重裝，在 1GB RAM 的機器上很貴。
+# 只有這次更新真的動到套件清單時才值得付這個代價。
+if git diff --name-only "$before" "$after" | grep -qE '^package(-lock)?\.json$'; then
+  npm ci
+fi
+
 npm run build
 sudo /usr/bin/systemctl restart skynote-cards
