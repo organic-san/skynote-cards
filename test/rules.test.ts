@@ -285,12 +285,17 @@ describe('頁面與端點', () => {
     assert.equal((await h.app.fastify.inject('/')).body, before);
   });
 
-  test('靜態檔案掛得起來', async () => {
+  test('靜態檔案掛得起來，而且永遠不會拿到舊版', async () => {
     const h = await fresh();
     const css = await h.app.fastify.inject('/static/style.css');
     assert.equal(css.statusCode, 200);
     const js = await h.app.fastify.inject('/static/new.js');
     assert.equal(js.statusCode, 200);
+
+    // 改了 CSS 卻看到舊版面，是很難聯想到快取的症狀。
+    // no-cache 逼每一層都回來驗證，沒變就 304。
+    assert.equal(css.headers['cache-control'], 'no-cache');
+    assert.equal(js.headers['cache-control'], 'no-cache');
   });
 
   test('分頁一頁 50 筆', async () => {

@@ -74,7 +74,17 @@ export function createApp(opts: AppOptions = {}): App {
 
   const fastify = Fastify({ logger: (opts.logger ?? true) as never });
   fastify.register(formbody);
-  fastify.register(fstatic, { root: PUBLIC_DIR, prefix: '/static/' });
+  // style.css 與那幾支 js 是直接從 public/ 讀的，改完不需要重新建置。
+  // 但只要中間有任何一層（瀏覽器、Cloudflare 邊緣）把舊版留著，改了就看不到，
+  // 而且症狀是「版面沒變」這種很難聯想到快取的樣子。
+  // no-cache 不是不存，是每次都要回來驗證：沒變就回 304，幾乎不花流量，
+  // 但永遠不會拿到舊的。
+  fastify.register(fstatic, {
+    root: PUBLIC_DIR,
+    prefix: '/static/',
+    cacheControl: false,
+    setHeaders: (res) => res.setHeader('cache-control', 'no-cache'),
+  });
 
   // 索引不存在，或索引筆數跟卡片檔案數對不上，就整個重建。
   const indexExisted = fs.existsSync(config.indexPath);
