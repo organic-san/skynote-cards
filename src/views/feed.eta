@@ -1,0 +1,18 @@
+<div class="filters">
+  <a href="/" class="<%= !it.type ? 'on' : '' %>">全部</a>
+  <% it.types.forEach(function (t) { %>
+  <a href="/?type=<%= t %><%= it.tagQuery %>" class="<%= it.type === t ? 'on' : '' %>"><%= t %></a>
+  <% }) %>
+  <% if (it.tag) { %><span class="filtertag">#<%= it.tag %></span><% } %>
+  <span class="filtercount"><%= it.total %></span>
+</div>
+
+<%~ include('cardlist', { items: it.items, empty: '還沒有卡片。' }) %>
+
+<% if (it.pages > 1) { %>
+<nav class="pager">
+  <% if (it.page > 1) { %><a href="<%= it.baseQuery %>page=<%= it.page - 1 %>">←</a><% } else { %><span></span><% } %>
+  <span><%= it.page %> / <%= it.pages %></span>
+  <% if (it.page < it.pages) { %><a href="<%= it.baseQuery %>page=<%= it.page + 1 %>">→</a><% } else { %><span></span><% } %>
+</nav>
+<% } %>

@@ -1,0 +1,4 @@
+<p class="message"><%= it.message %></p>
+<% if (it.back_id) { %>
+<p class="actions"><a href="/c/<%= it.back_id %>">回到卡片</a></p>
+<% } %>

@@ -1,0 +1,22 @@
+<ul class="thread">
+<% it.nodes.forEach(function (n) { %>
+  <li class="node rel-<%= n.rel %>">
+    <% if (n.missing) { %>
+    <div class="nodehead">
+      <p class="nodeline"><span class="noderel"><%= n.rel %>:</span> <span class="nodemissing">缺失的卡片 <%= n.id %></span></p>
+    </div>
+    <% } else { %>
+    <div class="nodehead">
+      <p class="nodeline"><span class="noderel"><%= n.rel %>:</span> <a href="/c/<%= n.id %>"><%= n.title %></a></p>
+      <p class="nodemeta"><%= n.type %> · <%= n.date %><% if (n.repeated) { %> · 上方已展開<% } %></p>
+    </div>
+    <% } %>
+    <% if (n.children.length) { %>
+    <details<%= n.open ? ' open' : '' %>>
+      <summary><%= n.children.length %></summary>
+      <%~ include('thread', { nodes: n.children }) %>
+    </details>
+    <% } %>
+  </li>
+<% }) %>
+</ul>

@@ -1,0 +1,6 @@
+<form action="/search" method="get" class="searchpage" role="search">
+  <input type="search" name="q" value="<%= it.q %>" placeholder="搜尋標題與內文" autofocus autocomplete="off">
+</form>
+<% if (it.q) { %>
+<%~ include('cardlist', { items: it.items, empty: '沒有符合的卡片。' }) %>
+<% } %>

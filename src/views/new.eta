@@ -1,0 +1,120 @@
+<div class="<%= it.source ? 'split' : '' %>" id="split">
+
+<% if (it.source) { %>
+<section class="pane pane-source" id="sourcepane">
+  <div class="sourcebody">
+    <p class="cardmeta">
+      <span class="rtype"><%= it.source.type %></span>
+      <time><%= it.source.date %></time>
+      <% if (it.source.provenance) { %><span><%= it.source.provenance %></span><% } %>
+      <a class="sourceopen" href="/c/<%= it.source.id %>">開啟</a>
+    </p>
+    <h1><%= it.source.title %></h1>
+    <% if (it.source.tags.length) { %>
+    <p class="tags">
+      <% it.source.tags.forEach(function (t) { %><span class="tag">#<%= t %></span><% }) %>
+    </p>
+    <% } %>
+    <div class="body" id="sourcetext" data-id="<%= it.source.id %>" data-title="<%= it.source.title %>"><%~ it.source.body_html %></div>
+  </div>
+  <div class="quotebar">
+    <button type="button" class="ghost" id="quotebtn" disabled>＋ 引用選取的段落</button>
+  </div>
+</section>
+<div class="splitbar" id="splitbar" role="separator" aria-label="調整比例"></div>
+<% } %>
+
+<section class="<%= it.source ? 'pane pane-form' : '' %>">
+
+<% if (it.errors.length) { %>
+<ul class="errors">
+  <% it.errors.forEach(function (e) { %><li><%= e %></li><% }) %>
+</ul>
+<% } %>
+
+<form method="post" action="/new" class="newform" id="newform">
+  <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
+
+  <div class="typepick">
+    <% it.types.forEach(function (t) { %>
+    <label class="typebtn">
+      <input type="radio" name="type" value="<%= t %>" required <%= it.values.type === t ? 'checked' : '' %>>
+      <span><%= t %></span>
+    </label>
+    <% }) %>
+  </div>
+
+  <label class="field">
+    <span>title</span>
+    <input type="text" name="title" required autocomplete="off" value="<%= it.values.title %>">
+  </label>
+
+  <label class="field">
+    <span>context</span>
+    <textarea name="body" rows="14" spellcheck="false"><%= it.values.body %></textarea>
+  </label>
+
+  <details class="optional">
+    <summary>more information</summary>
+    <label class="field">
+      <span>url</span>
+      <input type="url" name="url" autocomplete="off" value="<%= it.values.url %>">
+    </label>
+    <label class="field<%= it.values.type === 'original' ? '' : ' off' %>" id="provfield">
+      <span>provenance</span>
+      <select name="provenance" <%= it.values.type === 'original' ? '' : 'disabled' %>>
+        <% it.provenances.forEach(function (p) { %>
+        <option value="<%= p %>" <%= it.values.provenance === p ? 'selected' : '' %>><%= p %></option>
+        <% }) %>
+      </select>
+    </label>
+  </details>
+
+  <div class="field">
+    <span class="fieldhead">link
+      <button type="button" class="ghost addlink" id="addlink">＋</button>
+    </span>
+    <div id="linkrows">
+      <% it.links.forEach(function (l) { %>
+      <div class="linkrow rel-<%= l.rel %>">
+        <select name="link_rel">
+          <% it.rels.forEach(function (r) { %>
+          <option value="<%= r %>" <%= l.rel === r ? 'selected' : '' %>><%= r %></option>
+          <% }) %>
+        </select>
+        <input type="text" name="link_to" class="linkto" autocomplete="off"
+               placeholder="ID 或標題" value="<%= l.to %>">
+        <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
+        <span class="linkname"><%= l.title || '' %></span>
+        <div class="picker"></div>
+      </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <label class="field">
+    <span>tags</span>
+    <input type="text" name="tags" autocomplete="off" value="<%= it.values.tags %>">
+  </label>
+
+  <button type="submit" class="primary">submit</button>
+</form>
+
+</section>
+</div>
+
+<template id="linkrowtpl">
+  <div class="linkrow rel-related">
+    <select name="link_rel">
+      <% it.rels.forEach(function (r) { %>
+      <option value="<%= r %>"<%= r === 'related' ? ' selected' : '' %>><%= r %></option>
+      <% }) %>
+    </select>
+    <input type="text" name="link_to" class="linkto" autocomplete="off" placeholder="ID 或標題">
+    <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
+    <span class="linkname"></span>
+    <div class="picker"></div>
+  </div>
+</template>
+
+<script src="/static/new.js" defer></script>

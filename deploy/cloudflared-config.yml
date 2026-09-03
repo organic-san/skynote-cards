@@ -1,0 +1,8 @@
+# /etc/cloudflared/config.yml
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: cards.example.com
+    service: http://127.0.0.1:3000
+  - service: http_status:404

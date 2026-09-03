@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= it.title %></title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<button class="menubtn" id="menubtn" aria-label="選單" aria-expanded="false">
+  <span></span><span></span><span></span>
+</button>
+<div class="scrim" id="scrim" hidden></div>
+
+<aside class="drawer" id="drawer">
+  <button class="drawerclose" id="drawerclose" aria-label="關閉">×</button>
+
+  <nav class="drawernav">
+    <a href="/" class="<%= it.nav === 'feed' ? 'on' : '' %>">全部</a>
+    <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">標籤</a>
+    <a href="/orphans" class="<%= it.nav === 'orphans' ? 'on' : '' %>">碎片</a>
+  </nav>
+
+  <form class="drawersearch" action="/search" method="get" role="search">
+    <input type="search" name="q" value="<%= it.q || '' %>" placeholder="搜尋" autocomplete="off">
+  </form>
+
+  <div class="recent">
+    <ul>
+      <% const recent = it.recent || []; recent.forEach(function (c) { %>
+      <li><a href="/c/<%= c.id %>" class="<%= it.activeId === c.id ? 'on' : '' %>"><%= c.title %></a></li>
+      <% }) %>
+    </ul>
+  </div>
+
+  <a class="drawernew" href="/new">＋ 建立卡片</a>
+</aside>
+
+<main>
+<%~ it.body %>
+</main>
+
+<% if (it.fab) { %>
+<%
+  const replyTo = it.fab.to || '';
+  const types = replyTo ? ['restatement', 'thinking'] : ['original', 'restatement', 'thinking'];
+  const suffix = replyTo ? '&to=' + replyTo : '';
+%>
+<button class="fab" id="fab" aria-label="新增" aria-expanded="false">＋</button>
+<div class="typemenu" id="typemenu" hidden>
+  <% types.forEach(function (t) { %>
+  <a class="typemenu-item" href="/new?type=<%= t %><%= suffix %>">add <%= t %></a>
+  <% }) %>
+</div>
+<% } %>
+
+<script src="/static/app.js" defer></script>
+</body>
+</html>

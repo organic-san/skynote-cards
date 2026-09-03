@@ -1,0 +1,19 @@
+# /etc/systemd/system/cloudflared.service
+# 把 localhost:3000 接到子網域。GCP 防火牆維持全關，不安裝 nginx。
+# 驗證由該子網域上的 Cloudflare Access（Google IdP）負責，只放行作者一個帳號；
+# 應用程式本身不實作任何登入邏輯。
+
+[Unit]
+Description=cloudflared tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+Restart=always
+RestartSec=5
+User=cloudflared
+
+[Install]
+WantedBy=multi-user.target

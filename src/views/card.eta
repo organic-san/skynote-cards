@@ -1,0 +1,56 @@
+<p class="back"><a href="/">←</a></p>
+
+<% if (it.upstream.length) { %>
+<section class="stream up">
+  <p class="streamcount">↑ <%= it.upstream_count %></p>
+  <%~ include('thread', { nodes: it.upstream }) %>
+</section>
+<% } %>
+
+<article class="card<%= it.upstream.length ? ' has-up' : '' %><%= it.downstream.length ? ' has-down' : '' %>">
+  <h1><%= it.card.title %></h1>
+  <p class="cardmeta">
+    <span class="rtype"><%= it.card.type %></span>
+    <time><%= it.created_display %></time>
+    <% if (it.revised_display) { %><span>改於 <%= it.revised_display %></span><% } %>
+    <% if (it.provenance) { %><span><%= it.provenance %></span><% } %>
+    <% if (it.lock_at) { %><span class="lock" id="lock" data-until="<%= it.lock_at %>"></span><% } %>
+  </p>
+
+  <% if (it.card.tags.length) { %>
+  <p class="tags">
+    <% it.card.tags.forEach(function (t) { %><a class="tag" href="/?tag=<%= encodeURIComponent(t) %>">#<%= t %></a><% }) %>
+  </p>
+  <% } %>
+
+  <% if (it.url_href) { %>
+  <div class="source">
+    <% if (it.embed && it.embed.kind === 'image') { %>
+    <a href="<%= it.url_href %>" rel="noreferrer noopener">
+      <img class="embed" src="<%= it.embed.src %>" alt="" loading="lazy" referrerpolicy="no-referrer">
+    </a>
+    <% } else if (it.embed) { %>
+    <div class="embed embed-<%= it.embed.kind %>">
+      <iframe src="<%= it.embed.src %>" loading="lazy" referrerpolicy="no-referrer"
+              allow="fullscreen; picture-in-picture" title="<%= it.card.title %>"></iframe>
+    </div>
+    <% } %>
+    <p class="sourcelink"><a href="<%= it.url_href %>" rel="noreferrer noopener"><%= it.card.url %></a></p>
+  </div>
+  <% } %>
+
+  <div class="body"><%~ it.body_html %></div>
+
+  <% if (it.w1) { %><p class="warn"><%= it.w1_message %></p><% } %>
+
+  <% if (it.editable) { %>
+  <p class="actions"><a href="/c/<%= it.card.id %>/edit">編輯</a></p>
+  <% } %>
+</article>
+
+<% if (it.downstream.length) { %>
+<section class="stream down">
+  <%~ include('thread', { nodes: it.downstream }) %>
+  <p class="streamcount">↓ <%= it.downstream_count %></p>
+</section>
+<% } %>

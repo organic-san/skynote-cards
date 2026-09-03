@@ -1,0 +1,8 @@
+<ul class="taglist">
+<% if (it.tags.length === 0) { %>
+<p class="empty">還沒有標籤。</p>
+<% } %>
+<% it.tags.forEach(function (t) { %>
+  <li><a class="tag" href="/?tag=<%= encodeURIComponent(t.tag) %>">#<%= t.tag %></a><span class="n"><%= t.n %></span></li>
+<% }) %>
+</ul>

@@ -1,0 +1,41 @@
+<p class="back"><a href="/c/<%= it.card.id %>">← 回卡片</a></p>
+
+<ul class="errors" id="errors" hidden></ul>
+
+<form class="newform" id="editcard" data-id="<%= it.card.id %>">
+  <p class="cardmeta">
+    <span class="rtype"><%= it.card.type %></span>
+    <time><%= it.created_display %></time>
+    <span class="lock" id="lock" data-until="<%= it.lock_at %>"></span>
+  </p>
+
+  <label class="field">
+    <span>title</span>
+    <input type="text" name="title" required autocomplete="off" value="<%= it.card.title %>">
+  </label>
+
+  <label class="field">
+    <span>context</span>
+    <textarea name="body" rows="14" spellcheck="false"><%= it.card.body %></textarea>
+  </label>
+
+  <label class="field">
+    <span>tags</span>
+    <input type="text" name="tags" autocomplete="off" value="<%= it.tags_line %>">
+  </label>
+
+  <details class="optional">
+    <summary>url</summary>
+    <label class="field">
+      <span>url</span>
+      <input type="url" name="url" autocomplete="off" value="<%= it.card.url || '' %>">
+    </label>
+  </details>
+
+  <div class="stepnav">
+    <a class="ghost" href="/c/<%= it.card.id %>">取消</a>
+    <button type="submit" class="primary">save</button>
+  </div>
+</form>
+
+<script src="/static/edit.js" defer></script>
