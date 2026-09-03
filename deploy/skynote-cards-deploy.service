@@ -1,0 +1,14 @@
+# /etc/systemd/system/skynote-cards-deploy.service
+# 由 skynote-cards-deploy.timer 觸發，不要自己 enable。
+
+[Unit]
+Description=skynote-cards pull-deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=append
+Group=append
+WorkingDirectory=/srv/app
+ExecStart=/bin/bash /srv/app/deploy/pull-deploy.sh

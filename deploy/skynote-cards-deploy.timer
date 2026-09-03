@@ -1,0 +1,12 @@
+# /etc/systemd/system/skynote-cards-deploy.timer
+
+[Unit]
+Description=每 5 分鐘檢查一次 skynote-cards 有沒有新版本
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

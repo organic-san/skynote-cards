@@ -8,7 +8,7 @@ GCP e2-micro
 ├── /srv/app          ← 程式碼 repo
 ├── /srv/corpus       ← 語料庫 repo（deploy key 有寫入權）
 ├── /srv/index.db     ← SQLite，不進版控，隨時可刪
-└── systemd: append-cards.service + cloudflared.service
+└── systemd: skynote-cards.service + cloudflared.service
 ```
 
 ---
@@ -29,8 +29,8 @@ us-west1 / us-central1 / us-east1。asia-east1 大約每月 6–8 美金。
 ## 1. 兩個 GitHub repo
 
 ```
-append-cards          ← 這個 repo（程式碼）
-append-cards-corpus   ← 語料庫，設成 private
+skynote-cards          ← 這個 repo（程式碼）
+skynote-cards-corpus   ← 語料庫，設成 private
 ```
 
 語料庫 repo 先推一個空骨架上去：
@@ -39,7 +39,7 @@ append-cards-corpus   ← 語料庫，設成 private
 mkdir -p corpus/cards && cd corpus
 printf 'index.db\nindex.db-journal\n*.tmp\n' > .gitignore
 git init -b main && git add -A
-git commit -m 'init' && git remote add origin git@github.com:<你>/append-cards-corpus.git
+git commit -m 'init' && git remote add origin git@github.com:organic-san/skynote-cards-corpus.git
 git push -u origin main
 ```
 
@@ -60,7 +60,7 @@ git push -u origin main
 cloudflared）。這樣連 SSH 都得走 IAP，攻擊面小很多：
 
 ```bash
-gcloud compute ssh append-cards --tunnel-through-iap
+gcloud compute ssh skynote-cards --tunnel-through-iap
 ```
 
 **確認**：`ss -ltn` 應該只有 SSH。
@@ -105,13 +105,13 @@ sudo -u append ssh-keygen -t ed25519 -N '' -f /srv/deploy_key
 sudo cat /srv/deploy_key.pub
 ```
 
-貼到 `append-cards-corpus` 的 Settings → Deploy keys → Add，
+貼到 `skynote-cards-corpus` 的 Settings → Deploy keys → Add，
 **Allow write access 要勾**。
 
 ```bash
-sudo -u append git clone git@github.com:<你>/append-cards-corpus.git /srv/corpus
-sudo -u append git -C /srv/corpus config user.name  'append-cards'
-sudo -u append git -C /srv/corpus config user.email 'append-cards@localhost'
+sudo -u append git clone git@github.com:organic-san/skynote-cards-corpus.git /srv/corpus
+sudo -u append git -C /srv/corpus config user.name  'skynote-cards'
+sudo -u append git -C /srv/corpus config user.email 'skynote-cards@localhost'
 ```
 
 clone 時會用到這把 key，所以先試一次：
@@ -128,13 +128,13 @@ sudo -u append env GIT_SSH_COMMAND='ssh -i /srv/deploy_key -o IdentitiesOnly=yes
 ## 5. 放程式碼、起服務
 
 ```bash
-sudo -u append git clone git@github.com:<你>/append-cards.git /srv/app
+sudo -u append git clone git@github.com:organic-san/skynote-cards.git /srv/app
 cd /srv/app
 sudo -u append npm ci
 sudo -u append npm run build
 
-sudo cp deploy/append-cards.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now append-cards
+sudo cp deploy/skynote-cards.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now skynote-cards
 ```
 
 **確認**：
@@ -142,7 +142,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now append-cards
 ```bash
 curl -s localhost:3000/_health
 # cards_files 與 cards_indexed 都是 0，git.enabled 是 true
-journalctl -u append-cards -n 30
+journalctl -u skynote-cards -n 30
 ```
 
 `git.enabled` 如果是 `false`，代表 `/srv/corpus/.git` 不在或權限不對，
@@ -160,7 +160,7 @@ echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudf
 sudo apt-get update && sudo apt-get install -y cloudflared
 
 cloudflared tunnel login
-cloudflared tunnel create append-cards
+cloudflared tunnel create skynote-cards
 ```
 
 把 `deploy/cloudflared-config.yml` 複製到 `/etc/cloudflared/config.yml`，
@@ -189,7 +189,7 @@ Zero Trust → Access → Applications → Add：
 存檔之後才建 DNS：
 
 ```bash
-cloudflared tunnel route dns append-cards cards.你的網域
+cloudflared tunnel route dns skynote-cards cards.你的網域
 ```
 
 **確認**：用無痕視窗開那個網址，應該先看到 Cloudflare 的登入頁，
@@ -197,30 +197,52 @@ cloudflared tunnel route dns append-cards cards.你的網域
 
 ---
 
-## 8. CI/CD
+## 8. 更新機制：pull 模式
 
-在程式碼 repo 的 Settings → Secrets → Actions 加三個：
+沒有外部 IP，GitHub Actions 連不進來這台機器，所以不是「push 觸發部署」，
+是反過來——**VM 自己每五分鐘去看一次有沒有新版本**。`.github/workflows/test.yml`
+只負責在 push 時跑測試，不碰這台機器；真正的部署完全在 VM 這邊發生。
 
-| Secret | 內容 |
-|---|---|
-| `DEPLOY_HOST` | VM 的位址（無外部 IP 的話要走 IAP，見下） |
-| `DEPLOY_USER` | 有權限跑那串指令的帳號 |
-| `DEPLOY_SSH_KEY` | 該帳號的私鑰 |
-
-VM 上讓那個帳號能重啟服務而不用密碼：
+`deploy/pull-deploy.sh`、`deploy/skynote-cards-deploy.service`、
+`deploy/skynote-cards-deploy.timer` 三個檔案已經在 repo 裡，拉下來的
+`/srv/app` 自然就有：
 
 ```bash
-echo '<user> ALL=(ALL) NOPASSWD: /bin/systemctl restart append-cards' \
-  | sudo tee /etc/sudoers.d/append-cards
+sudo cp /srv/app/deploy/skynote-cards-deploy.service /etc/systemd/system/
+sudo cp /srv/app/deploy/skynote-cards-deploy.timer   /etc/systemd/system/
 ```
 
-`/srv/app` 是 `append` 擁有的，所以部署帳號要嘛加進 `append` 群組，
-要嘛整串指令用 `sudo -u append` 跑。
+腳本裡有一行 `sudo systemctl restart skynote-cards`，跑腳本的是 `append`
+這個沒有登入權的帳號，所以要讓它不用密碼就能重啟服務：
 
-**如果 VM 沒有外部 IP**，GitHub Actions 連不進來。兩條路：
-開一個只允許 Cloudflare IP 的入口太麻煩，比較簡單的是**改成 pull 模式**——
-VM 上放一個每五分鐘跑一次的 timer 去 `git pull`，有變動才 build 加 restart。
-單人專案我建議直接這樣，省掉整組 secret。
+```bash
+echo 'append ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart skynote-cards' \
+  | sudo tee /etc/sudoers.d/skynote-cards
+```
+
+打開 timer（**不要**啟動 `.service`——那個只給 timer 觸發，自己啟動只會跑一次就結束）：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now skynote-cards-deploy.timer
+```
+
+**確認**：
+
+```bash
+systemctl list-timers skynote-cards-deploy.timer
+# NEXT 欄位應該是 5 分鐘內的某個時間
+
+sudo systemctl start skynote-cards-deploy.service   # 手動催一次，不必等
+journalctl -u skynote-cards-deploy -n 20
+```
+
+日誌裡最後一行如果是 `deploy: <舊commit> -> <新commit>`，代表這次真的抓到
+新版本並重啟了；如果什麼都沒印，代表 `git fetch` 之後沒有變動——這是
+正常情況，不是壞掉。
+
+之後的日常流程就是：`git push` 到 `main`，最多等五分鐘，VM 自己會跟上。
+不想等的話，隨時可以自己 SSH 進去 `sudo systemctl start skynote-cards-deploy`。
 
 ---
 
@@ -239,9 +261,9 @@ curl -s localhost:3000/_health   # unpushed_commits 應該是 0
 **二、演練一次索引重建。**
 
 ```bash
-sudo systemctl stop append-cards
+sudo systemctl stop skynote-cards
 sudo rm /srv/index.db
-sudo systemctl start append-cards
+sudo systemctl start skynote-cards
 ```
 
 頁面內容應該跟砍掉之前逐字相同。這一步是在驗證「檔案是唯一真相」

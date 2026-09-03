@@ -289,16 +289,19 @@ GCP e2-micro (asia-east1)
 ```
 
 完整的部署步驟在 [deploy/README.md](deploy/README.md)，
-`deploy/` 下另有三份範本：`append-cards.service`、`cloudflared.service`、
-`cloudflared-config.yml`。
+`deploy/` 下另有範本：`append-cards.service`、`cloudflared.service`、
+`cloudflared-config.yml`，以及 pull 模式的更新機制
+`pull-deploy.sh` + `skynote-cards-deploy.service` + `skynote-cards-deploy.timer`。
 
 - 應用程式只監聽 `127.0.0.1:3000`。
 - `cloudflared` 以 systemd service 執行，把它接到子網域。
 - **不安裝 nginx，不開放任何對外埠**，GCP 防火牆維持全關。
 - 驗證掛在 Cloudflare Access（Google IdP）上，只放行作者一個帳號。
   應用程式本身不實作任何登入邏輯，它信任沒被擋掉的流量就是作者。
-- `.github/workflows/deploy.yml`：push 到 main → 跑測試 → ssh 進 VM
-  `git pull && npm ci && npm run build && systemctl restart`。
+- 更新走 pull 模式，不是 push 觸發：`.github/workflows/test.yml` 只在
+  push 時跑測試；VM 上的 systemd timer 每五分鐘自己 `git fetch`，
+  有新 commit 才 `npm ci && npm run build && systemctl restart`。
+  這樣不需要對外開放 SSH 入口，也不用在 repo 裡放部署用的私鑰。
 
 語料庫 repo 第一次要自己 `git push -u origin main` 或讓服務自己推第一次；
 之後 `/_health` 才數得出未 push 的 commit 數。
