@@ -262,6 +262,15 @@ journalctl -u skynote-cards-deploy -n 20
 只做 `npm run build` 加重啟，快很多。
 不想等的話，隨時可以自己 SSH 進去 `sudo systemctl start skynote-cards-deploy`。
 
+**`deploy/` 底下的 unit 檔改了不會自動生效。** pull-deploy 只更新
+`/srv/app` 裡的程式碼，`/etc/systemd/system/` 底下那幾份是你當初手動複製的。
+`.service` 或 `.timer` 有異動時要自己再抄一次：
+
+```bash
+sudo cp /srv/app/deploy/skynote-cards.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl restart skynote-cards
+```
+
 ---
 
 ## 9. 上線後第一天要做的三件事
@@ -300,6 +309,40 @@ sudo systemctl start skynote-cards
   未 push 的數字如果連續幾天不是 0，deploy key 或網路壞了。
 - `POST /_reindex` — 回報解析失敗的檔案與壞連結清單。
   這是唯一會發現資料完整性問題的地方，值得每個月手動跑一次看報告。
+
+### 遇到 502 的時候
+
+502 是 cloudflared 說「我連不到後面那支程式」。先分清楚是應用程式的問題
+還是通道的問題——在機器上直接打本機，繞過整條 Cloudflare：
+
+```bash
+curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' localhost:3000/tags
+```
+
+（用 `/tags` 不用 `/_health`，因為 `/_health` 會 spawn 一個 git 行程去數
+未 push 的 commit，本身就有負擔，會干擾判斷。）
+
+- **本機也慢或不通** → 問題在應用程式或機器。往下看。
+- **本機很快但外面 502** → 問題在 cloudflared，看 `journalctl -u cloudflared`。
+
+應用程式那一側，最常見的是**記憶體被換到 swap**。症狀很好認：閒置一陣子
+之後第一次開很慢或 502，重試就好了；寫完長文章之後也會有幾秒不能用。
+
+```bash
+PID=$(systemctl show -p MainPID --value skynote-cards)
+grep -E 'VmRSS|VmSwap' /proc/$PID/status
+```
+
+`VmSwap` 不是 0 就是它。unit 檔裡的 `MemorySwapMax=0` 就是為了擋這件事，
+確認它有生效：
+
+```bash
+systemctl show -p MemorySwapMax skynote-cards   # 應該是 0
+```
+
+如果服務是被砍掉重啟而不是變慢，`journalctl -u skynote-cards` 會看到
+`Main process exited`，再用 `sudo dmesg -T | grep -i oom` 確認是不是
+記憶體不足。
 
 沒有備份索引的必要，沒有資料庫遷移，沒有要清的暫存。
 真的壞掉的話：砍掉 `/srv/index.db*`、重啟，或整台機器重灌再 clone 兩個 repo。

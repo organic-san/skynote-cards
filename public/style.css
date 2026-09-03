@@ -624,7 +624,10 @@ main:has(> .split) {
   .pane-source .sourcebody { padding-top: 1rem; }
 }
 
-@media (min-width: 76rem) {
+/* 50rem = 800px：11 吋 iPad 直放是 820–834px，橫放是 1180–1210px，
+   兩個方向都落在這條線以上，所以轉向不會換版面。
+   橫放的手機（844–932px）也走這裡——那種又寬又扁的視窗上下分根本不能用。 */
+@media (min-width: 50rem) {
   .split {
     grid-template-rows: none;
     grid-template-columns: var(--split, 42%) auto 1fr;

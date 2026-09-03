@@ -856,3 +856,28 @@ describe('索引的耐久性設定', () => {
   });
 });
 
+describe('分欄的斷點', () => {
+  const css = fs.readFileSync('public/style.css', 'utf8');
+  const js = fs.readFileSync('public/new.js', 'utf8');
+
+  test('CSS 與 JS 講的是同一條線', () => {
+    // 版面由 CSS 切換、拖曳比例由 JS 記錄，兩邊對不上就會存錯方向的比例。
+    const fromCss = css.match(/@media \(min-width: ([\d.]+)rem\) \{\s*\.split \{/);
+    const fromJs = js.match(/matchMedia\('\(min-width: ([\d.]+)rem\)'\)/);
+    assert.ok(fromCss, 'style.css 找不到分欄的 media query');
+    assert.ok(fromJs, 'new.js 找不到對應的 matchMedia');
+    assert.equal(fromCss[1], fromJs[1]);
+  });
+
+  test('斷點低到 11 吋 iPad 直放也算左右分', () => {
+    const rem = Number(css.match(/@media \(min-width: ([\d.]+)rem\) \{\s*\.split \{/)![1]);
+    // iPad Air 11" 直放 820px 是這一類裡最窄的，橫放 1180px 最寬。
+    assert.ok(rem * 16 <= 820, `斷點 ${rem}rem 太高，iPad 直放會退回上下分`);
+  });
+
+  test('拖曳出來的比例，直放與橫放分開記', () => {
+    assert.match(js, /append-cards:split:/);
+    assert.match(js, /wide\.matches \? 'col' : 'row'/);
+  });
+});
+

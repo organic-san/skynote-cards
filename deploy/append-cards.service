@@ -24,6 +24,13 @@ Environment=GIT_AUTHOR_EMAIL=append-cards@localhost
 # 語料庫 repo 用獨立的 deploy key 推上去。
 Environment=GIT_SSH_COMMAND=ssh -i /srv/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
 
+# 這個服務的記憶體永遠不進 swap。
+# 機器只有 1GB，swappiness 預設會把閒置的匿名頁換出去換 page cache；
+# 於是閒置一陣子之後、或旁邊的 git 要記憶體的時候，Node 就被換出去，
+# 下一個請求得一頁一頁換回來，慢到 cloudflared 直接回 502。
+# swap 留給 npm ci 用，線上服務不該碰它。
+MemorySwapMax=0
+
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

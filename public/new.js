@@ -184,14 +184,20 @@
   var splitbar = document.getElementById('splitbar');
 
   if (split && splitbar) {
-    var KEY = 'append-cards:split';
-    var wide = window.matchMedia('(min-width: 76rem)');
+    // 這個斷點必須跟 style.css 裡的一致。
+    var wide = window.matchMedia('(min-width: 50rem)');
+    // 左右分與上下分的比例分開記：轉向換了版面，沿用同一個數字會很莫名其妙。
+    var keyFor = function () { return 'append-cards:split:' + (wide.matches ? 'col' : 'row'); };
 
     var apply = function (pct) { split.style.setProperty('--split', pct + '%'); };
-    try {
-      var saved = localStorage.getItem(KEY);
+    var restore = function () {
+      var saved = null;
+      try { saved = localStorage.getItem(keyFor()); } catch (e) { /* 無痕視窗，用預設 */ }
       if (saved) apply(saved);
-    } catch (e) { /* 無痕視窗之類的，用預設比例就好 */ }
+      else split.style.removeProperty('--split');
+    };
+    restore();
+    wide.addEventListener('change', restore);
 
     splitbar.addEventListener('pointerdown', function (ev) {
       ev.preventDefault();
@@ -204,7 +210,7 @@
           : ((e.clientY - r.top) / r.height) * 100;
         pct = Math.min(80, Math.max(15, pct)).toFixed(1);
         apply(pct);
-        try { localStorage.setItem(KEY, pct); } catch (e2) { /* 存不了就算了 */ }
+        try { localStorage.setItem(keyFor(), pct); } catch (e2) { /* 存不了就算了 */ }
       };
       var up = function () {
         splitbar.removeEventListener('pointermove', move);
