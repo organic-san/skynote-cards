@@ -510,11 +510,23 @@ export class CardIndex {
 
 function openDb(file: string): Database.Database {
   const existed = fs.existsSync(file);
+  // 主檔不在卻留著 -wal，SQLite 會拿那個 WAL 去復原一個不存在的資料庫。
+  // 手動砍索引時很容易只砍主檔，所以這裡自己清乾淨。
+  if (!existed) {
+    for (const suffix of ['-wal', '-shm', '-journal']) {
+      fs.rmSync(`${file}${suffix}`, { force: true });
+    }
+  }
   const db = new Database(file);
   db.pragma('foreign_keys = ON');
-  // rollback journal 讓重建時的換檔只需要處理一個檔案。
-  db.pragma('journal_mode = DELETE');
-  db.pragma('synchronous = FULL');
+  // 索引是可拋棄的投影：掉了、壞了，都從 cards/*.md 重建。
+  // 所以這裡不該付最高等級的耐久成本——rollback journal 加 synchronous=FULL
+  // 會讓每一次寫入把所有髒頁先抄一份到 journal、再寫回 db，中間夾好幾次 fsync。
+  // 一篇長文章就是上百次隨機寫，在 IOPS 很低的磁碟上會慢到讓寫入路徑卡住。
+  // WAL 是循序附加，NORMAL 在 WAL 下仍然不會損毀資料庫，最壞只是掉最後幾筆——
+  // 而那正好是重建就能補回來的東西。
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
   if (!existed || !usable(db)) {
     db.exec('DROP TABLE IF EXISTS cards_fts; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS tags; DROP TABLE IF EXISTS cards;');
     db.exec(SCHEMA);

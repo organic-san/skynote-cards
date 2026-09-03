@@ -195,6 +195,6 @@ export function ensureCorpusRepo(corpusPath: string): void {
   fs.mkdirSync(path.join(corpusPath, 'cards'), { recursive: true });
   const gitignore = path.join(corpusPath, '.gitignore');
   if (!fs.existsSync(gitignore)) {
-    fs.writeFileSync(gitignore, 'index.db\nindex.db-journal\n*.tmp\n', 'utf8');
+    fs.writeFileSync(gitignore, 'index.db*\n*.tmp\n', 'utf8');
   }
 }

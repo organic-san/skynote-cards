@@ -7,7 +7,7 @@
 GCP e2-micro
 ├── /srv/app          ← 程式碼 repo
 ├── /srv/corpus       ← 語料庫 repo（deploy key 有寫入權）
-├── /srv/index.db     ← SQLite，不進版控，隨時可刪
+├── /srv/index.db     ← SQLite（WAL，另有 -wal/-shm），不進版控，隨時可刪
 └── systemd: skynote-cards.service + cloudflared.service
 ```
 
@@ -37,7 +37,7 @@ skynote-cards-corpus   ← 語料庫，設成 private
 
 ```bash
 mkdir -p corpus/cards && cd corpus
-printf 'index.db\nindex.db-journal\n*.tmp\n' > .gitignore
+printf 'index.db*\n*.tmp\n' > .gitignore
 git init -b main && git add -A
 git commit -m 'init' && git remote add origin git@github.com:organic-san/skynote-cards-corpus.git
 git push -u origin main
@@ -52,9 +52,22 @@ git push -u origin main
 ```
 機型     e2-micro
 映像     Ubuntu 24.04 LTS minimal
-磁碟     10GB standard（卡片是純文字，這個量級用不完）
+磁碟     10GB balanced（pd-balanced，不要選 standard）
 防火牆   全部不勾。不要開 80、不要開 443。
 ```
+
+**磁碟一定要選 balanced，這是我一開始寫錯的地方。** pd-standard 的效能是
+按容量給的：每 GB 只有 1.5 write IOPS 與 0.12 MB/s，所以 10GB 就只有
+**15 IOPS、1.2 MB/s**。卡片是純文字沒錯，但寫一張卡要 fsync 卡片檔、
+再寫索引，貼一篇長文章時索引一次會長 200KB 以上、上百次隨機寫——
+在 15 IOPS 上排隊就是幾十秒，前端會先吃到 Cloudflare 的 502。
+pd-balanced 不看容量，基準就是 3,000 IOPS，差兩個數量級，
+而 10GB 每月價差不到 1 美金。
+
+**已經開成 standard 了怎麼救**：磁碟類型不能原地改。因為這個系統的全部
+狀態就是兩個 git repo，最省事的做法是直接開一台新的（磁碟選 balanced）
+重跑第 3–8 節，舊的砍掉。真的想保留原機的話，就停機 → 建快照 →
+用快照建一顆 balanced 新磁碟 → 換開機碟。
 
 外部 IP 可以設成「無」——所有連線都是機器主動打出去的（git push、
 cloudflared）。這樣連 SSH 都得走 IAP，攻擊面小很多：
@@ -267,7 +280,7 @@ curl -s localhost:3000/_health   # unpushed_commits 應該是 0
 
 ```bash
 sudo systemctl stop skynote-cards
-sudo rm /srv/index.db
+sudo rm -f /srv/index.db*      # 索引用 WAL，還有 -wal 與 -shm 兩個伴生檔
 sudo systemctl start skynote-cards
 ```
 
@@ -289,4 +302,4 @@ sudo systemctl start skynote-cards
   這是唯一會發現資料完整性問題的地方，值得每個月手動跑一次看報告。
 
 沒有備份索引的必要，沒有資料庫遷移，沒有要清的暫存。
-真的壞掉的話：砍掉 `/srv/index.db`、重啟，或整台機器重灌再 clone 兩個 repo。
+真的壞掉的話：砍掉 `/srv/index.db*`、重啟，或整台機器重灌再 clone 兩個 repo。

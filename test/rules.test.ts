@@ -829,3 +829,30 @@ describe('中文全文檢索', () => {
   });
 });
 
+describe('索引的耐久性設定', () => {
+  test('索引用 WAL，而且不為了可拋棄的快取付最高耐久成本', async () => {
+    const h = await fresh();
+    const db = h.app.index.handle;
+    assert.equal(db.pragma('journal_mode', { simple: true }), 'wal');
+    // 1 = NORMAL。索引壞了就重建，不需要 FULL(2) 那種每次交易多好幾個 fsync 的成本。
+    assert.equal(db.pragma('synchronous', { simple: true }), 1);
+  });
+
+  test('只砍掉主檔、留下孤兒 WAL，重開仍然重建得回來', async () => {
+    const ws = makeWorkspace();
+    const first = await start(ws);
+    const id = await createCard(first, { type: 'original', title: '要被重建的卡', body: '內文。' });
+    const before = (await first.app.fastify.inject(`/c/${id}`)).body;
+    await first.close();
+
+    // 演練時很容易只下 rm index.db，把 -wal 留在原地。
+    fs.writeFileSync(`${ws.indexPath}-wal`, 'garbage');
+    fs.rmSync(ws.indexPath, { force: true });
+
+    const second = await start(ws);
+    cleanups.push(second.close);
+    assert.equal(second.app.index.countCards(), 1);
+    assert.equal((await second.app.fastify.inject(`/c/${id}`)).body, before);
+  });
+});
+
