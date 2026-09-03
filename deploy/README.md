@@ -239,7 +239,7 @@ journalctl -u skynote-cards-deploy -n 20
 
 日誌裡最後一行如果是 `deploy: <舊commit> -> <新commit>`，代表這次真的抓到
 新版本並重啟了；如果什麼都沒印，代表 `git fetch` 之後沒有變動——這是
-正常情況，不是壞掉。
+正常情況，不是壞掉。 
 
 之後的日常流程就是：`git push` 到 `main`，最多等五分鐘，VM 自己會跟上。
 
