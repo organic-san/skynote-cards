@@ -1,5 +1,13 @@
 /* 內容用實色，描述性文字一律灰階退到後面。
-   飽和的顏色只留給六種連結關係，畫面上其他地方不用色。 */
+
+   「飽和的顏色只留給六種連結關係」的決定被推翻，因為關係有七種而型別只有
+   四種：七色的系統在一個選單裡就會攤成一片彩虹，而型別是封閉的、每張卡恰好
+   有一個，正是顏色擅長表達的那種分類。
+
+   現在是：**型別用顏色，關係用圖示。** 一個畫面上只跑一套顏色系統。
+   顏色的溫度隨「這張卡有多是我的」上升：原始是外面的東西，思考是我的主張。
+   碎片不給顏色——它是唯一還沒決定要負什麼責任的一型，在一個用顏色表達分類
+   的系統裡，還沒被分類的東西不該佔一個顏色。 */
 
 :root {
   --fg: #16181d;
@@ -9,12 +17,13 @@
   --bg: #fbfbfa;
   --panel: #fff;
 
-  --rel-about: #2f8f4e;
-  --rel-related: #2f6fd0;
-  --rel-supports: #b8880a;
-  --rel-contradicts: #7b4fc0;
-  --rel-refutes: #cc3a34;
-  --rel-updates: #d2761b;
+  --type-original: #3d6b8f;
+  --type-restatement: #2f8f4e;
+  --type-thinking: #b8760a;
+
+  /* 內文裡的連結與「找不到的卡片」還是需要一個顏色，跟型別無關。 */
+  --link: #2f6fd0;
+  --alert: #cc3a34;
 
   --drawer-w: 14rem;
 }
@@ -105,19 +114,9 @@ main {
 }
 .drawernav a.on { color: var(--fg); background: var(--bg); font-weight: 600; }
 
-.drawersearch {
-  padding-top: .5rem;
-  border-top: 1px solid var(--line);
-}
-.drawersearch input {
-  width: 100%;
-  font: inherit;
-  font-size: .85rem;
-  padding: .38rem .55rem;
-  border: 1px solid var(--line);
-  border-radius: .35rem;
-  background: var(--bg);
-}
+/* 側欄的搜尋輸入框被推翻，改成一個連往獨立分頁的連結：
+   那個框是側欄裡唯一「可以打字」的東西，讓整條側欄有兩種互動模式；
+   而且獨立分頁才有空間長出複雜搜尋。 */
 
 /* 中間這一段吃掉剩下的高度，卡片多了就自己捲。 */
 .recent { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -137,15 +136,51 @@ main {
 .recent a:hover { background: var(--bg); color: var(--fg); }
 .recent a.on { background: var(--bg); color: var(--fg); font-weight: 600; }
 
-.drawernew {
+/* 站名是標題，不是連結——手會先落在下面第一列，回首頁那件事交給它。 */
+.drawerbrand {
   flex: 0 0 auto;
-  padding: .5rem .55rem;
-  border-top: 1px solid var(--line);
-  font-size: .88rem;
-  color: var(--dim);
-  text-decoration: none;
+  margin: 0;
+  padding: .1rem .55rem .5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+  color: var(--fg);
 }
-.drawernew:hover { color: var(--fg); }
+
+/* 側欄上半：工作狀態。每一項後面是還沒處理完的數量。 */
+.drawerwork { display: flex; flex-direction: column; gap: .1rem; }
+.drawerwork a {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .38rem .55rem;
+  border-radius: .35rem;
+  text-decoration: none;
+  font-size: .92rem;
+  color: var(--dim);
+}
+.drawerwork a.on { color: var(--fg); background: var(--bg); font-weight: 600; }
+.wname { flex: 1 1 auto; }
+/* 數字是背景資訊，不該跟名字搶。零就淡到幾乎看不見。 */
+.wcount { font-size: .74rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* 下半：動作與工具，跟上半用一條線分開。 */
+.drawernav { padding-top: .5rem; border-top: 1px solid var(--line); }
+/* 第一列（首頁）在站名底下，跟工作狀態之間不需要再畫一條線。 */
+.drawertop { padding-top: 0; border-top: 0; }
+
+/* 一列要嘛前面帶圖示、要嘛後面帶數字，不會兩者都有。
+   帶數字的是四份待辦清單，帶圖示的是去處與動作。
+   圖示靠前對齊成固定寬的一欄，標籤才對得齊。 */
+.drawernav a { display: flex; align-items: center; gap: .55rem; }
+.drawernav .icon { flex: 0 0 auto; color: var(--faint); }
+.drawernav a:hover .icon, .drawernav a.on .icon { color: var(--dim); }
+
+/* 「追加外部資料」是動作，旁邊兩項是去處。
+   先前用一圈外框標示這個差別，那個決定被推翻——側欄裡只有這一列有框，
+   看起來像個誤植的按鈕。差別改由圖示（＋）自己表達。 */
+.draweraction { color: var(--dim); }
+.draweraction:hover { color: var(--fg); }
 
 @media (min-width: 58rem) {
   .menubtn, .drawerclose, .scrim { display: none; }
@@ -173,37 +208,60 @@ main {
   box-shadow: 0 2px 10px rgba(20, 22, 26, .1);
 }
 
-.typemenu {
+.fabmenu, .quick {
   position: fixed;
   z-index: 31;
   right: 1.1rem;
   bottom: 5rem;
-  min-width: 11rem;
   padding: .35rem;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: .55rem;
   box-shadow: 0 4px 18px rgba(20, 22, 26, .12);
 }
-.typemenu-item {
-  display: block;
-  padding: .55rem .7rem;
+
+/* 卡片頁的動作選單：按鈕的字前面帶一小段關係的顏色，
+   讓「這顆會建立什麼關係」在按下去之前就看得出來。 */
+.fabmenu { min-width: 10rem; }
+/* 單色。關係的差別由圖示表達，顏色留給型別。 */
+.fabmenu-item {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .7rem;
   border-radius: .4rem;
   text-decoration: none;
-  font-size: .92rem;
+  font-size: .95rem;
+  color: var(--fg);
 }
-.typemenu-item:hover { background: var(--bg); }
-.typemenu-close {
-  display: block;
-  width: 100%;
-  border: 0;
-  background: none;
-  color: var(--faint);
-  font-size: 1.1rem;
-  cursor: pointer;
-  padding: .2rem;
+.fabmenu-item .icon { flex: 0 0 auto; color: var(--faint); }
+.fabmenu-item:hover .icon { color: var(--dim); }
+
+.fabmenu-item:hover { background: var(--bg); }
+
+
+/* 手機上單手可及：選單從右下長出來，最多五顆，不需要捲動。 */
+@media (max-height: 34rem) {
+  .fabmenu-item { padding-top: .42rem; padding-bottom: .42rem; }
 }
 
+/* 隨手記：兩個欄位加一顆送出鍵。沒有型別、沒有標籤、沒有連結——
+   憑空記一句話如果需要一次型別決策，它就輸給 Discord。 */
+.quick { width: min(22rem, calc(100vw - 2.2rem)); padding: .6rem; }
+.quick input, .quick textarea {
+  display: block;
+  width: 100%;
+  font: inherit;
+  padding: .45rem .55rem;
+  margin-bottom: .45rem;
+  border: 1px solid var(--line);
+  border-radius: .35rem;
+  background: var(--bg);
+  resize: vertical;
+}
+.quick input { font-size: .95rem; }
+.quick textarea { font-size: .9rem; line-height: 1.7; }
+.quick button { width: 100%; }
 /* ---------------------------------------------------------- 共用 */
 
 h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
@@ -214,6 +272,22 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
   letter-spacing: .02em;
 }
 
+/* 型別籤是四型在畫面上唯一的固定記號，所以顏色給它。
+   底色用同一個色相的極淡版本，字用實色——在一片灰階裡它是唯一有彩度的東西，
+   掃過去就認得出來。 */
+.rtype {
+  padding: .05rem .34rem;
+  border-radius: .2rem;
+  border: 1px solid currentColor;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.rtype-original { color: var(--type-original); }
+.rtype-restatement { color: var(--type-restatement); }
+.rtype-thinking { color: var(--type-thinking); }
+/* 碎片不給顏色，改用虛線——它還沒被分類。 */
+.rtype-fleeting { color: var(--faint); border-style: dashed; }
+
 .tag { font-size: .74rem; color: var(--dim); text-decoration: none; }
 .tag:hover { color: var(--fg); }
 
@@ -222,19 +296,24 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
 .back { margin: 0 0 .6rem; font-size: .78rem; }
 .back a { color: var(--faint); text-decoration: none; }
 
+/* 「已從 ⟨來源卡標題⟩ 建立」。建立一張卡幾乎總是為了回到剛才在看的東西，
+   所以這一行取代了返回鍵的位置，而不是加在它旁邊。 */
+.fromsource { margin: 0 0 .6rem; font-size: .78rem; color: var(--faint); }
+.fromsource a { color: var(--dim); }
+
 .errors {
   margin: 0 0 1rem;
   padding: .5rem .9rem .5rem 1.6rem;
-  border-left: 2px solid var(--rel-refutes);
-  color: var(--rel-refutes);
+  border-left: 2px solid var(--alert);
+  color: var(--alert);
   font-size: .82rem;
 }
 
 .warn {
   margin: 1.2rem 0;
   padding-left: .7rem;
-  border-left: 2px solid var(--rel-refutes);
-  color: var(--rel-refutes);
+  border-left: 2px solid var(--alert);
+  color: var(--alert);
   font-size: .8rem;
 }
 
@@ -261,6 +340,16 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
   padding: .95rem 0;
   border-bottom: 1px solid var(--line);
 }
+/* original 的出處放在標題之上：這張卡最要緊的事實是它從哪裡來。
+   位置本身已經是記號了（只有這一型在標題上方有東西），所以不上色——
+   一列裡只讓型別籤有彩度，兩個彩度來源會互相搶。 */
+.roweyebrow {
+  margin: 0 0 .1rem;
+  font-size: .74rem;
+  letter-spacing: .02em;
+  color: var(--dim);
+}
+
 .rowtitle { margin: 0; font-size: 1rem; font-weight: 600; line-height: 1.55; }
 .rowtitle a { text-decoration: none; }
 .rowtitle a::after { content: ""; position: absolute; inset: 0; }
@@ -282,6 +371,47 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
   align-items: baseline;
 }
 .rowmeta .tag { position: relative; z-index: 1; }
+
+/* 碎片不是一張卡，是一行字：它的標題就是全部內容，
+   所以用內文的字級直接排，前面一個短破折號。 */
+.row-fleeting { padding: .7rem 0; }
+.rowline {
+  position: relative;
+  margin: 0;
+  font-size: .95rem;
+  line-height: 1.7;
+  color: var(--fg);
+}
+.rowline::before { content: "— "; color: var(--faint); }
+.rowline a { text-decoration: none; }
+.rowline a::after { content: ""; position: absolute; inset: 0; }
+
+/* restatement 在講哪一份原始資料。 */
+.rowabout {
+  margin: .3rem 0 0;
+  font-size: .78rem;
+  color: var(--dim);
+}
+.rowabout::before { content: "→ "; color: var(--faint); }
+
+.rowcounts { font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* 待辦清單的頁首：標題底下寫出這份清單在問什麼，
+   清單空掉的時候使用者才知道剛才問的是什麼。 */
+/* 清單有東西的時候，東西本身就是說明；只有空的時候才需要一句話
+   說剛才問了什麼。所以那句話搬進 .empty，這裡只剩標題與筆數。 */
+.listhead {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  margin: .2rem 0 1.2rem;
+}
+.listcount {
+  font-size: .8rem;
+  font-weight: 400;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
 
 .pager {
   display: flex;
@@ -345,7 +475,7 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
 .body table { border-collapse: collapse; display: block; overflow-x: auto; }
 .body th, .body td { border: 1px solid var(--line); padding: .3rem .5rem; }
 .body img { max-width: 100%; }
-.body a { color: var(--rel-related); }
+.body a { color: var(--link); }
 
 /* 別的卡片引用過來時會落在某個區塊上，標起來讓人找得到。 */
 .body [data-b]:target {
@@ -373,12 +503,27 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
 }
 .thread .thread { margin-top: .2rem; }
 
-.node.rel-about { border-color: var(--rel-about); }
-.node.rel-related { border-color: var(--rel-related); }
-.node.rel-supports { border-color: var(--rel-supports); }
-.node.rel-contradicts { border-color: var(--rel-contradicts); }
-.node.rel-refutes { border-color: var(--rel-refutes); }
-.node.rel-updates { border-color: var(--rel-updates); }
+/* 上游那一疊要向上長，而且要跟下游**鏡像對稱**。
+   下游的規矩是：離卡片越近的越靠近卡片、同層第一個排最前、展開鈕緊貼著
+   它自己那一則。上游把同樣三件事整個翻過來，缺一件就會露出破綻——
+   先前只翻了「自己與子節點」，於是展開鈕跑到子節點那一疊的最上面，
+   離它自己那一則好幾行遠，而同層的第一個變成離卡片最遠的那個。
+
+   所以三層都要翻：同層的兄弟、自己與子節點、展開鈕與子節點。 */
+.stream.up .thread,
+.stream.up .node,
+.stream.up .node > details {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+/* details 一旦被改成 flex，就不能只靠瀏覽器預設樣式去藏收合的內容。 */
+.stream.up .node > details:not([open]) > .thread { display: none; }
+
+/* 翻轉之後，節點之間的間距要改掛在下緣，否則會全部擠在一起。 */
+.stream.up .node { margin-top: 0; margin-bottom: .55rem; }
+.stream.up .thread .thread { margin-top: 0; margin-bottom: .2rem; }
+.stream.up .node > details { margin-bottom: 0; }
 
 /* 可點的範圍就是這一則參照本身——標題加底下那行，不多不少。
    巢狀的子節點在這一塊外面，所以不會被蓋住。 */
@@ -387,19 +532,22 @@ h1 { font-size: 1.35rem; line-height: 1.5; margin: .2rem 0 .5rem; }
 .nodeline a { text-decoration: none; }
 .nodeline a::after { content: ""; position: absolute; inset: 0; }
 .nodehead:hover .nodeline a { text-decoration: underline; }
+/* 關係名是動詞，方向詞夾在標題兩邊。整行要能像一句話那樣讀過去，
+   所以圖示與方向詞都跟標題在同一條基線上。 */
+.nodeline { display: flex; align-items: baseline; flex-wrap: wrap; gap: .3rem; }
+.nodeline .icon {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--faint);
+}
 .noderel { font-size: .78rem; letter-spacing: .02em; color: var(--faint); }
-.rel-about .noderel { color: var(--rel-about); }
-.rel-related .noderel { color: var(--rel-related); }
-.rel-supports .noderel { color: var(--rel-supports); }
-.rel-contradicts .noderel { color: var(--rel-contradicts); }
-.rel-refutes .noderel { color: var(--rel-refutes); }
-.rel-updates .noderel { color: var(--rel-updates); }
-
+.nodeline .icon { width: 16px; height: 16px; }
+.noderel:empty { display: none; }
 .nodemeta { margin: 0; font-size: .7rem; color: var(--faint); }
-.nodemissing { color: var(--rel-refutes); }
+.nodemissing { color: var(--alert); }
 
 .node details > summary {
-  margin-top: .45rem;
+  margin-top: .2rem;
   font-size: .7rem;
   color: var(--faint);
   cursor: pointer;
@@ -499,12 +647,6 @@ textarea {
 .linkrow .linkto { flex: 1 1 8rem; }
 /* 移除鈕跟新增鈕同一個樣子：加連結不該是一件有壓力的事。 */
 .rmlink { flex: 0 0 auto; padding: .5rem .7rem; line-height: 1; }
-.linkrow.rel-about { border-color: var(--rel-about); }
-.linkrow.rel-related { border-color: var(--rel-related); }
-.linkrow.rel-supports { border-color: var(--rel-supports); }
-.linkrow.rel-contradicts { border-color: var(--rel-contradicts); }
-.linkrow.rel-refutes { border-color: var(--rel-refutes); }
-.linkrow.rel-updates { border-color: var(--rel-updates); }
 
 .picker {
   flex: 1 1 100%;
@@ -562,9 +704,23 @@ textarea {
 .linkname { flex: 1 1 100%; font-size: .74rem; color: var(--faint); }
 .linkname:empty { display: none; }
 
-/* 只有 original 用得到的欄位，其他類型時關掉。 */
-.field.off { opacity: .45; }
-.field.off select { cursor: not-allowed; }
+/* 這一型用不到的欄位直接不顯示。
+   先前是變淡（opacity .45）——那個決定被推翻，因為型別一多，
+   淡掉的欄位會佔滿整個表單，看起來像壞掉而不是像關掉。 */
+.field.off, .optional.off, .fieldnote.off { display: none; }
+
+/* 欄位關著的時候說一句為什麼。空的下拉選單比不給更糟：它看起來就是壞的。 */
+.fieldnote { margin: 0 0 1rem; font-size: .78rem; color: var(--faint); }
+
+/* 型別由入口決定時，這裡只陳述它是什麼，不給選擇。 */
+.typefixed { margin: 0 0 1rem; font-size: .78rem; }
+
+/* original 的作者與年份併成一列：它們一起才有意義，缺一整行不顯示。 */
+.fieldpair { display: flex; gap: .6rem; }
+.fieldpair label { flex: 1 1 0; display: flex; flex-direction: column; gap: .3rem; }
+
+/* 從卡片延伸出來的那條連結刪不掉，所以它的目標欄位是唯讀的。 */
+.linkto[readonly] { background: var(--bg); color: var(--dim); cursor: default; }
 
 
 /* ---------------------------------------------------------- 左右／上下分欄 */

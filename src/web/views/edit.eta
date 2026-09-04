@@ -4,37 +4,39 @@
 
 <form class="newform" id="editcard" data-id="<%= it.card.id %>">
   <p class="cardmeta">
-    <span class="rtype"><%= it.card.type %></span>
+    <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
     <time><%= it.created_display %></time>
+    <%/* 倒數只出現在這一頁。卡片頁是拿來讀的，一個每秒跳一次的數字
+         放在內文上方是干擾；在這裡你就是在跟那段時間賽跑。 */%>
     <span class="lock" id="lock" data-until="<%= it.lock_at %>"></span>
   </p>
 
   <label class="field">
-    <span>title</span>
+    <span>標題</span>
     <input type="text" name="title" required autocomplete="off" value="<%= it.card.title %>">
   </label>
 
   <label class="field">
-    <span>context</span>
+    <span>內文</span>
     <textarea name="body" rows="14" spellcheck="false"><%= it.card.body %></textarea>
   </label>
 
   <label class="field">
-    <span>tags</span>
+    <span>標籤</span>
     <input type="text" name="tags" autocomplete="off" value="<%= it.tags_line %>">
   </label>
 
   <details class="optional">
-    <summary>url</summary>
+    <summary>網址</summary>
     <label class="field">
-      <span>url</span>
+      <span>網址</span>
       <input type="url" name="url" autocomplete="off" value="<%= it.card.url || '' %>">
     </label>
   </details>
 
   <div class="stepnav">
     <a class="ghost" href="/c/<%= it.card.id %>">取消</a>
-    <button type="submit" class="primary">save</button>
+    <button type="submit" class="primary">儲存</button>
   </div>
 </form>
 

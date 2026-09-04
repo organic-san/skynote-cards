@@ -9,6 +9,8 @@ export interface CardRow {
   title: string;
   url: string | null;
   provenance: string | null;
+  source_author: string | null;
+  source_date: string | null;
   revised: string | null;
   body: string;
   link_count: number;
@@ -160,26 +162,110 @@ export function linkTree(
   return expand(rootId, 0);
 }
 
-/** 出向連結的目標型別，判斷 W1 警告用。 */
-export function linkTargetTypes(idx: IndexDb, id: string): Map<string, string | null> {
-  const m = new Map<string, string | null>();
-  for (const l of outLinks(idx, id)) m.set(l.id, l.type);
-  return m;
-}
-
 export function tagCounts(idx: IndexDb): { tag: string; n: number }[] {
   return idx.s('SELECT tag, COUNT(*) AS n FROM tags GROUP BY tag ORDER BY n DESC, tag ASC')
     .all() as { tag: string; n: number }[];
 }
 
-/** type = 'thinking' 且沒有任何連結的卡片：目前所有沒有依據的信念。 */
-export function orphans(idx: IndexDb): CardRowWithTags[] {
+// -------------------------------------------------------------- 工作狀態清單
+
+/**
+ * 沒有人指向它。
+ *
+ * 三份待辦清單問的是同一個問題：**這張卡有沒有被接住。**
+ * 沒有人指向它，就代表沒有人接手，那它就是需要再確認一次的東西。
+ * 這不是型別或標籤的羅列，是一次過濾之後剩下的待處理項。
+ */
+const NO_INBOUND = 'NOT EXISTS (SELECT 1 FROM links l WHERE l.target_id = c.id)';
+
+function listOf(idx: IndexDb, where: string, params: unknown[] = []): CardRowWithTags[] {
   const rows = idx.s(
-      `SELECT * FROM cards WHERE type = 'thinking' AND link_count = 0
-        ORDER BY created DESC, ${idDesc('id')}`,
-    )
-    .all() as CardRow[];
+    `SELECT c.* FROM cards c WHERE ${where} ORDER BY c.created DESC, ${idDesc('c.id')}`,
+  ).all(...params) as CardRow[];
   return rows.map((r) => ({ ...r, tags: tagsOf(idx, r.id) }));
+}
+
+function countOf(idx: IndexDb, where: string, params: unknown[] = []): number {
+  return (idx.s(`SELECT COUNT(*) AS n FROM cards c WHERE ${where}`).get(...params) as { n: number })
+    .n;
+}
+
+/**
+ * 待思考：收進來但沒有人接手。
+ *
+ * 不區分母卡與節錄——兩者都是 original，同一條判準。摘錄不是「還沒消化」，
+ * 是把待辦從整篇文章縮小到那幾段：你切開它，代表你讀過並挑出了值得的部分。
+ * 代價是先隨手摘一句再回頭細讀時，整篇會提早離開清單。接受。
+ *
+ * 這是唯一會主動增長的清單——每存一篇文章就多一項。
+ */
+const PENDING = `c.type = 'original' AND ${NO_INBOUND}`;
+
+/** 碎片：沒有被撿起來用過的隨手記。 */
+const LOOSE_FLEETING = `c.type = 'fleeting' AND ${NO_INBOUND}`;
+
+/**
+ * 初步想法：兩頭都懸空的想法。
+ *
+ * 比另外兩份多一個條件（出向也不能有）：它的問題不只是沒人接手，
+ * 是它自己也沒有接住任何東西——一個既沒有依據、也沒有被使用的主張。
+ */
+const LOOSE_THINKING = `c.type = 'thinking' AND c.link_count = 0 AND ${NO_INBOUND}`;
+
+/** 沉澱：還在反芻期內、仍然改得動的卡片。界線由呼叫端算好傳進來。 */
+const SETTLING = 'c.created > ?';
+
+export function pending(idx: IndexDb): CardRowWithTags[] {
+  return listOf(idx, PENDING);
+}
+
+export function looseFleeting(idx: IndexDb): CardRowWithTags[] {
+  return listOf(idx, LOOSE_FLEETING);
+}
+
+export function looseThinking(idx: IndexDb): CardRowWithTags[] {
+  return listOf(idx, LOOSE_THINKING);
+}
+
+export function settling(idx: IndexDb, since: string): CardRowWithTags[] {
+  return listOf(idx, SETTLING, [since]);
+}
+
+/** 側欄每一項後面的數字。四份清單各一次 COUNT。 */
+export function listCounts(
+  idx: IndexDb,
+  since: string,
+): { pending: number; looseThinking: number; looseFleeting: number; settling: number } {
+  return {
+    pending: countOf(idx, PENDING),
+    looseThinking: countOf(idx, LOOSE_THINKING),
+    looseFleeting: countOf(idx, LOOSE_FLEETING),
+    settling: countOf(idx, SETTLING, [since]),
+  };
+}
+
+// -------------------------------------------------------------- 列表項的補充資料
+
+/** 入向連結數，以及其中有幾則是重述。A.6 的 original 列表項要用。 */
+export function inboundBreakdown(idx: IndexDb, id: string): { total: number; restatements: number } {
+  const row = idx.s(
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN s.type = 'restatement' THEN 1 ELSE 0 END) AS restatements
+       FROM links l LEFT JOIN cards s ON s.id = l.source_id
+      WHERE l.target_id = ?`,
+  ).get(id) as { total: number; restatements: number | null };
+  return { total: row.total, restatements: row.restatements ?? 0 };
+}
+
+/** 這張重述在講哪份原始資料。找不到時 null。 */
+export function aboutTarget(idx: IndexDb, id: string): { id: string; title: string } | null {
+  const row = idx.s(
+    `SELECT c.id AS id, c.title AS title
+       FROM links l JOIN cards c ON c.id = l.target_id
+      WHERE l.source_id = ? AND l.rel = 'about' AND c.type = 'original'
+      ORDER BY ${idDesc('l.target_id')} LIMIT 1`,
+  ).get(id) as { id: string; title: string } | undefined;
+  return row ?? null;
 }
 
 export function search(idx: IndexDb, q: string, limit = 50): CardRowWithTags[] {

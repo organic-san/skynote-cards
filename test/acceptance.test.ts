@@ -4,7 +4,6 @@ import path from 'node:path';
 import { after, describe, test } from 'node:test';
 import type { ReindexReport } from '../src/store/index/index.ts';
 import { EPOCH } from '../src/domain/id.ts';
-import { W1_MESSAGE } from '../src/domain/rules.ts';
 import {
   countCards,
   createCard,
@@ -166,7 +165,7 @@ describe('驗收條件', () => {
       feed: (await h.app.fastify.inject('/')).body,
       card: (await h.app.fastify.inject(`/c/${a}`)).body,
       tags: (await h.app.fastify.inject('/tags')).body,
-      orphans: (await h.app.fastify.inject('/orphans')).body,
+      pending: (await h.app.fastify.inject('/pending')).body,
     });
     const before = await snapshot(first);
     await first.close();
@@ -282,41 +281,18 @@ describe('驗收條件', () => {
     assert.match(log, /push failed/, 'log 應留下 push 失敗紀錄');
   });
 
-  test('11. refutes 沒有附證據時顯示 W1 警告', async () => {
-    const h = await fresh();
-    const source = await createCard(h, { type: 'original', title: '被推翻的原文', body: 'x' });
-    const id = await createCard(h, {
-      type: 'thinking',
-      title: '我認為那是錯的',
-      body: 'y',
-      links: [{ rel: 'refutes', to: source }],
-    });
-
-    const page = await h.app.fastify.inject(`/c/${id}`);
-    assert.equal(page.statusCode, 200);
-    assert.ok(page.body.includes(W1_MESSAGE), 'W1 警告應顯示在卡片頁面上');
-
-    // 補一條指向原始資料的依據之後，警告要消失。
-    const withEvidence = await createCard(h, {
-      type: 'thinking',
-      title: '這次有附依據',
-      body: 'z',
-      links: [
-        { rel: 'refutes', to: source },
-        { rel: 'supports', to: source },
-      ],
-    });
-    assert.ok(!(await h.app.fastify.inject(`/c/${withEvidence}`)).body.includes(W1_MESSAGE));
-  });
-
   test('12. 200 張卡片後，首頁與搜尋仍在 300ms 內', async () => {
     const h = await fresh();
-    for (let i = 0; i < 200; i += 1) {
+    // 重述必須有原文可對照（R1），所以先鋪一張 original 給整批當靶。
+    const source = await createCard(h, { type: 'original', title: '母文件', body: 'x' });
+    for (let i = 0; i < 199; i += 1) {
+      const type = i % 3 === 0 ? 'thinking' : i % 3 === 1 ? 'restatement' : 'original';
       await createCard(h, {
-        type: i % 3 === 0 ? 'thinking' : i % 3 === 1 ? 'restatement' : 'original',
+        type,
         title: `第 ${i} 張卡片，關於近可分解性`,
         body: `內文 ${i}。`.repeat(20),
         tags: [`批次${i % 7}`, '效能'],
+        links: type === 'restatement' ? [{ rel: 'about', to: source }] : [],
       });
     }
     assert.equal(countCards(h.corpus), 200);

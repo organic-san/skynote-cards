@@ -17,15 +17,40 @@
 <aside class="drawer" id="drawer">
   <button class="drawerclose" id="drawerclose" aria-label="關閉">×</button>
 
-  <nav class="drawernav">
-    <a href="/" class="<%= it.nav === 'feed' ? 'on' : '' %>">全部</a>
-    <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">標籤</a>
-    <a href="/orphans" class="<%= it.nav === 'orphans' ? 'on' : '' %>">碎片</a>
+  <%/* 站名是標題，不是連結——回首頁那件事由下面第一列負責，
+       因為手會先落在那裡。 */%>
+  <p class="drawerbrand">Skynote</p>
+
+  <%
+    /* 一列要嘛前面帶圖示、要嘛後面帶數字，不會兩者都有。
+       帶數字的是四份待辦清單，帶圖示的是去處與動作。 */
+    const lists = it.lists || [];
+  %>
+  <nav class="drawernav drawertop">
+    <a href="/" class="<%= it.nav === 'feed' ? 'on' : '' %>">
+      <%~ include('icon', { name: 'home' }) %><span>首頁</span>
+    </a>
   </nav>
 
-  <form class="drawersearch" action="/search" method="get" role="search">
-    <input type="search" name="q" value="<%= it.q || '' %>" placeholder="搜尋" autocomplete="off">
-  </form>
+  <nav class="drawerwork">
+    <% lists.forEach(function (l) { %>
+    <a href="<%= l.href %>" class="<%= it.nav === l.nav ? 'on' : '' %>">
+      <span class="wname"><%= l.name %></span><span class="wcount"><%= l.count %></span>
+    </a>
+    <% }) %>
+  </nav>
+
+  <nav class="drawernav">
+    <a class="draweraction" href="/new?type=original">
+      <%~ include('icon', { name: 'plus' }) %><span>追加外部資料</span>
+    </a>
+    <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">
+      <%~ include('icon', { name: 'tag' }) %><span>標籤</span>
+    </a>
+    <a href="/search" class="<%= it.nav === 'search' ? 'on' : '' %>">
+      <%~ include('icon', { name: 'search' }) %><span>搜尋</span>
+    </a>
+  </nav>
 
   <div class="recent">
     <ul>
@@ -34,8 +59,6 @@
       <% }) %>
     </ul>
   </div>
-
-  <a class="drawernew" href="/new">＋ 建立卡片</a>
 </aside>
 
 <main>
@@ -43,17 +66,32 @@
 </main>
 
 <% if (it.fab) { %>
-<%
-  const replyTo = it.fab.to || '';
-  const types = replyTo ? ['restatement', 'thinking'] : ['original', 'restatement', 'thinking'];
-  const suffix = replyTo ? '&to=' + replyTo : '';
-%>
 <button class="fab" id="fab" aria-label="新增" aria-expanded="false">＋</button>
-<div class="typemenu" id="typemenu" hidden>
-  <% types.forEach(function (t) { %>
-  <a class="typemenu-item" href="/new?type=<%= t %><%= suffix %>">add <%= t %></a>
+
+<% if (it.fab.actions) { %>
+<%/* 卡片頁：選單裡有哪些按鈕由這張卡的型別決定，每一顆都預填好
+      新卡的型別與那條連結，不需要知道規則存在。 */%>
+<div class="fabmenu" id="fabmenu" hidden>
+  <%/* 順序由 CARD_ACTIONS 排定，不在這裡分組。 */%>
+  <% it.fab.actions.forEach(function (a) { %>
+  <a class="fabmenu-item" href="<%= a.href %>">
+    <%~ include('icon', { name: a.rel }) %><span><%= a.label %></span>
+  </a>
   <% }) %>
 </div>
+<% } else { %>
+<%/* 其他地方：隨手記。兩個欄位加一個送出鍵，沒有型別選單。
+      不填標題就是碎片——那個判斷你在寫的時候本來就會做。 */%>
+<div class="quick" id="fabmenu" hidden>
+  <form method="post" action="/quick">
+    <%/* 先寫那句話，標題擺後面。你總是先有東西要記，
+         「要不要給它一個名字」是寫完之後才做的判斷——欄位的順序照著那個順序。 */%>
+    <textarea name="body" rows="5" spellcheck="false" placeholder="現在想到什麼" autofocus></textarea>
+    <input type="text" name="title" autocomplete="off" placeholder="標題（可不填）">
+    <button type="submit" class="primary">記下來</button>
+  </form>
+</div>
+<% } %>
 <% } %>
 
 <script src="/static/app.js" defer></script>

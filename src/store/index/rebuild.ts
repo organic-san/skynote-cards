@@ -1,8 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Card } from '../../domain/types.ts';
+import type { Card, CardType } from '../../domain/types.ts';
 import { CardParseError, parseCard } from '../../domain/card.ts';
 import { compareIds } from '../../domain/id.ts';
+import {
+  checkFleetingHasNoLinks,
+  checkRelMatrix,
+  checkRestatementHasSource,
+} from '../../domain/rules.ts';
 import { cardsDir, listCardIds } from '../files.ts';
 import { openDb, segmentCjk } from './schema.ts';
 
@@ -13,11 +18,25 @@ export interface BadLink {
   reason: 'missing' | 'order';
 }
 
+/**
+ * R4：規則改動不追溯既有卡片。
+ *
+ * 違反現行規則的舊卡片列入**警告**，不視為錯誤，不阻斷重建，也不會從
+ * 系統裡消失。這跟 `failures` 是兩件事：failures 是連 frontmatter 都解析
+ * 不出來的檔案，那些卡片是真的不見了；warnings 的卡片好端端地在，
+ * 只是照今天的規則不會被建立出來。
+ */
+export interface RuleWarning {
+  card_id: string;
+  message: string;
+}
+
 export interface ReindexReport {
   files: number;
   indexed: number;
   failures: { file: string; error: string }[];
   bad_links: BadLink[];
+  warnings: RuleWarning[];
   duration_ms: number;
 }
 
@@ -39,6 +58,7 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
     indexed: 0,
     failures: [],
     bad_links: [],
+    warnings: [],
     duration_ms: 0,
   };
 
@@ -47,6 +67,8 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
   const dir = cardsDir(corpusPath);
   const known = new Set(ids);
   const cards: Card[] = [];
+  /** 解析成功的卡片的型別，R1 與 R3 判斷目標型別時要用。 */
+  const types = new Map<string, CardType>();
 
   for (const id of ids) {
     const file = path.join(dir, `${id}.md`);
@@ -56,6 +78,7 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
         throw new CardParseError(`frontmatter 的 id (${card.id}) 與檔名 (${id}) 不符`);
       }
       cards.push(card);
+      types.set(card.id, card.type);
     } catch (err) {
       // 單一檔案壞掉不中斷整體流程。
       report.failures.push({
@@ -68,8 +91,9 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
   const insert = fresh.transaction((list: Card[]) => {
     const insCard = fresh.prepare(
       `INSERT INTO cards
-         (id, type, created, title, url, provenance, revised, body, link_count, tag_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, type, created, title, url, provenance, source_author, source_date,
+          revised, body, link_count, tag_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const insTag = fresh.prepare('INSERT INTO tags (card_id, tag) VALUES (?, ?)');
     const insLink = fresh.prepare(
@@ -84,6 +108,8 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
         c.title,
         c.url,
         c.provenance,
+        c.source_author,
+        c.source_date,
         c.revised,
         c.body,
         c.links.length,
@@ -125,6 +151,18 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
         });
       }
     }
+  }
+
+  // R4 的警告清單。跑的是**現行**規則，所以規則一放寬，同一批卡就自動
+  // 從清單上消失——不需要為既有資料做任何遷移，這正是 R4 買到的東西。
+  const typeOf = (id: string): CardType | null => types.get(id) ?? null;
+  for (const c of cards) {
+    const messages = [
+      ...checkFleetingHasNoLinks(c.type, c.links.length),
+      ...checkRestatementHasSource(c.type, c.links, typeOf),
+      ...checkRelMatrix(c.type, c.links, typeOf),
+    ];
+    for (const message of messages) report.warnings.push({ card_id: c.id, message });
   }
 
   fresh.close();

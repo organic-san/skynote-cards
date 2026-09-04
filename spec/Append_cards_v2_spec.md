@@ -203,18 +203,21 @@ Skynote          ← 點這個回首頁（即「最近」）
 | 當前卡片 | 按鈕 | 建立什麼 | 預填的連結 |
 |---|---|---|---|
 | `original` | 節錄 | `original` | `part-of` → 本卡 |
-| `original` | 更新 | `original` | `updates` → 本卡 |
-| `original` | 重組織 | `restatement` | `about` → 本卡（滿足 R1） |
+| `original` | 重新描述 | `restatement` | `about` → 本卡（滿足 R1） |
 | `original` | 發想 | `thinking` | `about` → 本卡 |
+| `original` | 更新 | `original` | `updates` → 本卡 |
+|---|---|---|---|
 | `restatement` | 發想 | `thinking` | `about` → 本卡 |
+| `restatement` | 牴觸的發想 | `thinking` | `contradicts` → 本卡 |
 | `restatement` | 引證 | `thinking` | `supports` → 本卡 |
-| `restatement` | 牴觸 | `thinking` | `contradicts` → 本卡 |
 | `restatement` | 更新 | `restatement` | `updates` → 本卡 |
+|---|---|---|---|
 | `thinking` | 發想 | `thinking` | `related` → 本卡 |
-| `thinking` | 延伸 | `thinking` | `supports` → 本卡 |
+| `thinking` | 牴觸的發想 | `thinking` | `contradicts` → 本卡 |
+| `thinking` | 進一步論述 | `thinking` | `supports` → 本卡 |
 | `thinking` | 反駁 | `thinking` | `refutes` → 本卡 |
-| `thinking` | 牴觸 | `thinking` | `contradicts` → 本卡 |
 | `thinking` | 更新 | `thinking` | `updates` → 本卡 |
+|---|---|---|---|
 | `fleeting` | 完整化 | `thinking` | `updates` → 本卡，**內文預填本卡的文字** |
 | `fleeting` | 反駁 | `thinking` | `refutes` → 本卡 |
 | `fleeting` | 發想 | `thinking` | `related` → 本卡 |

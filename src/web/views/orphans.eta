@@ -1,1 +1,0 @@
-<%~ include('cardlist', { items: it.items, empty: '沒有卡片碎片。' }) %>

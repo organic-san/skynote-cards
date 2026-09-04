@@ -1,4 +1,5 @@
-import type { Card, CardDraft } from '../domain/types.ts';
+import type { Card, CardDraft, CardType } from '../domain/types.ts';
+import { isCardType } from '../domain/types.ts';
 import { fileExistsTaken, generateId } from '../domain/id.ts';
 import {
   LOCKED_MESSAGE,
@@ -39,6 +40,7 @@ export type UpdateResult =
 export function createCard(deps: CardServiceDeps, draft: CardDraft): CreateResult {
   const checked = validateDraft(draft, {
     cardExists: (id) => cardExists(deps.corpusPath, id),
+    typeOf: (id) => cardTypeOf(deps, id),
   });
   if (!checked.value) return { ok: false, errors: checked.errors };
 
@@ -55,6 +57,8 @@ export function createCard(deps: CardServiceDeps, draft: CardDraft): CreateResul
     tags: checked.value.tags,
     url: checked.value.url,
     provenance: checked.value.provenance,
+    source_author: checked.value.source_author,
+    source_date: checked.value.source_date,
     revised: null,
     links: checked.value.links,
     body: draft.body.replace(/\r\n/g, '\n'),
@@ -135,4 +139,13 @@ function persist(deps: CardServiceDeps, card: Card, action: 'add' | 'edit'): voi
     );
   }
   deps.git.commitCard(card.id, action);
+}
+
+/**
+ * 索引裡的 type 是 TEXT——它是投影，必須容得下壞資料，所以型別刻意鬆散。
+ * 規則那一層要的是收窄過的 CardType，收窄只在這裡做一次。
+ */
+function cardTypeOf(deps: CardServiceDeps, id: string): CardType | null {
+  const t = deps.index.typeOf(id);
+  return isCardType(t) ? t : null;
 }

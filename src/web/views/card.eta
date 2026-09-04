@@ -1,20 +1,25 @@
+<% if (it.from) { %>
+<p class="fromsource">已從 <a href="/c/<%= it.from.id %>"><%= it.from.title %></a> 建立</p>
+<% } else { %>
 <p class="back"><a href="/">←</a></p>
+<% } %>
 
 <% if (it.upstream.length) { %>
+<%/* 計數緊貼著卡片，箭頭才指得對：↑ 在上游那一疊的**下緣**，
+     指的是「往上是這些」。放在最頂端的話，箭頭指向的是頁面外面。 */%>
 <section class="stream up">
-  <p class="streamcount">↑ <%= it.upstream_count %></p>
   <%~ include('thread', { nodes: it.upstream }) %>
+  <p class="streamcount">↑ <%= it.upstream_count %></p>
 </section>
 <% } %>
 
 <article class="card<%= it.upstream.length ? ' has-up' : '' %><%= it.downstream.length ? ' has-down' : '' %>">
   <h1><%= it.card.title %></h1>
   <p class="cardmeta">
-    <span class="rtype"><%= it.card.type %></span>
+    <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
     <time><%= it.created_display %></time>
     <% if (it.revised_display) { %><span>改於 <%= it.revised_display %></span><% } %>
     <% if (it.provenance) { %><span><%= it.provenance %></span><% } %>
-    <% if (it.lock_at) { %><span class="lock" id="lock" data-until="<%= it.lock_at %>"></span><% } %>
   </p>
 
   <% if (it.card.tags.length) { %>
@@ -41,8 +46,6 @@
 
   <div class="body"><%~ it.body_html %></div>
 
-  <% if (it.w1) { %><p class="warn"><%= it.w1_message %></p><% } %>
-
   <% if (it.editable) { %>
   <p class="actions"><a href="/c/<%= it.card.id %>/edit">編輯</a></p>
   <% } %>
@@ -50,7 +53,7 @@
 
 <% if (it.downstream.length) { %>
 <section class="stream down">
-  <%~ include('thread', { nodes: it.downstream }) %>
   <p class="streamcount">↓ <%= it.downstream_count %></p>
+  <%~ include('thread', { nodes: it.downstream }) %>
 </section>
 <% } %>

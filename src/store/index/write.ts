@@ -14,8 +14,9 @@ export function putCard(idx: IndexDb, card: Card): void {
 
     idx.s(
         `INSERT INTO cards
-           (id, type, created, title, url, provenance, revised, body, link_count, tag_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, type, created, title, url, provenance, source_author, source_date,
+            revised, body, link_count, tag_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         c.id,
@@ -24,6 +25,8 @@ export function putCard(idx: IndexDb, card: Card): void {
         c.title,
         c.url,
         c.provenance,
+        c.source_author,
+        c.source_date,
         c.revised,
         c.body,
         c.links.length,

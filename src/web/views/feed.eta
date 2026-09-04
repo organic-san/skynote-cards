@@ -1,13 +1,13 @@
 <div class="filters">
   <a href="/" class="<%= !it.type ? 'on' : '' %>">全部</a>
   <% it.types.forEach(function (t) { %>
-  <a href="/?type=<%= t %><%= it.tagQuery %>" class="<%= it.type === t ? 'on' : '' %>"><%= t %></a>
+  <a href="/?type=<%= t.value %><%= it.tagQuery %>" class="<%= it.type === t.value ? 'on' : '' %>"><%= t.label %></a>
   <% }) %>
   <% if (it.tag) { %><span class="filtertag">#<%= it.tag %></span><% } %>
   <span class="filtercount"><%= it.total %></span>
 </div>
 
-<%~ include('cardlist', { items: it.items, empty: '還沒有卡片。' }) %>
+<%~ include('cardlist', { items: it.items, empty: '沒有卡片。' }) %>
 
 <% if (it.pages > 1) { %>
 <nav class="pager">

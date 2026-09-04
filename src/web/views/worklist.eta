@@ -1,0 +1,2 @@
+<h1 class="listhead"><%= it.heading %><span class="listcount"><%= it.count %></span></h1>
+<%~ include('cardlist', { items: it.items, empty: it.empty }) %>

@@ -1,4 +1,4 @@
-// 左側選單、新增鈕的類型選單、以及卡片還剩多久鎖定。
+// 左側選單、右下的按鈕（隨手記或動作選單）、以及卡片還剩多久鎖定。
 
 (function () {
   var drawer = document.getElementById('drawer');
@@ -17,23 +17,29 @@
   var drawerclose = document.getElementById('drawerclose');
   if (drawerclose) drawerclose.addEventListener('click', function () { setDrawer(false); });
 
+  // 右下的按鈕在卡片頁是動作選單，在其他地方是隨手記——
+  // 兩者的開關方式一樣，所以共用同一個 id。
   var fab = document.getElementById('fab');
-  var typemenu = document.getElementById('typemenu');
+  var fabmenu = document.getElementById('fabmenu');
 
   function setMenu(open) {
-    if (!typemenu) return;
-    typemenu.hidden = !open;
+    if (!fabmenu) return;
+    fabmenu.hidden = !open;
     if (fab) fab.setAttribute('aria-expanded', String(open));
+    if (open) {
+      var first = fabmenu.querySelector('input, textarea');
+      if (first) first.focus();
+    }
   }
 
   if (fab) {
     fab.addEventListener('click', function (ev) {
       ev.stopPropagation();
-      setMenu(typemenu.hidden);
+      setMenu(fabmenu.hidden);
     });
   }
   document.addEventListener('click', function (ev) {
-    if (typemenu && !typemenu.hidden && !typemenu.contains(ev.target)) setMenu(false);
+    if (fabmenu && !fabmenu.hidden && !fabmenu.contains(ev.target)) setMenu(false);
   });
 
   document.addEventListener('keydown', function (ev) {

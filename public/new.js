@@ -9,21 +9,92 @@
   var addlink = document.getElementById('addlink');
   var body = form.querySelector('textarea[name=body]');
 
-  // ---------------------------------------------------------------- provenance
+  // ---------------------------------------------------------------- 依型別分歧
 
-  // provenance 只對 original 有意義。關掉的 select 不會被送出，
-  // 所以這一步同時也是在保證別的類型不會夾帶這個欄位。
-  function syncProvenance() {
-    var field = document.getElementById('provfield');
-    if (!field) return;
-    var picked = form.querySelector('input[name=type]:checked');
-    var on = !!picked && picked.value === 'original';
-    field.classList.toggle('off', !on);
-    field.querySelector('select').disabled = !on;
+  // 哪一型顯示哪些欄位，是伺服器那張表送過來的，不在這裡再寫一次。
+  // 關掉的欄位一律 disabled：既不會被送出，隱藏的必填欄位也不會擋住送出。
+  var SPECS = JSON.parse(form.dataset.specs || '{}');
+  var RELS = JSON.parse(form.dataset.rels || '{}');
+
+  var FIELDS = {
+    singlefield: function (s) { return s.single; },
+    titlefield: function (s) { return !s.single; },
+    bodyfield: function (s) { return !s.single; },
+    tagsfield: function (s) { return !s.single; },
+    urlfield: function (s) { return s.url; },
+    sourcefields: function (s) { return s.source; },
+    provfield: function (s) { return s.source; },
+    linksfield: function (s) { return s.links; }
+  };
+
+  // 型別可能是一組 radio，也可能是一個 hidden input（由入口決定、鎖住的時候）。
+  // form.elements 兩種都認得：RadioNodeList 的 value 是被選中的那個，
+  // 單一 input 的 value 就是它自己。用 ':checked' 找會在鎖住時整個瞎掉。
+  function currentType() {
+    var el = form.elements.type;
+    return el && typeof el.value === 'string' ? el.value : '';
+  }
+
+  function syncType() {
+    // 沒選型別時什麼都不開——這一組要跟伺服器的 formSpec() 退回值一致。
+    var spec = SPECS[currentType()] || { single: false, url: false, source: false, links: false };
+    var hint = document.getElementById('linkshint');
+    if (hint) hint.classList.toggle('off', spec.links);
+    Object.keys(FIELDS).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var on = FIELDS[id](spec);
+      el.classList.toggle('off', !on);
+      Array.prototype.forEach.call(el.querySelectorAll('input, textarea, select'), function (c) {
+        c.disabled = !on;
+        // 標題與那句話互為替身：開著的那一個才是必填的。
+        if (c.name === 'title' || c.name === 'quick_body') c.required = on;
+      });
+    });
+    syncRelOptions(spec);
+  }
+
+  // rel 的選項收窄兩次：先依「新卡的型別」，目標已知時再依「目標的型別」。
+  // 列不出來的組合按下去只會被規則擋掉，而被擋的當下使用者看不出為什麼——
+  // 所以乾脆不列。這是硬性規則能不刺人的前提。
+  function optionsFor(row) {
+    var all = RELS[currentType()] || [];
+    var input = row.querySelector('.linkto');
+    var targetType = input ? input.dataset.targetType : '';
+    if (!targetType) return all;
+    var narrowed = all.filter(function (o) { return o.targets.indexOf(targetType) !== -1; });
+    // 目標型別認不得就退回整組，寧可多列也不要給一個空選單。
+    return narrowed.length > 0 ? narrowed : all;
+  }
+
+  function paintRow(row) {
+    var sel = row.querySelector('select[name=link_rel]');
+    if (!sel) return;
+    var options = optionsFor(row);
+    if (options.length === 0) return;
+
+    var keep = sel.value;
+    sel.textContent = '';
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      sel.appendChild(opt);
+    });
+    // 換了型別或換了參照對象之後，原本那條關係可能不再合法，
+    // 落回第一個仍然合法的——表單任何時候都停在規則之內。
+    sel.value = options.some(function (o) { return o.value === keep; }) ? keep : options[0].value;
+    row.className = 'linkrow rel-' + sel.value;
+  }
+
+  function syncRelOptions(spec) {
+    if (!spec.links) return;
+    if ((RELS[currentType()] || []).length === 0) return;
+    Array.prototype.forEach.call(form.querySelectorAll('.linkrow'), paintRow);
   }
 
   form.addEventListener('change', function (ev) {
-    if (ev.target.name === 'type') syncProvenance();
+    if (ev.target.name === 'type') syncType();
     if (ev.target.name === 'link_rel') {
       ev.target.closest('.linkrow').className = 'linkrow rel-' + ev.target.value;
     }
@@ -51,6 +122,7 @@
   if (addlink) {
     addlink.addEventListener('click', function () {
       rows.appendChild(tpl.content.cloneNode(true));
+      paintRow(rows.lastElementChild);
       var inputs = rows.querySelectorAll('.linkto');
       inputs[inputs.length - 1].focus();
     });
@@ -74,9 +146,12 @@
       b.appendChild(meta);
       b.addEventListener('click', function () {
         input.value = r.id;
+        // 換了參照對象，這一列可用的關係就跟著換——目標的型別決定了一半的規則。
+        input.dataset.targetType = r.type || '';
         var name = input.parentNode.querySelector('.linkname');
         if (name) name.textContent = r.title;
         closePicker(picker);
+        paintRow(input.closest('.linkrow'));
       });
       picker.appendChild(b);
     });
@@ -91,6 +166,13 @@
       if (!input.classList || !input.classList.contains('linkto')) return;
       var picker = input.parentNode.querySelector('.picker');
       var q = input.value.trim();
+
+      // 手打或貼上的 ID 不知道型別，先前那個目標的型別不再算數。
+      // 認不得就退回整組選項，由伺服器擋——總比列一組錯的好。
+      if (input.dataset.targetType) {
+        input.dataset.targetType = '';
+        paintRow(input.closest('.linkrow'));
+      }
 
       clearTimeout(timers.get(input));
       if (q === '' || /^[0-9]{8,}$/.test(q)) { closePicker(picker); return; }
@@ -221,6 +303,6 @@
     });
   }
 
-  syncProvenance();
+  syncType();
   grow();
 })();

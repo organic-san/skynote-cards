@@ -4,7 +4,7 @@
 <section class="pane pane-source" id="sourcepane">
   <div class="sourcebody">
     <p class="cardmeta">
-      <span class="rtype"><%= it.source.type %></span>
+      <span class="rtype rtype-<%= it.source.type %>"><%= it.source.typeLabel %></span>
       <time><%= it.source.date %></time>
       <% if (it.source.provenance) { %><span><%= it.source.provenance %></span><% } %>
       <a class="sourceopen" href="/c/<%= it.source.id %>">開啟</a>
@@ -32,37 +32,70 @@
 </ul>
 <% } %>
 
-<form method="post" action="/new" class="newform" id="newform">
+<form method="post" action="/new" class="newform" id="newform"
+      data-specs='<%= JSON.stringify(it.specs) %>' data-rels='<%= JSON.stringify(it.relTable) %>'>
   <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
 
+  <% if (it.locked) { %>
+  <%/* 型別是入口決定的。那些入口同時預填了型別與連結，改了型別就會讓
+       預填的關係不合法，所以這裡只陳述事實，不給選擇。 */%>
+  <p class="typefixed">
+    <span class="rtype rtype-<%= it.values.type %>"><%= it.typeLabel %></span>
+  </p>
+  <input type="hidden" name="type" value="<%= it.values.type %>">
+  <% } else { %>
   <div class="typepick">
     <% it.types.forEach(function (t) { %>
     <label class="typebtn">
-      <input type="radio" name="type" value="<%= t %>" required <%= it.values.type === t ? 'checked' : '' %>>
-      <span><%= t %></span>
+      <input type="radio" name="type" value="<%= t.value %>" required <%= it.values.type === t.value ? 'checked' : '' %>>
+      <span><%= t.label %></span>
     </label>
     <% }) %>
   </div>
+  <% } %>
 
-  <label class="field">
-    <span>title</span>
-    <input type="text" name="title" required autocomplete="off" value="<%= it.values.title %>">
+  <%/* 碎片只有一個大文字框，不區分標題與內文。那段話會存進 title，
+       但介面上不呈現這個區分（見 domain/card.ts 的 fleetingText）。 */%>
+  <label class="field<%= it.spec.single ? '' : ' off' %>" id="singlefield">
+    <textarea name="quick_body" rows="10" spellcheck="false" placeholder="寫下那句話"
+              <%= it.spec.single ? 'required' : 'disabled' %>><%= it.spec.single ? it.values.title : '' %></textarea>
   </label>
 
-  <label class="field">
-    <span>context</span>
+  <label class="field<%= it.spec.single ? ' off' : '' %>" id="titlefield">
+    <span>標題</span>
+    <input type="text" name="title" autocomplete="off" value="<%= it.spec.single ? '' : it.values.title %>"
+           <%= it.spec.single ? 'disabled' : 'required' %>>
+  </label>
+
+  <%/* url 對 original 是主要欄位，不藏在收合區裡。 */%>
+  <label class="field<%= it.spec.url ? '' : ' off' %>" id="urlfield">
+    <span>網址</span>
+    <input type="url" name="url" autocomplete="off" value="<%= it.values.url %>"
+           placeholder="沒有就留白">
+  </label>
+
+  <label class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
+    <span>內文</span>
     <textarea name="body" rows="14" spellcheck="false"><%= it.values.body %></textarea>
   </label>
 
-  <details class="optional">
-    <summary>more information</summary>
+  <div class="field<%= it.spec.source ? '' : ' off' %>" id="sourcefields">
+    <div class="fieldpair">
+      <label><span>作者</span>
+        <input type="text" name="source_author" autocomplete="off" value="<%= it.values.source_author %>">
+      </label>
+      <label><span>原始年份</span>
+        <input type="text" name="source_date" autocomplete="off" value="<%= it.values.source_date %>"
+               placeholder="1962">
+      </label>
+    </div>
+  </div>
+
+  <details class="optional<%= it.spec.source ? '' : ' off' %>" id="provfield">
+    <summary>來源標記</summary>
     <label class="field">
-      <span>url</span>
-      <input type="url" name="url" autocomplete="off" value="<%= it.values.url %>">
-    </label>
-    <label class="field<%= it.values.type === 'original' ? '' : ' off' %>" id="provfield">
       <span>provenance</span>
-      <select name="provenance" <%= it.values.type === 'original' ? '' : 'disabled' %>>
+      <select name="provenance" <%= it.spec.source ? '' : 'disabled' %>>
         <% it.provenances.forEach(function (p) { %>
         <option value="<%= p %>" <%= it.values.provenance === p ? 'selected' : '' %>><%= p %></option>
         <% }) %>
@@ -70,21 +103,29 @@
     </label>
   </details>
 
-  <div class="field">
-    <span class="fieldhead">link
+  <p class="fieldnote<%= it.spec.links ? ' off' : '' %>" id="linkshint">選好類型才知道可以建立哪些關係。</p>
+
+  <div class="field<%= it.spec.links ? '' : ' off' %>" id="linksfield">
+    <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>
     </span>
     <div id="linkrows">
-      <% it.links.forEach(function (l) { %>
+      <% it.links.forEach(function (l, i) { %>
+      <% const opts = it.rowRels[i] || it.rels; %>
       <div class="linkrow rel-<%= l.rel %>">
         <select name="link_rel">
-          <% it.rels.forEach(function (r) { %>
-          <option value="<%= r %>" <%= l.rel === r ? 'selected' : '' %>><%= r %></option>
+          <% opts.forEach(function (r) { %>
+          <option value="<%= r.value %>" <%= l.rel === r.value ? 'selected' : '' %>><%= r.label %></option>
           <% }) %>
         </select>
         <input type="text" name="link_to" class="linkto" autocomplete="off"
-               placeholder="ID 或標題" value="<%= l.to %>">
+               placeholder="ID 或標題" value="<%= l.to %>"
+               data-target-type="<%= l.targetType || '' %>" <%= l.fixed ? 'readonly' : '' %>>
+        <%/* 從卡片延伸出來的那一條刪不掉，只能調整關係——你是從那張卡
+             按進來的，那條連結就是這張卡存在的理由。 */%>
+        <% if (!l.fixed) { %>
         <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
+        <% } %>
         <span class="linkname"><%= l.title || '' %></span>
         <div class="picker"></div>
       </div>
@@ -92,25 +133,26 @@
     </div>
   </div>
 
-  <label class="field">
-    <span>tags</span>
+  <label class="field<%= it.spec.single ? ' off' : '' %>" id="tagsfield">
+    <span>標籤</span>
     <input type="text" name="tags" autocomplete="off" value="<%= it.values.tags %>">
   </label>
 
-  <button type="submit" class="primary">submit</button>
+  <button type="submit" class="primary">送出</button>
 </form>
 
 </section>
 </div>
 
 <template id="linkrowtpl">
-  <div class="linkrow rel-related">
+  <div class="linkrow">
     <select name="link_rel">
       <% it.rels.forEach(function (r) { %>
-      <option value="<%= r %>"<%= r === 'related' ? ' selected' : '' %>><%= r %></option>
+      <option value="<%= r.value %>"><%= r.label %></option>
       <% }) %>
     </select>
-    <input type="text" name="link_to" class="linkto" autocomplete="off" placeholder="ID 或標題">
+    <input type="text" name="link_to" class="linkto" autocomplete="off" placeholder="ID 或標題"
+           data-target-type="">
     <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
     <span class="linkname"></span>
     <div class="picker"></div>

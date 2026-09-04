@@ -52,6 +52,8 @@ export function serializeCard(card: Card): string {
   );
   lines.push(`url: ${yamlNullable(card.url)}`);
   lines.push(`provenance: ${yamlNullable(card.provenance)}`);
+  lines.push(`source_author: ${yamlNullable(card.source_author)}`);
+  lines.push(`source_date: ${yamlNullable(card.source_date)}`);
   lines.push(`revised: ${card.revised === null ? 'null' : yamlScalar(card.revised, { force: true })}`);
   if (card.links.length === 0) {
     lines.push('links: []');
@@ -132,9 +134,54 @@ export function parseCard(raw: string, fallbackId: string): Card {
     tags,
     url: asString(d.url),
     provenance: provenanceRaw,
+    source_author: asString(d.source_author),
+    source_date: asString(d.source_date),
     revised: asString(d.revised),
     links,
     body: parsed.content.replace(/^\n+/, ''),
   };
 }
 
+
+// ---------------------------------------------------------------- fleeting 的欄位反轉
+
+/**
+ * fleeting 的整段文字。
+ *
+ * 它存在 `title` 而不是 `body`——這跟「標題」的直覺相反，理由是
+ * title 是列表顯示、連結選擇器搜尋、分頁名稱、引用串標籤四處唯一的依靠：
+ * 放進 title，這四處全部自動正確，而且「title 必填非空」的既有規則
+ * 不必鬆動，資料模型一個位元都不用動。
+ *
+ * 代價是這個反轉橫跨表單、儲存、列表、完整化四層，任何一處自己去讀
+ * `card.title` 或 `card.body` 都會在某個型別上悄悄拿到空字串。
+ * 所以需要那段文字的地方一律問這裡，不要自己知道它在哪個欄位。
+ */
+export function fleetingText(card: Pick<Card, 'title'>): string {
+  return card.title;
+}
+
+/**
+ * 反過來：使用者在單一文字框裡寫的一段話 → 一張 fleeting 的欄位。
+ * 介面上不呈現 title/body 的區分，所以這個對應只在這裡出現一次。
+ */
+export function fleetingDraft(text: string): { title: string; body: string } {
+  return { title: text.trim(), body: '' };
+}
+
+/**
+ * 隨手記：兩個欄位決定一切。
+ *
+ * **不填標題就是碎片。** 這是這個系統唯一的生死線：憑空記一句話如果需要
+ * 一次型別決策，它就輸給 Discord。而「要不要給它一個名字」本來就是你在寫
+ * 的時候自然會做的判斷，不是額外的決策——所以型別從那個判斷推出來，
+ * 不另外問。
+ */
+export function quickDraft(
+  title: string,
+  body: string,
+): { type: 'fleeting' | 'thinking'; title: string; body: string } {
+  const named = title.trim();
+  if (named === '') return { type: 'fleeting', ...fleetingDraft(body) };
+  return { type: 'thinking', title: named, body };
+}

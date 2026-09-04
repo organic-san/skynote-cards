@@ -49,7 +49,8 @@ export function createApp(opts: AppOptions = {}): App {
   if (!indexExisted || index.countCards() !== countCardFiles(config.corpusPath)) {
     const report = index.rebuild();
     fastify.log.info(
-      `索引重建：${report.indexed}/${report.files} 筆，失敗 ${report.failures.length}，壞連結 ${report.bad_links.length}`,
+      `索引重建：${report.indexed}/${report.files} 筆，失敗 ${report.failures.length}，` +
+        `壞連結 ${report.bad_links.length}，規則警告 ${report.warnings.length}`,
     );
   }
 

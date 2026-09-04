@@ -6,25 +6,28 @@ import { GitBackup } from '../store/backup.ts';
 import { isValidIdFormat } from '../domain/id.ts';
 import { embedFor } from './embed.ts';
 import { renderMarkdown, renderPage, safeHref, type PageOptions } from './render.ts';
-import { decorateThread, fmtDate, fmtTime, toItem } from './present.ts';
+import {
+  FORM_SPEC_TABLE,
+  actionsFor,
+  decorateThread,
+  fmtDate,
+  fmtTime,
+  formSpec,
+  relOptions,
+  toItem,
+} from './present.ts';
 import {
   CARD_TYPES,
-  DEFAULT_REL,
   PROVENANCES,
-  REL_TYPES,
-  REPLY_TYPES,
+  TYPE_LABELS,
+  allowedTargets,
+  isCardType,
+  isRel,
   type CardDraft,
-  type CardLink,
   type CardType,
-  type Rel,
 } from '../domain/types.ts';
-import {
-  LOCKED_MESSAGE,
-  W1_MESSAGE,
-  computeW1,
-  isWithinEditWindow,
-  lockAt,
-} from '../domain/rules.ts';
+import { fleetingDraft, quickDraft } from '../domain/card.ts';
+import { LOCKED_MESSAGE, isWithinEditWindow, lockAt } from '../domain/rules.ts';
 import { createCard, updateCard, type CardServiceDeps } from '../service/cards.ts';
 import * as lists from '../service/lists.ts';
 
@@ -65,6 +68,16 @@ function splitTags(line: string): string[] {
 function normalizeDraft(body: unknown): CardDraft {
   const b = (body ?? {}) as Record<string, unknown>;
 
+  // 碎片的表單只有一個大文字框。那段話存進 title，body 留空——
+  // 欄位反轉只在 fleetingDraft 裡定義一次，這裡照著用。
+  //
+  // 只有那張表單會送 quick_body。直接照欄位送上來的（API、測試）走原路，
+  // 否則「型別是 fleeting」會被當成「一定來自那張表單」，把 title 洗掉。
+  const single =
+    b.type === 'fleeting' && b.quick_body !== undefined
+      ? fleetingDraft(String(b.quick_body))
+      : null;
+
   let tags: string[];
   if (Array.isArray(b.tags)) tags = b.tags.map((t) => String(t));
   else tags = splitTags(String(b.tags ?? ''));
@@ -83,13 +96,26 @@ function normalizeDraft(body: unknown): CardDraft {
 
   return {
     type: String(b.type ?? ''),
-    title: String(b.title ?? ''),
-    body: String(b.body ?? ''),
+    title: single ? single.title : String(b.title ?? ''),
+    body: single ? single.body : String(b.body ?? ''),
     tags,
     url: b.url === undefined || b.url === null ? null : String(b.url),
     provenance: b.provenance === undefined || b.provenance === null ? null : String(b.provenance),
+    source_author: b.source_author == null ? null : String(b.source_author),
+    source_date: b.source_date == null ? null : String(b.source_date),
     links,
   };
+}
+
+/**
+ * 建立完之後去哪裡。
+ *
+ * 一般是新卡片頁——你要確認寫出來的東西長什麼樣子。碎片沒有這個需要：
+ * 它的標題就是它的全部內容，剛才那個輸入框裡已經看過一次了。
+ */
+function afterCreate(type: string, id: string, from?: string): string {
+  if (type === 'fleeting') return '/';
+  return from ? `/c/${id}?from=${from}` : `/c/${id}`;
 }
 
 // ---------------------------------------------------------------- 路由
@@ -110,12 +136,23 @@ export function registerRoutes(
   const html = (reply: FastifyReply, body: string, code = 200) =>
     reply.code(code).type('text/html; charset=utf-8').send(body);
 
-  /** 每一頁的側欄都帶著最近的卡片，所以統一從這裡出去。 */
-  const shell = (view: string, data: Record<string, unknown>, opts: PageOptions) =>
-    renderPage(view, data, {
+  /**
+   * 每一頁的側欄都帶著工作狀態的四份清單與最近的卡片，所以統一從這裡出去。
+   * 清單的名字與去處在這裡定義一次，模板只負責 forEach。
+   */
+  const shell = (view: string, data: Record<string, unknown>, opts: PageOptions) => {
+    const n = lists.counts(index);
+    return renderPage(view, data, {
       ...opts,
+      lists: [
+        { nav: 'pending', href: '/pending', name: '待思考', count: n.pending },
+        { nav: 'loose', href: '/loose', name: '初步想法', count: n.looseThinking },
+        { nav: 'fleeting', href: '/fleeting', name: '碎片', count: n.looseFleeting },
+        { nav: 'settling', href: '/settling', name: '沉澱', count: n.settling },
+      ],
       recent: lists.recent(index).map((r) => ({ id: r.id, title: r.title })),
     });
+  };
 
   // ---- 時間逆序的卡片流
 
@@ -137,11 +174,11 @@ export function registerRoutes(
       shell(
         'feed',
         {
-          items: rows.map(toItem),
+          items: lists.decorate(index, rows).map(toItem),
           total,
           type,
           tag,
-          types: CARD_TYPES,
+          types: CARD_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })),
           tagQuery: tag ? `&tag=${encodeURIComponent(tag)}` : '',
           baseQuery,
           page,
@@ -156,7 +193,14 @@ export function registerRoutes(
 
   const newFormPage = (
     values: Record<string, string>,
-    links: { rel: string; to: string; title?: string | null }[],
+    links: {
+      rel: string;
+      to: string;
+      title?: string | null;
+      /** 目標的型別。收窄 rel 選項要用，不顯示。 */
+      targetType?: string | null;
+      fixed?: boolean;
+    }[],
     opts: { replyTo?: string; errors?: string[]; source?: CardRowWithTags | null } = {},
   ) =>
     shell(
@@ -169,6 +213,8 @@ export function registerRoutes(
           tags: '',
           url: '',
           provenance: '',
+          source_author: '',
+          source_date: '',
           ...values,
         },
         links,
@@ -178,6 +224,7 @@ export function registerRoutes(
           ? {
               id: opts.source.id,
               type: opts.source.type,
+              typeLabel: TYPE_LABELS[opts.source.type as CardType] ?? opts.source.type,
               title: opts.source.title,
               tags: opts.source.tags,
               date: fmtDate(opts.source.created),
@@ -185,21 +232,53 @@ export function registerRoutes(
               provenance: opts.source.provenance === 'default' ? null : opts.source.provenance,
             }
           : null,
-        types: opts.replyTo ? REPLY_TYPES : CARD_TYPES,
-        rels: REL_TYPES,
+        types: CARD_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })),
+        // 型別由入口決定時就鎖住：那些入口同時預填了型別與那條連結，
+        // 改了型別，預填的關係多半就不再合法，表單會變成一張送不出去的表，
+        // 而畫面上看不出為什麼。只有裸的 /new 才需要選。
+        locked: (values.type ?? '') !== '',
+        typeLabel: TYPE_LABELS[(values.type ?? '') as CardType] ?? '',
+        // 每一列各自依自己的目標收窄；沒有目標的用整組。
+        rels: relOptions(values.type ?? ''),
+        rowRels: links.map((l) => relOptions(values.type ?? '', l.targetType ?? null)),
+        spec: formSpec(values.type ?? ''),
+        specs: FORM_SPEC_TABLE,
+        relTable: Object.fromEntries(CARD_TYPES.map((t) => [t, relOptions(t)])),
         provenances: PROVENANCES,
       },
-      { title: 'new', fab: false },
+      { title: '新增', fab: false },
     );
 
   app.get('/new', async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
     const target = q.to && isValidIdFormat(q.to) ? index.getCard(q.to) : null;
-    const allowed = target ? (REPLY_TYPES as readonly string[]) : (CARD_TYPES as readonly string[]);
-    const type = q.type && allowed.includes(q.type) ? q.type : '';
-    const links = target ? [{ rel: DEFAULT_REL, to: target.id, title: target.title }] : [];
+    const type = isCardType(q.type) ? q.type : '';
 
-    return html(reply, newFormPage({ type }, links, { replyTo: target?.id, source: target }));
+    // 入口把型別與 rel 都填好了，所以這裡只驗一次「這個組合合法嗎」——
+    // 而且要連目標的型別一起驗：`thinking` 能用 `refutes`，但不能指向
+    // 一份 original。不合法就退回沒有預填連結的空表單，
+    // 而不是給一張送得出去的樣子、卻一定被規則擋下來的表。
+    const rel =
+      target &&
+      isRel(q.rel) &&
+      isCardType(type) &&
+      isCardType(target.type) &&
+      (allowedTargets(type, q.rel)?.includes(target.type) ?? false)
+        ? q.rel
+        : null;
+    const links =
+      target && rel
+        ? [{ rel, to: target.id, title: target.title, targetType: target.type, fixed: true }]
+        : [];
+
+    // 完整化：把碎片那段文字帶進新卡的內文（A.5 的欄位反轉在這裡收尾）。
+    const body =
+      target && rel === 'updates' && target.type === 'fleeting' ? target.title : '';
+
+    return html(
+      reply,
+      newFormPage({ type, body }, links, { replyTo: target?.id, source: target }),
+    );
   });
 
   app.post('/new', async (req, reply) => {
@@ -221,7 +300,10 @@ export function registerRoutes(
             url: draft.url ?? '',
             provenance: draft.provenance ?? '',
           },
-          draft.links.map((l) => ({ ...l, title: index.getCard(l.to)?.title ?? null })),
+          draft.links.map((l) => {
+            const t = index.getCard(l.to);
+            return { ...l, title: t?.title ?? null, targetType: t?.type ?? null };
+          }),
           { errors, source, replyTo: source?.id },
         ),
         400,
@@ -232,10 +314,54 @@ export function registerRoutes(
     if (!result.ok) return reject(result.errors);
 
     const { id } = result.card;
+    // 送出後導向新卡片頁，頂端顯示一行「已從 ⟨來源卡標題⟩ 建立」，
+    // 讓來源可一鍵返回——建立一張卡幾乎總是為了回到剛才在看的東西。
+    //
+    // 碎片例外：它的標題就是它的全部內容，跳過去只是把同一句話再讀一次。
+    // 回首頁反而讓「連著記三句」變順。
+    const location = afterCreate(result.card.type, id, source?.id);
     if (wantsJson(req)) {
-      return reply.code(302).header('location', `/c/${id}`).send({ ok: true, id });
+      return reply.code(302).header('location', location).send({ ok: true, id });
     }
-    return reply.code(302).header('location', `/c/${id}`).send();
+    return reply.code(302).header('location', location).send();
+  });
+
+  /**
+   * 右下浮動按鈕：隨手記。
+   *
+   * 兩個欄位加一個送出鍵，沒有型別選單、沒有標籤、沒有連結。
+   * 型別由標題決定（見 quickDraft）。這條路徑刻意跟 /new 分開——
+   * 把外面的東西收進來，和把腦袋裡的東西倒出來，是截然不同的兩種動機，
+   * 共用一顆按鈕會讓兩邊都變鈍。
+   */
+  app.post('/quick', async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const picked = quickDraft(String(b.title ?? ''), String(b.body ?? ''));
+
+    const result = createCard(cards, {
+      ...picked,
+      tags: [],
+      url: null,
+      provenance: null,
+      source_author: null,
+      source_date: null,
+      links: [],
+    });
+
+    if (!result.ok) {
+      if (wantsJson(req)) return reply.code(400).send({ ok: false, errors: result.errors });
+      return html(
+        reply,
+        shell('message', { message: result.errors.join('；') }, { title: '沒寫成' }),
+        400,
+      );
+    }
+    const { id } = result.card;
+    const location = afterCreate(result.card.type, id);
+    if (wantsJson(req)) {
+      return reply.code(302).header('location', location).send({ ok: true, id });
+    }
+    return reply.code(302).header('location', location).send();
   });
 
   // ---- 檢視
@@ -247,8 +373,8 @@ export function registerRoutes(
     if (!card) return reply.callNotFound();
 
     const out = index.outLinks(id);
-    const targetTypes = new Map(out.map((l) => [l.id, l.type]));
-    const links: CardLink[] = out.map((l) => ({ rel: l.rel as Rel, to: l.id }));
+    const fromId = (req.query as Record<string, string | undefined>).from;
+    const from = fromId && isValidIdFormat(fromId) ? index.getCard(fromId) : null;
 
     return html(
       reply,
@@ -263,15 +389,15 @@ export function registerRoutes(
           url_href: safeHref(card.url),
           embed: embedFor(card.url),
           body_html: renderMarkdown(card.body),
-          upstream: decorateThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN),
-          downstream: decorateThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN),
+          upstream: decorateThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out'),
+          downstream: decorateThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in'),
           upstream_count: out.length,
           downstream_count: index.backLinks(id).length,
-          w1: computeW1(links, (t) => targetTypes.get(t) ?? null),
-          w1_message: W1_MESSAGE,
+          type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
+          from: from ? { id: from.id, title: from.title } : null,
           editable: isWithinEditWindow(card),
         },
-        { title: card.title, fab: { to: id }, activeId: id },
+        { title: card.title, fab: { actions: actionsFor(card.type, id) }, activeId: id },
       ),
     );
   });
@@ -295,6 +421,7 @@ export function registerRoutes(
         'edit',
         {
           card,
+          type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
           created_display: fmtTime(card.created),
           lock_at: lockAt(card),
           tags_line: card.tags.join(', '),
@@ -336,21 +463,68 @@ export function registerRoutes(
     html(reply, shell('tags', { tags: lists.tagCounts(index) }, { title: 'tags', nav: 'tags' })),
   );
 
-  app.get('/orphans', async (_req, reply) =>
-    html(
-      reply,
-      shell(
-        'orphans',
-        { items: lists.orphans(index).map(toItem) },
-        { title: 'orphans', nav: 'orphans' },
-      ),
-    ),
-  );
+  // ---- 工作狀態的四份清單
+
+  /**
+   * 四份清單。
+   *
+   * `empty` 陳述的是「這份清單問了什麼、答案是沒有」，用的是查詢本身的說法，
+   * 不替使用者詮釋——「沒有任何卡片指向的原始資料」是事實，
+   * 「收進來但還沒有人接手」是我在替他解讀。清單有東西的時候，
+   * 東西本身就是說明，所以那句話只在空的時候出現。
+   */
+  const WORK_LISTS = [
+    {
+      nav: 'pending',
+      path: '/pending',
+      heading: '待思考',
+      empty: '沒有任何原始資料是無人指向的。',
+      rows: () => lists.pending(index),
+    },
+    {
+      nav: 'loose',
+      path: '/loose',
+      heading: '初步想法',
+      empty: '沒有任何思考是進出皆無連結的。',
+      rows: () => lists.looseThinking(index),
+    },
+    {
+      nav: 'fleeting',
+      path: '/fleeting',
+      heading: '碎片',
+      empty: '沒有任何碎片是無人指向的。',
+      rows: () => lists.looseFleeting(index),
+    },
+    {
+      nav: 'settling',
+      path: '/settling',
+      heading: '沉澱',
+      empty: '沒有任何卡片仍在可修改時間內。',
+      rows: () => lists.settling(index),
+    },
+  ] as const;
+
+  for (const l of WORK_LISTS) {
+    app.get(l.path, async (_req, reply) => {
+      const items = lists.decorate(index, l.rows()).map(toItem);
+      return html(
+        reply,
+        shell(
+          'worklist',
+          { heading: l.heading, empty: l.empty, count: items.length, items },
+          { title: l.heading, nav: l.nav },
+        ),
+      );
+    });
+  }
 
   app.get('/search', async (req, reply) => {
     const q = String((req.query as Record<string, unknown>).q ?? '').trim();
-    const items = lists.search(index, q).map(toItem);
-    return html(reply, shell('search', { q, items }, { title: 'search', q, nav: 'search' }));
+    const items = lists.decorate(index, lists.search(index, q)).map(toItem);
+    return html(
+      reply,
+      shell('search', { q, items, searched: q !== '' }, { title: '搜尋', q, nav: 'search' }),
+    );
   });
 
   app.get('/api/search', async (req, reply) => {

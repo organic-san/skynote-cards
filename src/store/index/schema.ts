@@ -21,7 +21,7 @@ export interface IndexDb {
  * schema 改版就換這個號碼。索引只是投影，發現版本不合就整個丟掉重建，
  * 不需要也不應該寫遷移腳本。
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE cards (
@@ -31,6 +31,8 @@ CREATE TABLE cards (
   title       TEXT NOT NULL,
   url         TEXT,
   provenance  TEXT,
+  source_author TEXT,
+  source_date   TEXT,
   revised     TEXT,
   body        TEXT NOT NULL,
   link_count  INTEGER NOT NULL,

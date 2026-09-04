@@ -17,7 +17,7 @@ import { rebuildInto } from './rebuild.ts';
  */
 
 export type { CardRow, CardRowWithTags, LinkRow, ThreadNode } from './query.ts';
-export type { BadLink, ReindexReport } from './rebuild.ts';
+export type { BadLink, ReindexReport, RuleWarning } from './rebuild.ts';
 export { ftsQuery, segmentCjk, type IndexDb } from './schema.ts';
 
 import type { CardRow, CardRowWithTags, LinkRow, ThreadNode } from './query.ts';
@@ -111,16 +111,43 @@ export class CardIndex implements IndexDb {
     return q.linkTree(this, rootId, direction, maxDepth);
   }
 
-  linkTargetTypes(id: string): Map<string, string | null> {
-    return q.linkTargetTypes(this, id);
-  }
-
   tagCounts(): { tag: string; n: number }[] {
     return q.tagCounts(this);
   }
 
-  orphans(): CardRowWithTags[] {
-    return q.orphans(this);
+  // ---- 工作狀態清單
+
+  pending(): CardRowWithTags[] {
+    return q.pending(this);
+  }
+
+  looseFleeting(): CardRowWithTags[] {
+    return q.looseFleeting(this);
+  }
+
+  looseThinking(): CardRowWithTags[] {
+    return q.looseThinking(this);
+  }
+
+  settling(since: string): CardRowWithTags[] {
+    return q.settling(this, since);
+  }
+
+  listCounts(since: string): {
+    pending: number;
+    looseThinking: number;
+    looseFleeting: number;
+    settling: number;
+  } {
+    return q.listCounts(this, since);
+  }
+
+  inboundBreakdown(id: string): { total: number; restatements: number } {
+    return q.inboundBreakdown(this, id);
+  }
+
+  aboutTarget(id: string): { id: string; title: string } | null {
+    return q.aboutTarget(this, id);
   }
 
   search(query: string, limit = 50): CardRowWithTags[] {

@@ -2,11 +2,25 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
-import { parseCard, serializeCard } from '../src/domain/card.ts';
+import { fleetingDraft, fleetingText, parseCard, serializeCard } from '../src/domain/card.ts';
+import { readCard } from '../src/store/files.ts';
 import { renderMarkdown } from '../src/web/render.ts';
 import { compareIds, generateId } from '../src/domain/id.ts';
 import type { Card } from '../src/domain/types.ts';
-import { computeW1, validateDraft, validateLinkOrder } from '../src/domain/rules.ts';
+import {
+  CARD_ACTIONS,
+  CARD_TYPES,
+  REL_LABELS,
+  REL_LABELS_BACK,
+  REL_MATRIX,
+  REL_TYPES,
+  allowedTargets,
+} from '../src/domain/types.ts';
+import { eta } from '../src/web/render.ts';
+
+/** 直接把一枚圖示渲染出來，確認每條 rel 都畫得出東西。 */
+const renderIcon = (name: string): string => eta.render('icon', { name });
+import { validateDraft, validateLinkOrder } from '../src/domain/rules.ts';
 import { embedFor } from '../src/web/embed.ts';
 import { ftsQuery, segmentCjk } from '../src/store/index/index.ts';
 import { execFileSync } from 'node:child_process';
@@ -57,6 +71,8 @@ describe('卡片檔案', () => {
     tags: ['物理', '複雜系統', 'a,b'],
     url: 'https://example.com/x',
     provenance: null,
+    source_author: null,
+    source_date: null,
     revised: null,
     links: [
       { rel: 'about', to: '1234567890111111111' },
@@ -84,8 +100,101 @@ describe('卡片檔案', () => {
   });
 });
 
+describe('第四型與來源欄位', () => {
+  const fleeting: Card = {
+    id: '1234567890123456789',
+    type: 'fleeting',
+    created: '2026-09-04T10:00:00.000Z',
+    title: '隨口的一句話，整段就是它的全部內容。',
+    tags: [],
+    url: null,
+    provenance: null,
+    source_author: null,
+    source_date: null,
+    revised: null,
+    links: [],
+    body: '',
+  };
+
+  test('fleeting 序列化後再解析，內容完全相同', () => {
+    assert.deepEqual(parseCard(serializeCard(fleeting), fleeting.id), fleeting);
+  });
+
+  test('fleeting 的文字問 fleetingText，不直接讀欄位', () => {
+    assert.equal(fleetingText(fleeting), '隨口的一句話，整段就是它的全部內容。');
+    assert.deepEqual(fleetingDraft('  一句話  '), { title: '一句話', body: '' });
+  });
+
+  test('source_author / source_date 寫得進檔案也讀得回來', () => {
+    const card: Card = {
+      ...fleeting,
+      type: 'original',
+      title: '近可分解系統',
+      source_author: 'Herbert A. Simon',
+      source_date: '1962',
+      body: '內文。\n',
+    };
+    const text = serializeCard(card);
+    assert.ok(text.includes('source_author: Herbert A. Simon'));
+    assert.ok(text.includes('source_date: "1962"'), '純數字的年份要帶引號，否則會被讀成數字');
+    assert.deepEqual(parseCard(text, card.id), card);
+  });
+
+  test('來源欄位是 original 專屬，其他型別送了也不寫進卡片', () => {
+    const deps = {
+      cardExists: (id: string) => id === '100',
+      typeOf: () => 'original' as const,
+    };
+    const draft = {
+      title: 't',
+      body: '',
+      tags: [],
+      url: null,
+      provenance: null,
+      source_author: 'Simon',
+      source_date: '1962',
+    };
+    const asOriginal = validateDraft({ ...draft, type: 'original', links: [] }, deps);
+    assert.equal(asOriginal.value?.source_author, 'Simon');
+    assert.equal(asOriginal.value?.source_date, '1962');
+
+    // 每一型都帶著自己合法的連結，才驗得到來源欄位那一段。
+    const links: Record<string, { rel: string; to: string }[]> = {
+      restatement: [{ rel: 'about', to: '100' }], // R1
+      thinking: [],
+      fleeting: [], // R2
+    };
+    for (const [type, ls] of Object.entries(links)) {
+      const r = validateDraft({ ...draft, type, links: ls }, deps);
+      assert.deepEqual(r.errors, [], `${type} 本身應該是合法的`);
+      assert.equal(r.value?.source_author, null, `${type} 不該帶 source_author`);
+      assert.equal(r.value?.source_date, null, `${type} 不該帶 source_date`);
+    }
+  });
+
+  test('part-of 在詞彙表內', () => {
+    const deps = { cardExists: (id: string) => id === '100', typeOf: () => 'original' as const };
+    const r = validateDraft(
+      {
+        type: 'original',
+        title: 't',
+        body: '',
+        tags: [],
+        url: null,
+        provenance: null,
+        source_author: null,
+        source_date: null,
+        links: [{ rel: 'part-of', to: '100' }],
+      },
+      deps,
+    );
+    assert.deepEqual(r.errors, []);
+    assert.deepEqual(r.value?.links, [{ rel: 'part-of', to: '100' }]);
+  });
+});
+
 describe('驗證規則', () => {
-  const deps = { cardExists: (id: string) => id === '100' };
+  const deps = { cardExists: (id: string) => id === '100', typeOf: () => 'original' as const };
 
   test('type 必須是三個合法值之一', () => {
     assert.match(
@@ -145,38 +254,418 @@ describe('驗證規則', () => {
   });
 });
 
-describe('W1', () => {
-  const typeOf = (id: string) => ({ o: 'original', e: 'restatement', t: 'thinking' })[id] ?? null;
+describe('型別對連結的約束', () => {
+  test('R1：重述必須有一條 about 指向原始資料', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    const t = await createCard(h, { type: 'thinking', title: '一個想法', body: 'x' });
 
-  test('沒有推翻或取代就不警告', () => {
-    assert.equal(computeW1([{ rel: 'about', to: 'o' }], typeOf), false);
+    const noLink = await postCard(h, { type: 'restatement', title: '沒有原文可對照', body: 'y' });
+    assert.equal(noLink.statusCode, 400);
+    assert.match((noLink.json() as { errors: string[] }).errors.join(), /一條 about 指向原始/);
+
+    // about 指向的必須是 original——指向一則思考不算有原文可對照。
+    const wrongTarget = await postCard(h, {
+      type: 'restatement',
+      title: '對著想法重述',
+      body: 'y',
+      links: [{ rel: 'about', to: t }],
+    });
+    assert.equal(wrongTarget.statusCode, 400);
+
+    const ok = await postCard(h, {
+      type: 'restatement',
+      title: '有原文可對照',
+      body: 'y',
+      links: [{ rel: 'about', to: o }],
+    });
+    assert.equal(ok.statusCode, 302);
   });
 
-  test('只有 refutes 本身時警告', () => {
-    assert.equal(computeW1([{ rel: 'refutes', to: 'o' }], typeOf), true);
+  test('R2：碎片不得有任何連結', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+
+    const withLink = await postCard(h, {
+      type: 'fleeting',
+      title: '一句隨口的話',
+      links: [{ rel: 'related', to: o }],
+    });
+    assert.equal(withLink.statusCode, 400);
+    // 問題是「它不該有連結」，不是那條連結哪裡不對——只報一次。
+    assert.deepEqual((withLink.json() as { errors: string[] }).errors, ['碎片不能有連結']);
+
+    const bare = await postCard(h, { type: 'fleeting', title: '一句隨口的話' });
+    assert.equal(bare.statusCode, 302);
   });
 
-  test('另外附上指向原始資料或重述的連結就不警告', () => {
-    assert.equal(computeW1([{ rel: 'refutes', to: 'o' }, { rel: 'supports', to: 'e' }], typeOf), false);
+  test('R3：rel 與目標型別都要符合矩陣', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    const t = await createCard(h, { type: 'thinking', title: '一個主張', body: 'x' });
+
+    // 這一型根本不能用這條 rel
+    const relNotAllowed = await postCard(h, {
+      type: 'original',
+      title: '原始資料不能 supports',
+      body: 'x',
+      links: [{ rel: 'supports', to: o }],
+    });
+    assert.equal(relNotAllowed.statusCode, 400);
+    assert.match((relNotAllowed.json() as { errors: string[] }).errors.join(), /不能用 supports/);
+
+    // rel 對，但目標型別不對：refutes 只能指向思考或碎片
+    const wrongTarget = await postCard(h, {
+      type: 'thinking',
+      title: '推翻一份原始資料',
+      body: 'x',
+      links: [{ rel: 'refutes', to: o }],
+    });
+    assert.equal(wrongTarget.statusCode, 400);
+    assert.match(
+      (wrongTarget.json() as { errors: string[] }).errors.join(),
+      /不能用 refutes 指向原始/,
+    );
+
+    const ok = await postCard(h, {
+      type: 'thinking',
+      title: '推翻一則思考',
+      body: 'x',
+      links: [{ rel: 'refutes', to: t }],
+    });
+    assert.equal(ok.statusCode, 302);
   });
 
-  test('附的依據若是另一張思考卡，仍然警告', () => {
-    assert.equal(computeW1([{ rel: 'updates', to: 't' }, { rel: 'related', to: 't' }], typeOf), true);
+  test('part-of 只給 original 指向 original', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '母文件', body: 'x' });
+    const excerpt = await postCard(h, {
+      type: 'original',
+      title: '節錄的那幾段',
+      body: 'x',
+      links: [{ rel: 'part-of', to: o }],
+    });
+    assert.equal(excerpt.statusCode, 302);
+
+    const fromThinking = await postCard(h, {
+      type: 'thinking',
+      title: '思考不能 part-of',
+      body: 'x',
+      links: [{ rel: 'part-of', to: o }],
+    });
+    assert.equal(fromThinking.statusCode, 400);
+  });
+
+  test('R4：違反現行規則的既有卡片列入警告，不阻斷重建也不消失', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+
+    // 直接寫一張「照今天的規則建立不出來」的卡：重述卻沒有 about。
+    // 這模擬的是規則收緊之前就存在的卡片。
+    const legacy: Card = {
+      id: String(BigInt(o) + 1n),
+      type: 'restatement',
+      created: new Date().toISOString(),
+      title: '規則收緊前就存在的重述',
+      tags: [],
+      url: null,
+      provenance: null,
+      source_author: null,
+      source_date: null,
+      revised: null,
+      links: [],
+      body: '內容還在。',
+    };
+    fs.writeFileSync(
+      path.join(h.corpus, 'cards', `${legacy.id}.md`),
+      serializeCard(legacy),
+      'utf8',
+    );
+
+    const res = await h.app.fastify.inject({ method: 'POST', url: '/_reindex' });
+    const report = res.json() as {
+      indexed: number;
+      failures: unknown[];
+      warnings: { card_id: string; message: string }[];
+    };
+
+    assert.equal(report.failures.length, 0, '規則違反不是解析失敗');
+    assert.equal(report.indexed, 2, '違反規則的卡片仍然要進索引');
+    assert.equal(report.warnings.length, 1);
+    assert.equal(report.warnings[0]?.card_id, legacy.id);
+    assert.match(report.warnings[0]?.message ?? '', /一條 about 指向原始/);
+
+    // 最要緊的一條：它沒有從系統裡消失。
+    const page = await h.app.fastify.inject(`/c/${legacy.id}`);
+    assert.equal(page.statusCode, 200);
+    assert.ok(page.body.includes('規則收緊前就存在的重述'));
+  });
+
+  test('目標不存在時只報一次，不連帶報矩陣不符', async () => {
+    const h = await fresh();
+    const res = await postCard(h, {
+      type: 'restatement',
+      title: 'x',
+      body: 'y',
+      links: [{ rel: 'about', to: '1' }],
+    });
+    assert.equal(res.statusCode, 400);
+    const errors = (res.json() as { errors: string[] }).errors;
+    assert.deepEqual(errors, ['第 1 條連結：目標不存在'], '同一個問題不該報兩次');
+  });
+});
+
+/** 側欄的「最近卡片」也列標題，所以清單的斷言只看主內容區。 */
+function main(res: { body: string }): string {
+  return res.body.slice(res.body.indexOf('<main>'), res.body.indexOf('</main>'));
+}
+
+describe('兩張表要對得上', () => {
+  test('每一顆動作按鈕產生的組合都在 rel 矩陣裡', () => {
+    for (const from of CARD_TYPES) {
+      for (const action of CARD_ACTIONS[from]) {
+        const targets = allowedTargets(action.creates, action.rel);
+        assert.ok(
+          targets !== null,
+          `${from} 的「${action.label}」：${action.creates} 不能用 ${action.rel}`,
+        );
+        assert.ok(
+          targets?.includes(from),
+          `${from} 的「${action.label}」：${action.creates} 的 ${action.rel} 不能指向 ${from}`,
+        );
+      }
+    }
+  });
+
+  test('碎片沒有任何 rel，所以也不會有人從它連出去', () => {
+    assert.deepEqual(REL_MATRIX.fleeting, [], 'R2：碎片不得有任何連結');
+    // 但別人可以連向它——完整化與反駁都是這樣運作的。
+    assert.ok(allowedTargets('thinking', 'updates')?.includes('fleeting'));
+    assert.ok(allowedTargets('thinking', 'refutes')?.includes('fleeting'));
+    assert.ok(!allowedTargets('thinking', 'supports')?.includes('fleeting'),
+      'supports 排除碎片：隨口的一句話不能拿來當依據');
+  });
+
+  test('矩陣裡的每一條 rel 都在詞彙表內', () => {
+    for (const from of CARD_TYPES) {
+      for (const spec of REL_MATRIX[from]) {
+        assert.ok(REL_TYPES.includes(spec.rel), `${spec.rel} 不在詞彙表內`);
+      }
+    }
+  });
+});
+
+describe('工作狀態的四份清單', () => {
+  test('待思考：沒有人指向的 original，被指向就離開', async () => {
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: '還沒人碰過', body: 'x' });
+    const b = await createCard(h, { type: 'original', title: '已經被重述過', body: 'y' });
+    await createCard(h, {
+      type: 'restatement',
+      title: '重述 b',
+      body: 'z',
+      links: [{ rel: 'about', to: b }],
+    });
+
+    const page = main(await h.app.fastify.inject('/pending'));
+    assert.ok(page.includes('還沒人碰過'));
+    assert.ok(!page.includes('已經被重述過'), '被接住的就不是待辦了');
+    assert.ok(page.includes(`/c/${a}`));
+  });
+
+  test('待思考不區分母卡與節錄：節錄一段，整篇就離開清單', async () => {
+    const h = await fresh();
+    const whole = await createCard(h, { type: 'original', title: '整篇文章', body: 'x' });
+    await createCard(h, {
+      type: 'original',
+      title: '那幾段',
+      body: 'y',
+      links: [{ rel: 'part-of', to: whole }],
+    });
+
+    const page = main(await h.app.fastify.inject('/pending'));
+    assert.ok(!page.includes('整篇文章'), '切開它代表讀過並挑出了值得的部分');
+    assert.ok(page.includes('那幾段'), '待辦責任落到那幾段上');
+  });
+
+  test('碎片：沒被撿起來用過的 fleeting', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'fleeting', title: '一句還沒用過的話' });
+    const used = await createCard(h, { type: 'fleeting', title: '已經被完整化的話' });
+    await createCard(h, {
+      type: 'thinking',
+      title: '完整化的結果',
+      body: 'x',
+      links: [{ rel: 'updates', to: used }],
+    });
+
+    const page = main(await h.app.fastify.inject('/fleeting'));
+    assert.ok(page.includes('一句還沒用過的話'));
+    assert.ok(!page.includes('已經被完整化的話'));
+  });
+
+  test('初步想法：進出皆空的 thinking，出向有連結就不算', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    await createCard(h, { type: 'thinking', title: '兩頭都懸空', body: 'y' });
+    await createCard(h, {
+      type: 'thinking',
+      title: '至少接住了原文',
+      body: 'z',
+      links: [{ rel: 'about', to: o }],
+    });
+
+    const page = main(await h.app.fastify.inject('/loose'));
+    assert.ok(page.includes('兩頭都懸空'));
+    assert.ok(!page.includes('至少接住了原文'), '它自己接住了東西，不算懸空');
+  });
+
+  test('沉澱：還改得動的卡片', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'thinking', title: '剛寫的還改得動', body: 'x' });
+    const page = main(await h.app.fastify.inject('/settling'));
+    assert.ok(page.includes('剛寫的還改得動'));
+  });
+
+  test('側欄每一項後面有數量，而且每一頁都在', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'original', title: '一篇沒人接的文章', body: 'x' });
+    await createCard(h, { type: 'fleeting', title: '一句話' });
+
+    for (const url of ['/', '/tags', '/pending']) {
+      const body = (await h.app.fastify.inject(url)).body;
+      const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+      for (const name of ['待思考', '初步想法', '碎片', '沉澱']) {
+        assert.ok(aside.includes(name), `${url} 的側欄缺少「${name}」`);
+      }
+      assert.ok(/待思考<\/span><span class="wcount">1</.test(aside), '待思考應該是 1');
+      assert.ok(/碎片<\/span><span class="wcount">1</.test(aside), '碎片應該是 1');
+    }
+  });
+});
+
+describe('每一型的列表項', () => {
+  test('original 顯示作者與年份加引用計數，不顯示內文開頭', async () => {
+    const h = await fresh();
+    const o = await createCard(h, {
+      type: 'original',
+      title: '近可分解系統',
+      body: '我的世界觀是這樣開頭的，這一段不該出現在列表上。',
+      source_author: 'Herbert A. Simon',
+      source_date: '1962',
+    });
+    await createCard(h, {
+      type: 'restatement',
+      title: '重述',
+      body: 'x',
+      links: [{ rel: 'about', to: o }],
+    });
+    await createCard(h, {
+      type: 'thinking',
+      title: '引用它',
+      body: 'y',
+      links: [{ rel: 'supports', to: o }],
+    });
+
+    const body = (await h.app.fastify.inject('/')).body;
+    // 出處放在標題之上：這張卡最要緊的事實是它從哪裡來。
+    assert.ok(body.includes('class="roweyebrow">Herbert A. Simon · 1962<'));
+    assert.ok(body.includes('1 則重述'));
+    assert.ok(!body.includes('則引用'), '引用計數已經拿掉');
+    assert.ok(!body.includes('我的世界觀'), 'original 的列表項不顯示內文開頭');
+  });
+
+  test('出處逐級退：作者年份 → 網域 → 未署名', async () => {
+    const h = await fresh();
+    await createCard(h, {
+      type: 'original',
+      title: '只有作者',
+      body: 'x',
+      source_author: 'Simon',
+    });
+    await createCard(h, {
+      type: 'original',
+      title: '只有網址',
+      body: 'x',
+      url: 'https://www.example.com/a/b',
+    });
+    await createCard(h, { type: 'original', title: '什麼都沒有', body: 'x' });
+
+    const body = (await h.app.fastify.inject('/')).body;
+    assert.ok(body.includes('class="roweyebrow">Simon<'));
+    assert.ok(body.includes('class="roweyebrow">example.com<'), 'www. 要去掉');
+    assert.ok(body.includes('class="roweyebrow">未署名<'), '這一行永遠在');
+  });
+
+  test('restatement 顯示它在講哪份原始資料', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '母文件的標題', body: 'x' });
+    await createCard(h, {
+      type: 'restatement',
+      title: '一則重述',
+      body: '重述的內文。',
+      links: [{ rel: 'about', to: o }],
+    });
+    const body = (await h.app.fastify.inject('/')).body;
+    assert.ok(body.includes('class="rowabout">母文件的標題<'));
+    assert.ok(body.includes('重述的內文'), 'restatement 要顯示內文開頭');
+  });
+
+  test('thinking 只有標題與內文，沒有連結數', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    const t = await createCard(h, {
+      type: 'thinking',
+      title: '有依據的想法',
+      body: '想法的內文。',
+      links: [{ rel: 'about', to: o }],
+    });
+    await createCard(h, {
+      type: 'thinking',
+      title: '接住它',
+      body: 'z',
+      links: [{ rel: 'supports', to: t }],
+    });
+    const body = (await h.app.fastify.inject('/')).body;
+    assert.ok(body.includes('想法的內文'));
+    // 連結數在列表上不驅動任何決定，而它正是讓每一列看起來都一樣的東西。
+    assert.ok(!body.includes('↑'), '列表上不再有連結數');
+  });
+
+  test('fleeting 不長得像一張卡，是一行字', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'fleeting', title: '隨口的一句話' });
+    const body = (await h.app.fastify.inject('/')).body;
+    const rows = body.slice(body.indexOf('class="rows"'));
+    assert.ok(rows.includes('class="rowline"'), '不套標題樣式');
+    assert.ok(!rows.includes('class="rowtitle"'));
+    assert.ok(rows.includes('隨口的一句話'));
+    assert.ok(rows.includes('>碎片<'), '型別標籤用介面上的名字');
+  });
+
+  test('型別標籤是中文，而且帶著自己的型別 class 好上色', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'original', title: 'x', body: 'y' });
+    const body = (await h.app.fastify.inject('/')).body;
+    const rows = body.slice(body.indexOf('class="rows"'));
+    assert.ok(rows.includes('rtype rtype-original'), '顏色由型別承接');
+    assert.ok(rows.includes('>原始<'));
+    assert.ok(!rows.includes('>original<'), '列表上不該出現內部型別名');
   });
 });
 
 describe('頁面與端點', () => {
-  test('建立表單有三個類型、六種 rel、以及收合的選填欄位', async () => {
+  test('建立表單有四個類型、以中文標籤呈現，來源標記維持收合', async () => {
     const h = await fresh();
     const res = await h.app.fastify.inject('/new');
     assert.equal(res.statusCode, 200);
-    for (const t of ['original', 'restatement', 'thinking']) {
+    for (const t of ['original', 'restatement', 'thinking', 'fleeting']) {
       assert.ok(res.body.includes(`value="${t}"`), `缺少類型 ${t}`);
     }
-    for (const r of ['about', 'related', 'supports', 'contradicts', 'refutes', 'updates']) {
-      assert.ok(res.body.includes(`value="${r}"`), `缺少 rel 選項 ${r}`);
+    for (const label of ['原始', '重述', '思考', '碎片']) {
+      assert.ok(res.body.includes(`<span>${label}</span>`), `缺少型別標籤 ${label}`);
     }
-    assert.ok(res.body.includes('<details'), '選填欄位應預設收合');
+    assert.ok(res.body.includes('<details'), 'provenance 維持收合');
     assert.ok(res.body.includes('/static/new.js'));
   });
 
@@ -305,7 +794,7 @@ describe('頁面與端點', () => {
     }
     const p1 = await h.app.fastify.inject('/');
     const p2 = await h.app.fastify.inject('/?page=2');
-    const count = (s: string) => (s.match(/<li class="row">/g) ?? []).length;
+    const count = (s: string) => (s.match(/<li class="row row-/g) ?? []).length;
     assert.equal(count(p1.body), 50);
     assert.equal(count(p2.body), 5);
   });
@@ -363,7 +852,7 @@ describe('介面', () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'thinking', title: '一', body: 'x' });
 
-    for (const url of ['/', '/tags', '/orphans', `/c/${id}`]) {
+    for (const url of ['/', '/tags', '/pending', '/loose', '/fleeting', '/settling', `/c/${id}`]) {
       const res = await h.app.fastify.inject(url);
       assert.ok(res.body.includes('id="drawer"'), `${url} 應有左側選單`);
       assert.ok(res.body.includes('id="fab"'), `${url} 應有新增鈕`);
@@ -385,38 +874,137 @@ describe('介面', () => {
     assert.ok(!res.body.includes('# 小標'), 'markdown 記號不該漏出來');
   });
 
-  test('從時間軸開新卡三種類型都能選', async () => {
+  test('時間軸右下是隨手記，兩個欄位加一顆送出鍵', async () => {
     const h = await fresh();
     const res = await h.app.fastify.inject('/');
-    for (const t of ['original', 'restatement', 'thinking']) {
-      assert.ok(res.body.includes(`/new?type=${t}"`), `選單缺少 ${t}`);
-    }
+    assert.ok(res.body.includes('action="/quick"'), '右下應該是隨手記');
+    assert.ok(res.body.includes('name="title"') && res.body.includes('name="body"'));
+    // 沒有型別選單、沒有標籤、沒有連結——那是這條路徑存在的理由。
+    const quick = res.body.slice(res.body.indexOf('class="quick"'));
+    assert.ok(!quick.includes('name="type"'), '隨手記不該有型別選擇');
+    assert.ok(!quick.includes('name="tags"'), '隨手記不該有標籤');
+    assert.ok(!quick.includes('name="link_rel"'), '隨手記不該有連結');
   });
 
-  test('從卡片開新卡不給 original，且預先連上那張卡', async () => {
+  test('隨手記：不填標題就是碎片，填了就是思考', async () => {
+    const h = await fresh();
+    const post = async (payload: Record<string, string>) => {
+      const res = await h.app.fastify.inject({
+        method: 'POST',
+        url: '/quick',
+        payload,
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+      });
+      assert.equal(res.statusCode, 302);
+      return (res.json() as { id: string }).id;
+    };
+
+    const bare = await post({ title: '', body: '一句隨口的話。' });
+    const named = await post({ title: '一個主張', body: '主張的內容。' });
+
+    const asFleeting = readCard(h.corpus, bare);
+    assert.equal(asFleeting.type, 'fleeting');
+    assert.equal(fleetingText(asFleeting), '一句隨口的話。');
+    assert.equal(asFleeting.body, '', '碎片的整段文字存在 title，body 留空');
+
+    const asThinking = readCard(h.corpus, named);
+    assert.equal(asThinking.type, 'thinking');
+    assert.equal(asThinking.title, '一個主張');
+    // 卡片檔案一律以換行結尾，所以讀回來的內文帶著它。
+    assert.equal(asThinking.body, '主張的內容。\n');
+  });
+
+  test('側欄的「追加外部資料」直接開 original 的表單', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+    assert.ok(aside.includes('追加外部資料'));
+    assert.ok(aside.includes('/new?type=original'));
+
+    // original 的表單：url 是主要欄位，不藏在收合區裡。
+    const form = (await h.app.fastify.inject('/new?type=original')).body;
+    const beforeDetails = form.slice(0, form.indexOf('<details'));
+    assert.ok(beforeDetails.includes('name="url"'), 'url 應該在收合區之前');
+    assert.ok(beforeDetails.includes('name="source_author"'));
+    assert.ok(beforeDetails.includes('name="source_date"'));
+  });
+
+  test('卡片頁的 + 選單依型別給按鈕，每顆都預填型別與關係', async () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'original', title: '被回應的原文', body: 'x' });
 
     // 屬性裡的 & 會被跳脫成 &amp;，比對前還原回來。
     const card = (await h.app.fastify.inject(`/c/${id}`)).body.replaceAll('&amp;', '&');
-    assert.ok(!card.includes(`/new?type=original&to=${id}`), '不該出現 original 選項');
-    for (const t of ['restatement', 'thinking']) {
-      assert.ok(card.includes(`/new?type=${t}&to=${id}`), `選單缺少 ${t}`);
+    for (const label of ['節錄', '重新描述', '發想', '更新']) {
+      assert.ok(card.includes(`<span>${label}</span>`), `選單缺少「${label}」`);
     }
+    assert.ok(!card.includes('fabmenu-item rel-'), '選單不再用關係色');
+    assert.ok(card.includes('icon-part-of'), '關係改由圖示表達');
+    assert.ok(card.includes(`/new?type=original&rel=part-of&to=${id}`), '節錄要預填 part-of');
+    assert.ok(card.includes(`/new?type=restatement&rel=about&to=${id}`), '重新描述要滿足 R1');
+    assert.ok(!card.includes('牴觸'), 'original 沒有牴觸');
 
-    const form = await h.app.fastify.inject(`/new?type=thinking&to=${id}`);
+    const form = await h.app.fastify.inject(`/new?type=thinking&rel=about&to=${id}`);
     assert.ok(form.body.includes(`value="${id}"`), '連結目標應預先填好');
     assert.ok(form.body.includes('被回應的原文'), '應顯示目標卡片的標題');
-    assert.ok(form.body.includes('value="thinking" required checked'), '類型應該預先選好');
-    assert.ok(!form.body.includes('value="original"'), '不該給 original 選項');
+    // 型別由入口決定，鎖住不給改——改了它，預填的關係就不再合法。
+    assert.ok(form.body.includes('<input type="hidden" name="type" value="thinking">'));
+    assert.ok(form.body.includes('class="typefixed"'));
+    assert.ok(!form.body.includes('class="typepick"'), '不該還有型別選擇器');
+    assert.ok(form.body.includes('linkrow rel-about'), '關係也應預先填好');
+    // 從卡片延伸出來的那條連結刪不掉，只能調整關係。
+    const row = form.body.slice(form.body.indexOf('linkrow rel-about'));
+    assert.ok(!row.slice(0, row.indexOf('</div>')).includes('rmlink'), '預填的連結不該能刪');
   });
 
-  test('帶著 to 又指定 original 時，退回類型選擇', async () => {
+  test('碎片的 + 選單有完整化，而且把那句話帶進新卡的內文', async () => {
     const h = await fresh();
-    const id = await createCard(h, { type: 'thinking', title: '目標', body: 'x' });
-    const form = await h.app.fastify.inject(`/new?type=original&to=${id}`);
-    assert.ok(!form.body.includes('required checked'), '不該替使用者選好類型');
-    assert.ok(!form.body.includes('value="original"'), '不該給 original 選項');
+    const id = await createCard(h, { type: 'fleeting', title: '一句隨口的話。' });
+    const card = (await h.app.fastify.inject(`/c/${id}`)).body.replaceAll('&amp;', '&');
+
+    assert.ok(card.includes('<span>完整化</span>'));
+    assert.ok(!card.includes('<span>進一步論述</span>'), 'supports 排除碎片');
+    // 選單的順序由 CARD_ACTIONS 排定，碎片最預期的動作（完整化）排第一。
+    const menu = card.slice(card.indexOf('class="fabmenu"'));
+    assert.ok(menu.indexOf('完整化') < menu.indexOf('反駁'));
+    assert.ok(!menu.includes('fabsep'), '分隔線已廢除');
+    assert.ok(card.includes(`/new?type=thinking&rel=updates&to=${id}`));
+
+    const form = (await h.app.fastify.inject(`/new?type=thinking&rel=updates&to=${id}`)).body;
+    assert.ok(form.includes('一句隨口的話。'), '那段文字要填進新卡的內文');
+  });
+
+  test('矩陣不允許的組合退回沒有預填連結的表單，而不是給一張送不出去的表', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    // thinking refutes original 不在矩陣裡。
+    const form = await h.app.fastify.inject(`/new?type=thinking&rel=refutes&to=${id}`);
+    assert.equal(form.statusCode, 200);
+    assert.ok(!form.body.includes('linkrow rel-refutes'));
+  });
+
+  test('送出後導向新卡片頁，頂端讓來源可一鍵返回', async () => {
+    const h = await fresh();
+    const source = await createCard(h, { type: 'original', title: '來源那張卡', body: 'x' });
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/new',
+      payload: {
+        type: 'thinking',
+        title: '從它發想的',
+        body: 'y',
+        reply_to: source,
+        link_rel: 'about',
+        link_to: source,
+      },
+    });
+    assert.equal(res.statusCode, 302);
+    const location = res.headers.location as string;
+    assert.ok(location.endsWith(`?from=${source}`), `導向應帶著來源，實得 ${location}`);
+
+    const page = (await h.app.fastify.inject(location)).body;
+    assert.ok(page.includes('已從'), '頂端要說它是從哪裡建立的');
+    assert.ok(page.includes('來源那張卡'));
   });
 
   test('引用串是多層的，重複出現的節點只展開一次', async () => {
@@ -433,7 +1021,7 @@ describe('介面', () => {
       title: 'C 同時引用 A 與 B',
       body: 'z',
       links: [
-        { rel: 'refutes', to: a },
+        { rel: 'about', to: a },
         { rel: 'supports', to: b },
       ],
     });
@@ -443,8 +1031,9 @@ describe('介面', () => {
 
     assert.ok(cited.includes('B 重述 A'), '直接引用要在');
     assert.ok(cited.includes('C 同時引用 A 與 B'), '間接引用也要在');
-    assert.ok(cited.includes('rel-about'), '縮排線要帶著關係');
-    assert.ok(cited.includes('rel-refutes'));
+    assert.ok(cited.includes('icon-about'), '關係用圖示表達');
+    assert.ok(cited.includes('icon-supports'));
+    assert.ok(cited.includes('關聯出'), '下游用「出」那一套說法');
     // C 從 refutes 那一支先展開，再從 B 底下遇到時只留一行。
     assert.ok(cited.includes('上方已展開'), '重複出現的節點要標出來');
     assert.equal(cited.split(`/c/${c}`).length - 1, 2, 'C 應該正好出現兩次');
@@ -470,6 +1059,235 @@ describe('介面', () => {
     const refs = page.slice(page.indexOf('class="stream up"'), page.indexOf('<article'));
     assert.ok(refs.includes('B 重述 A'));
     assert.ok(refs.includes('A 原文'), '依賴鏈要能一路追到底');
+  });
+});
+
+describe('記完之後去哪裡、看到什麼', () => {
+  test('碎片記完回首頁，思考跳到新卡片頁', async () => {
+    const h = await fresh();
+    const quick = async (title: string) => {
+      const res = await h.app.fastify.inject({
+        method: 'POST',
+        url: '/quick',
+        payload: { title, body: '內容。' },
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+      });
+      return res.headers.location as string;
+    };
+    // 碎片的標題就是它的全部內容，跳過去只是把同一句話再讀一次。
+    assert.equal(await quick(''), '/');
+    assert.match(await quick('一個主張'), /^\/c\/[0-9]+$/);
+  });
+
+  test('卡片頁只有時間戳記，倒數留在編輯頁', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'thinking', title: '剛寫的', body: 'x' });
+
+    const card = (await h.app.fastify.inject(`/c/${id}`)).body;
+    assert.ok(!card.includes('id="lock"'), '卡片頁是拿來讀的，不該有每秒跳一次的東西');
+    assert.ok(/<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}<\/time>/.test(card), '要有時間戳記');
+
+    const edit = (await h.app.fastify.inject(`/c/${id}/edit`)).body;
+    assert.ok(edit.includes('id="lock"'), '編輯頁在跟時間賽跑，倒數留著');
+  });
+
+  test('編輯頁的欄位名是中文', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'thinking', title: '一', body: 'x' });
+    const edit = (await h.app.fastify.inject(`/c/${id}/edit`)).body;
+    for (const label of ['標題', '內文', '標籤', '儲存']) {
+      assert.ok(edit.includes(label), `編輯頁缺少「${label}」`);
+    }
+    assert.ok(!edit.includes('>context<'), '不該再有英文欄位名');
+  });
+
+  test('清單頁只有標題與筆數，說明只在空的時候出現', async () => {
+    const h = await fresh();
+    const empty = main(await h.app.fastify.inject('/pending'));
+    assert.ok(empty.includes('沒有任何原始資料是無人指向的'), '空的時候要說剛才問了什麼');
+
+    await createCard(h, { type: 'original', title: '一篇文章', body: 'x' });
+    const filled = main(await h.app.fastify.inject('/pending'));
+    assert.ok(filled.includes('class="listcount">1<'));
+    assert.ok(!filled.includes('沒有任何原始資料'), '有東西的時候，東西本身就是說明');
+  });
+
+  test('首頁的型別篩選用中文', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    const at = body.indexOf('class="filters"');
+    const filters = body.slice(at, body.indexOf('</div>', at));
+    for (const label of ['原始', '重述', '思考', '碎片']) {
+      assert.ok(filters.includes(`>${label}</a>`), `篩選列缺少「${label}」`);
+    }
+    assert.ok(!filters.includes('>original</a>'), '不該印內部型別名');
+  });
+});
+
+describe('連結欄的關係選項', () => {
+  const js = fs.readFileSync(path.join('public', 'new.js'), 'utf8');
+
+  /** 連結列裡那個 select 的選項，依 value 取出來。 */
+  const rowOptions = (html: string): string[] => {
+    const at = html.indexOf('<div class="linkrow');
+    const row = html.slice(at, html.indexOf('</select>', at));
+    return [...row.matchAll(/<option value="([a-z-]+)"/g)].map((m) => m[1] as string);
+  };
+
+  test('選項依「新卡的型別」與「目標的型別」收窄兩次', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    const f = await createCard(h, { type: 'fleeting', title: '一句話' });
+
+    // thinking → original：能 about / supports / related，不能推翻或取代一份材料
+    const toOriginal = (await h.app.fastify.inject(`/new?type=thinking&rel=about&to=${o}`)).body;
+    assert.deepEqual(rowOptions(toOriginal).sort(), ['about', 'related', 'supports']);
+
+    // thinking → fleeting：能 refutes / updates / related，不能拿碎片當依據
+    const toFleeting = (await h.app.fastify.inject(`/new?type=thinking&rel=updates&to=${f}`)).body;
+    assert.deepEqual(rowOptions(toFleeting).sort(), ['refutes', 'related', 'updates'].sort());
+
+    assert.ok(!toOriginal.includes('<option value="part-of"'), 'thinking 不能用 part-of');
+  });
+
+  test('選項印中文名，不印內部 rel 名也不印說明', async () => {
+    const h = await fresh();
+    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
+    const form = (await h.app.fastify.inject(`/new?type=thinking&rel=about&to=${o}`)).body;
+    const at = form.indexOf('<div class="linkrow');
+    const row = form.slice(at, form.indexOf('</select>', at));
+
+    assert.ok(row.includes('>關聯自<') && row.includes('>支撐自<') && row.includes('>延伸自<'));
+    assert.ok(!row.includes('｜'), '不再有「rel｜說明」那種兩段式');
+    assert.ok(!row.includes('>about<'), '介面上不出現內部 rel 名');
+  });
+
+  test('換參照對象時，前端要把關係重算成合法的', () => {
+    // 目標的型別決定了一半的規則，所以選了新目標就得重畫那一列；
+    // 原本選的關係若不再合法，落回第一個仍然合法的。
+    assert.match(js, /dataset\.targetType = r\.type/, '選了目標要記下它的型別');
+    assert.match(js, /paintRow\(input\.closest\('\.linkrow'\)\)/, '記完要重畫那一列');
+    assert.match(js, /o\.targets\.indexOf\(targetType\)/, '要依目標型別過濾');
+  });
+
+  test('前端讀型別要用 form.elements，不能只認被選中的 radio', () => {
+    // 型別由入口決定時是一個 hidden input，':checked' 選不到它——
+    // 於是 currentType() 回空字串，關係選項被清空、url 與作者欄被關掉。
+    assert.match(js, /form\.elements\.type/, 'new.js 應該用 form.elements 讀型別');
+    assert.ok(
+      !/querySelector\('input\[name=type\]:checked'\)/.test(js),
+      "還留著 ':checked' 的寫法，鎖住型別時會整個瞎掉",
+    );
+  });
+
+  test('還沒選型別時不給空的下拉選單，而是說一句為什麼', async () => {
+    const h = await fresh();
+    const form = (await h.app.fastify.inject('/new')).body;
+    assert.ok(form.includes('id="linkshint"'), '要說明為什麼還不能加連結');
+    assert.ok(form.includes('id="linksfield" '.trim()));
+    // 連結欄關著：伺服器與前端的退回值要一致，否則載入後畫面會自己跳一下。
+    const at = form.indexOf('id="linksfield"');
+    assert.ok(form.slice(at - 40, at).includes(' off'), '沒選型別時連結欄應該關著');
+    assert.match(js, /links: false \};/, 'new.js 的退回值要跟 formSpec\(\) 一致');
+  });
+});
+
+describe('關係怎麼讀', () => {
+  test('同一條連結，兩端兩種說法，關係詞都在標題前面', async () => {
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    const b = await createCard(h, {
+      type: 'restatement',
+      title: 'B 重述 A',
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+
+    // B --about--> A。在 B 上，A 是上游：「關聯自 A」
+    const onB = (await h.app.fastify.inject(`/c/${b}`)).body;
+    const up = onB.slice(onB.indexOf('class="stream up"'), onB.indexOf('<article'));
+    assert.ok(up.includes('關聯自'), '上游用「自」那一套說法');
+    assert.ok(!up.includes('關聯出'));
+    assert.ok(
+      up.indexOf('關聯自') < up.indexOf('A 原文'),
+      '關係詞要在標題前面',
+    );
+
+    // 在 A 上，B 是下游：「關聯出 B」
+    const onA = (await h.app.fastify.inject(`/c/${a}`)).body;
+    const down = onA.slice(onA.indexOf('class="stream down"'));
+    assert.ok(down.includes('關聯出'), '下游用「出」那一套說法');
+    assert.ok(!down.includes('關聯自'));
+    assert.ok(down.indexOf('關聯出') < down.indexOf('B 重述 A'));
+  });
+
+  test('反駁的方向不能含糊：一邊反駁，另一邊被反駁', async () => {
+    const h = await fresh();
+    const t = await createCard(h, { type: 'thinking', title: '被推翻的主張', body: 'x' });
+    const r = await createCard(h, {
+      type: 'thinking',
+      title: '推翻它的那張',
+      body: 'y',
+      links: [{ rel: 'refutes', to: t }],
+    });
+
+    const onR = (await h.app.fastify.inject(`/c/${r}`)).body;
+    const up = onR.slice(onR.indexOf('class="stream up"'), onR.indexOf('<article'));
+    assert.ok(up.includes('反駁') && !up.includes('被反駁'), '這張是反駁方');
+
+    const onT = (await h.app.fastify.inject(`/c/${t}`)).body;
+    const down = onT.slice(onT.indexOf('class="stream down"'));
+    assert.ok(down.includes('被反駁'), '這張是被反駁方');
+  });
+
+  test('上游那一疊跟下游鏡像對稱，三層都翻', () => {
+    // 下游的規矩：離卡片越近的越靠近卡片、同層第一個排最前、展開鈕緊貼自己那一則。
+    // 上游要把同樣三件事整個翻過來，缺一件就會露出破綻——只翻一層的話，
+    // 展開鈕會離它自己那一則好幾行遠，同層的第一個也會變成離卡片最遠的那個。
+    const css = fs.readFileSync('public/style.css', 'utf8');
+    const at = css.indexOf('.stream.up .thread,');
+    assert.ok(at > -1, '上游的翻轉規則不見了');
+
+    const rule = css.slice(at, css.indexOf('}', at));
+    for (const sel of ['.stream.up .thread', '.stream.up .node', '.stream.up .node > details']) {
+      assert.ok(rule.includes(sel), `上游少翻了 ${sel}`);
+    }
+    assert.match(rule, /column-reverse/, '翻轉靠的是 column-reverse');
+
+    // details 一旦改成 flex，收合的內容要自己藏。
+    assert.ok(css.includes('.stream.up .node > details:not([open]) > .thread'));
+
+    // 下游不翻：它本來就是從卡片往下長的。
+    assert.ok(!/\.stream\.down[^{]*\{[^}]*column-reverse/.test(css));
+  });
+
+  test('牴觸是對稱的，兩端說法相同', () => {
+    assert.equal(REL_LABELS.contradicts, REL_LABELS_BACK.contradicts);
+    // 其餘六條都要能分辨方向，否則關係會被讀反。
+    for (const rel of REL_TYPES) {
+      if (rel === 'contradicts') continue;
+      assert.notEqual(
+        REL_LABELS[rel],
+        REL_LABELS_BACK[rel],
+        `${rel} 的兩個方向說法不該一樣`,
+      );
+    }
+  });
+
+  test('七個關係都有名字、也都有圖示', async () => {
+    const h = await fresh();
+    // 每一條 rel 都要畫得出來，否則選單上會有一格是空的。
+    const rendered = REL_TYPES.map((rel) => renderIcon(rel));
+    for (const [i, svg] of rendered.entries()) {
+      assert.ok(svg.includes('<path') || svg.includes('<rect'), `${REL_TYPES[i]} 沒有圖形`);
+    }
+    for (const rel of REL_TYPES) {
+      for (const table of [REL_LABELS, REL_LABELS_BACK]) {
+        assert.ok((table[rel] ?? '').length > 0, `${rel} 少一個方向的名字`);
+        assert.ok(!/[a-z]/.test(table[rel] ?? ''), `${rel} 的名字不該有英文`);
+      }
+    }
+    assert.ok(h);
   });
 });
 
@@ -529,13 +1347,13 @@ describe('外部 url 的內嵌', () => {
 });
 
 describe('側欄', () => {
-  test('順序是導覽、搜尋、最近卡片、建立卡片', async () => {
+  test('順序是站名、首頁、工作狀態、動作與工具、最近卡片', async () => {
     const h = await fresh();
     await createCard(h, { type: 'thinking', title: '最近寫的一張', body: 'x' });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    const order = ['drawernav', 'drawersearch', 'recent', 'drawernew'];
+    const order = ['drawerbrand', 'drawertop', 'drawerwork', 'draweraction', 'recent'];
     let at = -1;
     for (const cls of order) {
       const next = aside.indexOf(cls);
@@ -543,7 +1361,43 @@ describe('側欄', () => {
       at = next;
     }
     assert.ok(aside.includes('最近寫的一張'), '最近卡片要列在側欄');
-    assert.ok(aside.includes('建立卡片'));
+    assert.ok(!aside.includes('drawernew'), '左下不該再有建立卡片');
+  });
+
+  test('站名不可點，第一列是首頁', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+    assert.ok(aside.includes('<p class="drawerbrand">Skynote</p>'), '站名是標題不是連結');
+    const top = aside.slice(aside.indexOf('drawertop'));
+    assert.ok(top.slice(0, top.indexOf('</nav>')).includes('首頁'));
+  });
+
+  test('一列要嘛帶圖示、要嘛帶數字，不會兩者都有', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+
+    // 帶圖示的四項
+    for (const name of ['home', 'plus', 'tag', 'search']) {
+      assert.ok(aside.includes(`icon-${name}`), `側欄缺少 ${name} 圖示`);
+    }
+    // 四份待辦清單帶數字、不帶圖示
+    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('draweraction'));
+    assert.ok(work.includes('wcount'));
+    assert.ok(!work.includes('<svg'), '有數字的那一組不放圖示');
+  });
+
+  test('搜尋是一個連結，不是側欄裡的輸入框', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+    assert.ok(aside.includes('href="/search"'));
+    assert.ok(!aside.includes('drawersearch'), '側欄不再有輸入框');
+
+    const page = await h.app.fastify.inject('/search');
+    assert.equal(page.statusCode, 200);
+    assert.ok(page.body.includes('class="searchpage"'));
   });
 
   test('正在看的那張卡在側欄裡被標起來', async () => {
@@ -742,6 +1596,19 @@ describe('卡片頁的方向', () => {
     assert.ok(up < card, '上游要在內文之上');
     assert.ok(card < down, '下游要在內文之下');
     assert.ok(page.includes('↑ 1') && page.includes('↓ 1'), '方向用箭頭加數量表示');
+
+    // 計數要緊貼卡片：↑ 在上游那一疊的下緣、↓ 在下游那一疊的上緣。
+    // 放在兩端的話，箭頭指向的是頁面外面，語意會反過來。
+    const upBlock = page.slice(up, card);
+    assert.ok(
+      upBlock.indexOf('class="thread"') < upBlock.indexOf('streamcount'),
+      '↑ 應該在上游清單之後、緊貼卡片',
+    );
+    const downBlock = page.slice(down);
+    assert.ok(
+      downBlock.indexOf('streamcount') < downBlock.indexOf('class="thread"'),
+      '↓ 應該在下游清單之前、緊貼卡片',
+    );
     assert.ok(!page.includes('cited by') && !page.includes('linkslabel'), '不再有文字標題');
   });
 

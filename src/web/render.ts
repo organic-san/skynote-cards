@@ -54,8 +54,14 @@ export interface PageOptions {
   nav?: string;
   /** 讓搜尋框帶回目前的查詢字串。 */
   q?: string;
-  /** 右下角的新增鈕。false 是不顯示，to 是要預先連上的卡片。 */
-  fab?: false | { to?: string };
+  /**
+   * 右下角的按鈕。false 是不顯示。
+   * 帶 actions 就是卡片頁的動作選單（C.3），不帶就是隨手記（C.2）——
+   * 兩者都在右下，但問的是完全不同的問題。
+   */
+  fab?: false | { actions?: { label: string; href: string; rel: string }[] };
+  /** 側欄的工作狀態清單。由路由填，模板只 forEach。 */
+  lists?: { nav: string; href: string; name: string; count: number }[];
   /** 側欄的最近卡片。由路由填，模板直接用。 */
   recent?: { id: string; title: string }[];
   /** 目前正在看的卡片，用來把側欄裡對應的那一列標起來。 */
