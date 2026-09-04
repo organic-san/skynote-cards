@@ -62,7 +62,14 @@
   </div>
   <% } %>
 
-  <p class="youarehere">你在這裡：<span><%= it.card.title %></span></p>
+  <p class="youarehere">
+    <span class="youarehere-title">你在這裡：<span><%= it.card.title %></span></span>
+    <% if (it.has_toggles) { %>
+    <button type="button" class="threadtoggleall">全部展開</button>
+    <% } %>
+    <time datetime="<%= it.created_short.iso %>" data-rel><%= it.created_short.text %></time>
+    <span class="nodetime clock num"></span>
+  </p>
 
   <% if (it.downstream.length) { %>
   <div class="stream down">

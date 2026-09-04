@@ -1719,6 +1719,40 @@ describe('卡片頁的方向', () => {
     });
     assert.ok((await h.app.fastify.inject(`/c/${tl}`)).body.includes('translated'));
   });
+
+  test('「你在這裡」包含相對時間戳記，有巢狀節點時顯示全部展開按鈕', async () => {
+    const h = await fresh();
+    const a = await createCard(h, { type: 'thinking', title: 'A 思考', body: 'x' });
+    const b = await createCard(h, {
+      type: 'thinking',
+      title: 'B 思考',
+      body: 'y',
+      links: [{ rel: 'supports', to: a }],
+    });
+    await createCard(h, {
+      type: 'thinking',
+      title: 'C 思考',
+      body: 'z',
+      links: [{ rel: 'supports', to: b }],
+    });
+
+    // A 頁面：下游是 B，B 又有子節點 C，所以有可展開節點
+    const pageA = (await h.app.fastify.inject(`/c/${a}`)).body;
+    const hereA = pageA.slice(pageA.indexOf('class="youarehere"'), pageA.indexOf('</p>', pageA.indexOf('class="youarehere"')));
+    assert.ok(hereA.includes('你在這裡：<span>A 思考</span>'), '標題在「你在這裡」中');
+    assert.ok(hereA.includes('data-rel'), '時間帶 data-rel');
+    assert.ok(hereA.includes('nodetime clock num'), '時刻插槽存在');
+    assert.ok(hereA.includes('class="threadtoggleall"'), '有巢狀子節點時應顯示全部展開按鈕');
+    assert.ok(hereA.includes('全部展開'), '按鈕文字預設為全部展開');
+
+    // 孤立卡片：無連結，只有時間，不顯示全部展開按鈕
+    const alone = await createCard(h, { type: 'thinking', title: '孤零零', body: 'x' });
+    const pageAlone = (await h.app.fastify.inject(`/c/${alone}`)).body;
+    const hereAlone = pageAlone.slice(pageAlone.indexOf('class="youarehere"'), pageAlone.indexOf('</p>', pageAlone.indexOf('class="youarehere"')));
+    assert.ok(hereAlone.includes('你在這裡：<span>孤零零</span>'));
+    assert.ok(hereAlone.includes('data-rel'));
+    assert.ok(!hereAlone.includes('threadtoggleall'), '無可展開節點時不顯示全部展開按鈕');
+  });
 });
 
 describe('連結列與引用串的操作', () => {

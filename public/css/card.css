@@ -59,10 +59,22 @@
 
 /* 「你在這裡」是關聯區塊的原點，說出是哪一張才有定位作用。 */
 .youarehere {
+  display: flex;
+  align-items: center;
+  min-height: var(--rail-h);
   margin: var(--sp-3) 0;
   color: var(--text-3);
+  gap: var(--sp-2);
 }
-.youarehere span { color: var(--text); }
+.youarehere-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.youarehere-title span { color: var(--text); }
+.youarehere time { flex: 0 0 auto; color: var(--text-3); }
 
 /* ↑ n / ↓ n 是展開深度指示，緊貼「你在這裡」那一側，箭頭才指得對。 */
 .streamcount { margin: 0; color: var(--text-3); }
@@ -201,6 +213,26 @@
   content: "▸";
 }
 .nodetoggle:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.threadtoggleall {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-field);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-1);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.threadtoggleall:hover {
   background: var(--hover-bg);
   color: var(--text);
 }

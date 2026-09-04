@@ -98,6 +98,9 @@
   //
   // 代價：沒有 JS 就展不開（仍看得到伺服器給的預設深度）。
 
+  var toggleAllBtn = document.querySelector('.threadtoggleall');
+  var threadControllers = [];
+
   Array.prototype.forEach.call(document.querySelectorAll('.thread'), function (thread) {
     var rows = Array.prototype.slice.call(thread.querySelectorAll('.node'));
     var toggles = Array.prototype.slice.call(thread.querySelectorAll('.nodetoggle'));
@@ -118,11 +121,65 @@
         if (folded[key]) delete folded[key]; else folded[key] = true;
         btn.setAttribute('aria-expanded', folded[key] ? 'false' : 'true');
         apply();
+        syncToggleAll();
       });
     });
 
     apply();
+
+    threadControllers.push({
+      setAll: function (expanded) {
+        toggles.forEach(function (btn) {
+          var key = btn.getAttribute('data-toggle');
+          if (expanded) {
+            delete folded[key];
+            btn.setAttribute('aria-expanded', 'true');
+          } else {
+            folded[key] = true;
+            btn.setAttribute('aria-expanded', 'false');
+          }
+        });
+        apply();
+      },
+      hasCollapsed: function () {
+        return toggles.some(function (btn) {
+          return btn.getAttribute('aria-expanded') === 'false';
+        });
+      },
+      hasToggles: function () {
+        return toggles.length > 0;
+      },
+    });
   });
+
+  function syncToggleAll() {
+    if (!toggleAllBtn) return;
+    var anyCollapsed = threadControllers.some(function (ctrl) {
+      return ctrl.hasCollapsed();
+    });
+    toggleAllBtn.textContent = anyCollapsed ? '全部展開' : '全部收合';
+    toggleAllBtn.setAttribute('aria-expanded', anyCollapsed ? 'false' : 'true');
+  }
+
+  if (toggleAllBtn) {
+    var totalToggles = threadControllers.reduce(function (sum, c) {
+      return sum + (c.hasToggles() ? 1 : 0);
+    }, 0);
+    if (totalToggles === 0) {
+      toggleAllBtn.hidden = true;
+    } else {
+      syncToggleAll();
+      toggleAllBtn.addEventListener('click', function () {
+        var shouldExpand = threadControllers.some(function (ctrl) {
+          return ctrl.hasCollapsed();
+        });
+        threadControllers.forEach(function (ctrl) {
+          ctrl.setAll(shouldExpand);
+        });
+        syncToggleAll();
+      });
+    }
+  }
 
   // ------------------------------------------------------------ 將存為什麼
   //

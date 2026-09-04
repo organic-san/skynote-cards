@@ -387,6 +387,10 @@ export function registerRoutes(
     const fromId = (req.query as Record<string, string | undefined>).from;
     const from = fromId && isValidIdFormat(fromId) ? index.getCard(fromId) : null;
 
+    const upstream = flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out');
+    const downstream = flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in');
+    const has_toggles = upstream.some((r) => r.children > 0) || downstream.some((r) => r.children > 0);
+
     return html(
       reply,
       shell(
@@ -394,14 +398,16 @@ export function registerRoutes(
         {
           card,
           created_display: stampFull(card.created),
+          created_short: stampShort(card.created),
           revised_display: card.revised ? stampFull(card.revised) : null,
           provenance: card.provenance === 'default' ? null : card.provenance,
           lock_at: isWithinEditWindow(card) ? lockAt(card) : '',
           url_href: safeHref(card.url),
           embed: embedFor(card.url),
           body_html: renderMarkdown(card.body),
-          upstream: flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out'),
-          downstream: flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in'),
+          upstream,
+          downstream,
+          has_toggles,
           upstream_count: out.length,
           downstream_count: index.backLinks(id).length,
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
