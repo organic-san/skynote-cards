@@ -324,7 +324,7 @@ describe('型別對連結的約束', () => {
     assert.equal(wrongTarget.statusCode, 400);
     assert.match(
       (wrongTarget.json() as { errors: string[] }).errors.join(),
-      /不能用 refutes 指向原始/,
+      /不能用 refutes 指向資料/,
     );
 
     const ok = await postCard(h, {
@@ -414,6 +414,14 @@ describe('型別對連結的約束', () => {
     assert.deepEqual(errors, ['第 1 條連結：目標不存在'], '同一個問題不該報兩次');
   });
 });
+
+/** 樣式依職責分了六支檔，斷言一律看合起來的全文。 */
+const CSS_FILES = ['tokens', 'base', 'shell', 'list', 'card', 'form'];
+function readCss(): string {
+  return CSS_FILES.map((f) => fs.readFileSync(path.join('public', 'css', `${f}.css`), 'utf8')).join(
+    '\n',
+  );
+}
 
 /** 側欄的「最近卡片」也列標題，所以清單的斷言只看主內容區。 */
 function main(res: { body: string }): string {
@@ -527,19 +535,20 @@ describe('工作狀態的四份清單', () => {
     assert.ok(page.includes('剛寫的還改得動'));
   });
 
-  test('側欄每一項後面有數量，而且每一頁都在', async () => {
+  test('四份清單在每一頁的側欄都在', async () => {
     const h = await fresh();
     await createCard(h, { type: 'original', title: '一篇沒人接的文章', body: 'x' });
-    await createCard(h, { type: 'fleeting', title: '一句話' });
 
     for (const url of ['/', '/tags', '/pending']) {
       const body = (await h.app.fastify.inject(url)).body;
       const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
-      for (const name of ['待思考', '初步想法', '碎片', '沉澱']) {
+      // U8：側欄那項叫「雜筆」——它是「fleeting 且無入向連結」，
+      // 跟首頁篩選列的「碎片」（全部 fleeting）不是同一個集合。
+      for (const name of ['待思考', '初步想法', '雜筆', '沉澱']) {
         assert.ok(aside.includes(name), `${url} 的側欄缺少「${name}」`);
       }
-      assert.ok(/待思考<\/span><span class="wcount">1</.test(aside), '待思考應該是 1');
-      assert.ok(/碎片<\/span><span class="wcount">1</.test(aside), '碎片應該是 1');
+      // U9：不掛數量。那些清單實務上不會歸零，數字提供不了訊號。
+      assert.ok(!aside.includes('wcount'), '側欄不該再有數量');
     }
   });
 });
@@ -568,14 +577,16 @@ describe('每一型的列表項', () => {
     });
 
     const body = (await h.app.fastify.inject('/')).body;
-    // 出處放在標題之上：這張卡最要緊的事實是它從哪裡來。
-    assert.ok(body.includes('class="roweyebrow">Herbert A. Simon · 1962<'));
-    assert.ok(body.includes('1 則重述'));
-    assert.ok(!body.includes('則引用'), '引用計數已經拿掉');
-    assert.ok(!body.includes('我的世界觀'), 'original 的列表項不顯示內文開頭');
+    // U5：型別名固定在 meta 行第一段，其餘以 · 分隔。
+    assert.ok(body.includes('Herbert A. Simon · 1962'));
+    assert.ok(body.includes('1 則重述 / 1 則引用'));
+    assert.ok(!body.includes('我的世界觀'), '資料的列表項不顯示內文開頭');
+    // U1：型別以左側色點標示，並且一律附上無色的型別名。
+    assert.ok(body.includes('dot dot-original'));
+    assert.ok(body.includes('class="tname">資料<'));
   });
 
-  test('出處逐級退：作者年份 → 網域 → 未署名', async () => {
+  test('U5：作者或年份缺漏，整段略過不留空欄', async () => {
     const h = await fresh();
     await createCard(h, {
       type: 'original',
@@ -583,18 +594,15 @@ describe('每一型的列表項', () => {
       body: 'x',
       source_author: 'Simon',
     });
-    await createCard(h, {
-      type: 'original',
-      title: '只有網址',
-      body: 'x',
-      url: 'https://www.example.com/a/b',
-    });
     await createCard(h, { type: 'original', title: '什麼都沒有', body: 'x' });
 
     const body = (await h.app.fastify.inject('/')).body;
-    assert.ok(body.includes('class="roweyebrow">Simon<'));
-    assert.ok(body.includes('class="roweyebrow">example.com<'), 'www. 要去掉');
-    assert.ok(body.includes('class="roweyebrow">未署名<'), '這一行永遠在');
+    const rows = body.slice(body.indexOf('class="rows"'));
+    // 只有作者也算一段（規格說的是「作者或年份缺漏整段略過」，
+    // 指的是整個 source 段落沒東西時不留空欄）。
+    assert.ok(rows.includes('Simon'));
+    // 什麼都沒有的那張，meta 行只剩型別名。
+    assert.ok(!rows.includes('undefined') && !rows.includes('null'));
   });
 
   test('restatement 顯示它在講哪份原始資料', async () => {
@@ -607,8 +615,8 @@ describe('每一型的列表項', () => {
       links: [{ rel: 'about', to: o }],
     });
     const body = (await h.app.fastify.inject('/')).body;
-    assert.ok(body.includes('class="rowabout">母文件的標題<'));
-    assert.ok(body.includes('重述的內文'), 'restatement 要顯示內文開頭');
+    assert.ok(body.includes('母文件的標題'), 'meta 行要說它在講哪一份');
+    assert.ok(body.includes('重述的內文'), '重述要顯示內文開頭');
   });
 
   test('thinking 只有標題與內文，沒有連結數', async () => {
@@ -632,24 +640,27 @@ describe('每一型的列表項', () => {
     assert.ok(!body.includes('↑'), '列表上不再有連結數');
   });
 
-  test('fleeting 不長得像一張卡，是一行字', async () => {
+  test('fleeting 的 meta 行只有型別名，標題即全部內容', async () => {
     const h = await fresh();
     await createCard(h, { type: 'fleeting', title: '隨口的一句話' });
     const body = (await h.app.fastify.inject('/')).body;
     const rows = body.slice(body.indexOf('class="rows"'));
-    assert.ok(rows.includes('class="rowline"'), '不套標題樣式');
-    assert.ok(!rows.includes('class="rowtitle"'));
     assert.ok(rows.includes('隨口的一句話'));
-    assert.ok(rows.includes('>碎片<'), '型別標籤用介面上的名字');
+    assert.ok(rows.includes('class="tname">碎片<'));
+    assert.ok(!rows.includes('class="rowtext"'), '標題即全部內容，沒有摘要行');
+    // U6：碎片用空心環，是唯一的形狀例外。
+    assert.ok(rows.includes('dot dot-fleeting'));
   });
 
-  test('型別標籤是中文，而且帶著自己的型別 class 好上色', async () => {
+  test('U1：色點負責一眼分辨，型別名負責記得住', async () => {
     const h = await fresh();
     await createCard(h, { type: 'original', title: 'x', body: 'y' });
     const body = (await h.app.fastify.inject('/')).body;
     const rows = body.slice(body.indexOf('class="rows"'));
-    assert.ok(rows.includes('rtype rtype-original'), '顏色由型別承接');
-    assert.ok(rows.includes('>原始<'));
+    // 色點帶型別，文字不上色——顏色本身不可記憶，不得單獨承擔型別資訊。
+    assert.ok(rows.includes('class="dot dot-original"'));
+    assert.ok(rows.includes('class="tname">資料<'));
+    assert.ok(!rows.includes('rtype'), '彩色外框徽章全部移除');
     assert.ok(!rows.includes('>original<'), '列表上不該出現內部型別名');
   });
 });
@@ -662,7 +673,7 @@ describe('頁面與端點', () => {
     for (const t of ['original', 'restatement', 'thinking', 'fleeting']) {
       assert.ok(res.body.includes(`value="${t}"`), `缺少類型 ${t}`);
     }
-    for (const label of ['原始', '重述', '思考', '碎片']) {
+    for (const label of ['資料', '重述', '思考', '碎片']) {
       assert.ok(res.body.includes(`<span>${label}</span>`), `缺少型別標籤 ${label}`);
     }
     assert.ok(res.body.includes('<details'), 'provenance 維持收合');
@@ -776,7 +787,7 @@ describe('頁面與端點', () => {
 
   test('靜態檔案掛得起來，而且永遠不會拿到舊版', async () => {
     const h = await fresh();
-    const css = await h.app.fastify.inject('/static/style.css');
+    const css = await h.app.fastify.inject('/static/css/base.css');
     assert.equal(css.statusCode, 200);
     const js = await h.app.fastify.inject('/static/new.js');
     assert.equal(js.statusCode, 200);
@@ -794,7 +805,7 @@ describe('頁面與端點', () => {
     }
     const p1 = await h.app.fastify.inject('/');
     const p2 = await h.app.fastify.inject('/?page=2');
-    const count = (s: string) => (s.match(/<li class="row row-/g) ?? []).length;
+    const count = (s: string) => (s.match(/<li class="row">/g) ?? []).length;
     assert.equal(count(p1.body), 50);
     assert.equal(count(p2.body), 5);
   });
@@ -951,10 +962,15 @@ describe('介面', () => {
     assert.ok(form.body.includes('<input type="hidden" name="type" value="thinking">'));
     assert.ok(form.body.includes('class="typefixed"'));
     assert.ok(!form.body.includes('class="typepick"'), '不該還有型別選擇器');
-    assert.ok(form.body.includes('linkrow rel-about'), '關係也應預先填好');
-    // 從卡片延伸出來的那條連結刪不掉，只能調整關係。
-    const row = form.body.slice(form.body.indexOf('linkrow rel-about'));
-    assert.ok(!row.slice(0, row.indexOf('</div>')).includes('rmlink'), '預填的連結不該能刪');
+    assert.ok(
+      form.body.includes('<option value="about" selected>'),
+      '關係也應預先填好',
+    );
+    // U16：從卡片 + 預填的那條是唯讀列——只有 rel 可改，目標顯示標題，沒有減號。
+    const row = form.body.slice(form.body.indexOf('class="linkrow fixed"'));
+    const rowEnd = row.slice(0, row.indexOf('</div>'));
+    assert.ok(!rowEnd.includes('rmlink'), '預填的連結不該能刪');
+    assert.ok(rowEnd.includes('linktarget'), 'U15：目標顯示標題，ID 不外露');
   });
 
   test('碎片的 + 選單有完整化，而且把那句話帶進新卡的內文', async () => {
@@ -1031,9 +1047,10 @@ describe('介面', () => {
 
     assert.ok(cited.includes('B 重述 A'), '直接引用要在');
     assert.ok(cited.includes('C 同時引用 A 與 B'), '間接引用也要在');
-    assert.ok(cited.includes('icon-about'), '關係用圖示表達');
-    assert.ok(cited.includes('icon-supports'));
     assert.ok(cited.includes('關聯出'), '下游用「出」那一套說法');
+    assert.ok(cited.includes('支撐出'));
+    // U13：列首依 U1 置色點，型別名連寫在標題前。
+    assert.ok(cited.includes('dot dot-restatement'));
     // C 從 refutes 那一支先展開，再從 B 底下遇到時只留一行。
     assert.ok(cited.includes('上方已展開'), '重複出現的節點要標出來');
     assert.equal(cited.split(`/c/${c}`).length - 1, 2, 'C 應該正好出現兩次');
@@ -1056,7 +1073,8 @@ describe('介面', () => {
     });
 
     const page = (await h.app.fastify.inject(`/c/${c}`)).body;
-    const refs = page.slice(page.indexOf('class="stream up"'), page.indexOf('<article'));
+    // U12：關聯區塊在內文之後，所以上游那一疊要從 .links 裡面找。
+    const refs = page.slice(page.indexOf('class="stream up"'), page.indexOf('youarehere'));
     assert.ok(refs.includes('B 重述 A'));
     assert.ok(refs.includes('A 原文'), '依賴鏈要能一路追到底');
   });
@@ -1085,7 +1103,8 @@ describe('記完之後去哪裡、看到什麼', () => {
 
     const card = (await h.app.fastify.inject(`/c/${id}`)).body;
     assert.ok(!card.includes('id="lock"'), '卡片頁是拿來讀的，不該有每秒跳一次的東西');
-    assert.ok(/<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}<\/time>/.test(card), '要有時間戳記');
+    // U4：datetime 是 UTC 真值，內容是伺服器算的保底文字，用戶端再依自己的時區改寫。
+    assert.match(card, /<time datetime="[^"]+Z"[^>]*>\d{4}-\d{2}-\d{2} \d{2}:\d{2}<\/time>/);
 
     const edit = (await h.app.fastify.inject(`/c/${id}/edit`)).body;
     assert.ok(edit.includes('id="lock"'), '編輯頁在跟時間賽跑，倒數留著');
@@ -1108,7 +1127,7 @@ describe('記完之後去哪裡、看到什麼', () => {
 
     await createCard(h, { type: 'original', title: '一篇文章', body: 'x' });
     const filled = main(await h.app.fastify.inject('/pending'));
-    assert.ok(filled.includes('class="listcount">1<'));
+    assert.ok(filled.includes('一篇文章'));
     assert.ok(!filled.includes('沒有任何原始資料'), '有東西的時候，東西本身就是說明');
   });
 
@@ -1117,10 +1136,12 @@ describe('記完之後去哪裡、看到什麼', () => {
     const body = (await h.app.fastify.inject('/')).body;
     const at = body.indexOf('class="filters"');
     const filters = body.slice(at, body.indexOf('</div>', at));
-    for (const label of ['原始', '重述', '思考', '碎片']) {
-      assert.ok(filters.includes(`>${label}</a>`), `篩選列缺少「${label}」`);
+    for (const label of ['資料', '重述', '思考', '碎片']) {
+      assert.ok(filters.includes(label), `篩選列缺少「${label}」`);
     }
-    assert.ok(!filters.includes('>original</a>'), '不該印內部型別名');
+    assert.ok(!filters.includes('original<'), '不該印內部型別名');
+    // U7：篩選列各項前方也放同一顆色點——這是學會色彩對應的唯一場所。
+    assert.ok(filters.includes('dot dot-original'));
   });
 });
 
@@ -1205,7 +1226,7 @@ describe('關係怎麼讀', () => {
 
     // B --about--> A。在 B 上，A 是上游：「關聯自 A」
     const onB = (await h.app.fastify.inject(`/c/${b}`)).body;
-    const up = onB.slice(onB.indexOf('class="stream up"'), onB.indexOf('<article'));
+    const up = onB.slice(onB.indexOf('class="stream up"'), onB.indexOf('youarehere'));
     assert.ok(up.includes('關聯自'), '上游用「自」那一套說法');
     assert.ok(!up.includes('關聯出'));
     assert.ok(
@@ -1232,7 +1253,7 @@ describe('關係怎麼讀', () => {
     });
 
     const onR = (await h.app.fastify.inject(`/c/${r}`)).body;
-    const up = onR.slice(onR.indexOf('class="stream up"'), onR.indexOf('<article'));
+    const up = onR.slice(onR.indexOf('class="stream up"'), onR.indexOf('youarehere'));
     assert.ok(up.includes('反駁') && !up.includes('被反駁'), '這張是反駁方');
 
     const onT = (await h.app.fastify.inject(`/c/${t}`)).body;
@@ -1244,7 +1265,7 @@ describe('關係怎麼讀', () => {
     // 下游的規矩：離卡片越近的越靠近卡片、同層第一個排最前、展開鈕緊貼自己那一則。
     // 上游要把同樣三件事整個翻過來，缺一件就會露出破綻——只翻一層的話，
     // 展開鈕會離它自己那一則好幾行遠，同層的第一個也會變成離卡片最遠的那個。
-    const css = fs.readFileSync('public/style.css', 'utf8');
+    const css = readCss();
     const at = css.indexOf('.stream.up .thread,');
     assert.ok(at > -1, '上游的翻轉規則不見了');
 
@@ -1353,14 +1374,15 @@ describe('側欄', () => {
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    const order = ['drawerbrand', 'drawertop', 'drawerwork', 'draweraction', 'recent'];
+    // 側欄分三段：首頁、四份工作清單、動作與工具。用只出現一次的記號定位。
+    const order = ['drawerbrand', 'icon-home', 'drawernav', 'icon-plus', 'cardindex'];
     let at = -1;
     for (const cls of order) {
       const next = aside.indexOf(cls);
       assert.ok(next > at, `${cls} 的位置不對`);
       at = next;
     }
-    assert.ok(aside.includes('最近寫的一張'), '最近卡片要列在側欄');
+    assert.ok(aside.includes('最近寫的一張'), '卡片索引要列在側欄');
     assert.ok(!aside.includes('drawernew'), '左下不該再有建立卡片');
   });
 
@@ -1369,23 +1391,35 @@ describe('側欄', () => {
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
     assert.ok(aside.includes('<p class="drawerbrand">Skynote</p>'), '站名是標題不是連結');
-    const top = aside.slice(aside.indexOf('drawertop'));
+    const top = aside.slice(aside.indexOf('drawerwork'));
     assert.ok(top.slice(0, top.indexOf('</nav>')).includes('首頁'));
   });
 
-  test('一列要嘛帶圖示、要嘛帶數字，不會兩者都有', async () => {
+  test('U10：追加外部資料與標籤、搜尋同格式', async () => {
     const h = await fresh();
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    // 帶圖示的四項
     for (const name of ['home', 'plus', 'tag', 'search']) {
       assert.ok(aside.includes(`icon-${name}`), `側欄缺少 ${name} 圖示`);
     }
-    // 四份待辦清單帶數字、不帶圖示
-    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('draweraction'));
-    assert.ok(work.includes('wcount'));
-    assert.ok(!work.includes('<svg'), '有數字的那一組不放圖示');
+    // 「刻意不一致」那個設計被撤回：它已經在分隔線下方的動作與工具區，
+    // 位置本身足以表達它不是去處。
+    assert.ok(!aside.includes('draweraction'), '不該再有專屬格式');
+
+    // U9：工作狀態那幾項不掛數量。
+    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('cardindex'));
+    assert.ok(!work.includes('wcount'));
+  });
+
+  test('U11：卡片索引有小標，職責在畫面上可讀', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'thinking', title: '一張卡', body: 'x' });
+    const body = (await h.app.fastify.inject('/')).body;
+    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+    // 它的用途是建立連結時查名稱，不是導覽——所以要說出來，不能看起來像第二份清單。
+    assert.ok(aside.includes('class="indexhead">卡片索引<'));
+    assert.ok(aside.includes('一張卡'));
   });
 
   test('搜尋是一個連結，不是側欄裡的輸入框', async () => {
@@ -1588,26 +1622,29 @@ describe('卡片頁的方向', () => {
     });
 
     const page = (await h.app.fastify.inject(`/c/${b}`)).body;
-    const up = page.indexOf('class="stream up"');
     const card = page.indexOf('<article');
+    const up = page.indexOf('class="stream up"');
+    const here = page.indexOf('youarehere');
     const down = page.indexOf('class="stream down"');
 
-    assert.ok(up > -1 && card > -1 && down > -1, '三塊都要在');
-    assert.ok(up < card, '上游要在內文之上');
-    assert.ok(card < down, '下游要在內文之下');
+    assert.ok(card > -1 && up > -1 && here > -1 && down > -1, '四塊都要在');
+    // U12：卡片內容在前，關聯區塊在後。先前把關聯樹放在標題之上，
+    // 一進頁面先讀到後設資料，而且標題的垂直位置隨連結多寡浮動。
+    assert.ok(card < up, '內文要在關聯區塊之前');
+    // U13：上游在上、下游在下，中間是「你在這裡」——方向由空間位置表達。
+    assert.ok(up < here && here < down, '上游、你在這裡、下游');
     assert.ok(page.includes('↑ 1') && page.includes('↓ 1'), '方向用箭頭加數量表示');
 
-    // 計數要緊貼卡片：↑ 在上游那一疊的下緣、↓ 在下游那一疊的上緣。
-    // 放在兩端的話，箭頭指向的是頁面外面，語意會反過來。
-    const upBlock = page.slice(up, card);
+    // 計數緊貼「你在這裡」那一側，箭頭才指得對。
+    const upBlock = page.slice(up, here);
     assert.ok(
       upBlock.indexOf('class="thread"') < upBlock.indexOf('streamcount'),
-      '↑ 應該在上游清單之後、緊貼卡片',
+      '↑ 應該在上游清單之後',
     );
     const downBlock = page.slice(down);
     assert.ok(
       downBlock.indexOf('streamcount') < downBlock.indexOf('class="thread"'),
-      '↓ 應該在下游清單之前、緊貼卡片',
+      '↓ 應該在下游清單之前',
     );
     assert.ok(!page.includes('cited by') && !page.includes('linkslabel'), '不再有文字標題');
   });
@@ -1758,15 +1795,87 @@ describe('索引的耐久性設定', () => {
   });
 });
 
+describe('樣式的紀律', () => {
+  /**
+   * U35：token 表是樣式值的唯一真相來源。
+   *
+   * 這條紀律沒有機制就只是願望——所以這裡真的去掃。元件裡不得寫死顏色、
+   * 間距、字級、陰影、動效時間；tokens.css 以外的每一支只能用 var()。
+   *
+   * 白名單是那些「進 token 反而更難讀」的值：邊框寬、圓形的 50%、
+   * 位移補償的 1px、以及百分比與 vh/vw 這類跟版面綁在一起的單位。
+   */
+  const COMPONENT_FILES = ['base', 'shell', 'list', 'card', 'form'];
+  const ALLOWED_PX = new Set(['0px', '1px', '2px']);
+
+  const read = (name: string) =>
+    fs.readFileSync(path.join('public', 'css', `${name}.css`), 'utf8');
+
+  /** 去掉註解，免得註解裡的說明文字被當成違規。 */
+  const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  test('元件裡不得寫死顏色', () => {
+    for (const name of COMPONENT_FILES) {
+      const hex = strip(read(name)).match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+      assert.deepEqual(hex, [], `${name}.css 寫死了顏色：${hex.join(' ')}`);
+      const fn = strip(read(name)).match(/\b(rgba?|hsla?)\(/g) ?? [];
+      assert.deepEqual(fn, [], `${name}.css 直接用了 ${fn.join(' ')}，顏色一律走 token`);
+    }
+  });
+
+  test('元件裡不得寫死字級與間距', () => {
+    for (const name of COMPONENT_FILES) {
+      const css = strip(read(name));
+      const rem = css.match(/\b[\d.]+rem\b/g) ?? [];
+      // rem 只准出現在 media query 的斷點——那是版面的分界，不是尺度。
+      const outside = rem.filter((_, i) => {
+        const at = css.indexOf(rem[i] as string);
+        return !/@media[^{]*$/.test(css.slice(Math.max(0, at - 60), at));
+      });
+      assert.deepEqual(outside, [], `${name}.css 寫死了 rem：${outside.join(' ')}`);
+
+      const px = (css.match(/\b[\d.]+px\b/g) ?? []).filter((v) => !ALLOWED_PX.has(v));
+      assert.deepEqual(px, [], `${name}.css 寫死了 px：${px.join(' ')}`);
+    }
+  });
+
+  test('元件裡不得寫死陰影與動效時間', () => {
+    for (const name of COMPONENT_FILES) {
+      const css = strip(read(name));
+      const ms = css.match(/\b\d+m?s\b/g) ?? [];
+      assert.deepEqual(ms, [], `${name}.css 寫死了時間：${ms.join(' ')}`);
+      // lookahead 要包住空白、而且緊接在冒號後面。寫成 `\s*(?!var\()` 會留一個
+      // 回溯的洞：\s* 匹配零個字元之後，lookahead 從空格前開始看，於是永遠成立。
+      assert.ok(!/box-shadow:(?!\s*var\()/.test(css), `${name}.css 的陰影要走 --shadow-*`);
+    }
+  });
+
+  test('尺度收斂到規格給的那幾段', () => {
+    const tokens = read('tokens');
+    // U29：間距只有九段。
+    const values = (re: RegExp) => [...tokens.matchAll(re)].map((m) => Number(m[1]));
+    assert.deepEqual(values(/--sp-\d+:\s*(\d+)px/g), [4, 8, 12, 16, 24, 32, 40, 56, 80]);
+    // U28：字級只有四級，不得出現第五級。
+    assert.deepEqual(values(/--fs-\d+:\s*(\d+)px/g), [13, 15, 17, 22]);
+  });
+
+  test('層疊順序是明說的，不靠 <link> 的先後', () => {
+    assert.match(read('tokens'), /@layer tokens, base, shell, components;/);
+    for (const name of COMPONENT_FILES) {
+      assert.match(read(name), /@layer (base|shell|components) \{/, `${name}.css 沒有進層`);
+    }
+  });
+});
+
 describe('分欄的斷點', () => {
-  const css = fs.readFileSync('public/style.css', 'utf8');
+  const css = readCss();
   const js = fs.readFileSync('public/new.js', 'utf8');
 
   test('CSS 與 JS 講的是同一條線', () => {
     // 版面由 CSS 切換、拖曳比例由 JS 記錄，兩邊對不上就會存錯方向的比例。
     const fromCss = css.match(/@media \(min-width: ([\d.]+)rem\) \{\s*\.split \{/);
     const fromJs = js.match(/matchMedia\('\(min-width: ([\d.]+)rem\)'\)/);
-    assert.ok(fromCss, 'style.css 找不到分欄的 media query');
+    assert.ok(fromCss, 'CSS 裡找不到分欄的 media query');
     assert.ok(fromJs, 'new.js 找不到對應的 matchMedia');
     assert.equal(fromCss[1], fromJs[1]);
   });

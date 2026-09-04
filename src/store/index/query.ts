@@ -185,11 +185,6 @@ function listOf(idx: IndexDb, where: string, params: unknown[] = []): CardRowWit
   return rows.map((r) => ({ ...r, tags: tagsOf(idx, r.id) }));
 }
 
-function countOf(idx: IndexDb, where: string, params: unknown[] = []): number {
-  return (idx.s(`SELECT COUNT(*) AS n FROM cards c WHERE ${where}`).get(...params) as { n: number })
-    .n;
-}
-
 /**
  * 待思考：收進來但沒有人接手。
  *
@@ -229,19 +224,6 @@ export function looseThinking(idx: IndexDb): CardRowWithTags[] {
 
 export function settling(idx: IndexDb, since: string): CardRowWithTags[] {
   return listOf(idx, SETTLING, [since]);
-}
-
-/** 側欄每一項後面的數字。四份清單各一次 COUNT。 */
-export function listCounts(
-  idx: IndexDb,
-  since: string,
-): { pending: number; looseThinking: number; looseFleeting: number; settling: number } {
-  return {
-    pending: countOf(idx, PENDING),
-    looseThinking: countOf(idx, LOOSE_THINKING),
-    looseFleeting: countOf(idx, LOOSE_FLEETING),
-    settling: countOf(idx, SETTLING, [since]),
-  };
 }
 
 // -------------------------------------------------------------- 列表項的補充資料

@@ -4,9 +4,11 @@
 <section class="pane pane-source" id="sourcepane">
   <div class="sourcebody">
     <p class="cardmeta">
-      <span class="rtype rtype-<%= it.source.type %>"><%= it.source.typeLabel %></span>
-      <time><%= it.source.date %></time>
-      <% if (it.source.provenance) { %><span><%= it.source.provenance %></span><% } %>
+      <span class="dot dot-<%= it.source.type %>"></span>
+      <span class="tname"><%= it.source.typeLabel %></span>
+      <span class="sep">·</span>
+      <time datetime="<%= it.source.date.iso %>" data-rel><%= it.source.date.text %></time>
+      <% if (it.source.provenance) { %><span class="sep">·</span><span><%= it.source.provenance %></span><% } %>
       <a class="sourceopen" href="/c/<%= it.source.id %>">開啟</a>
     </p>
     <h1><%= it.source.title %></h1>
@@ -17,6 +19,8 @@
     <% } %>
     <div class="body" id="sourcetext" data-id="<%= it.source.id %>" data-title="<%= it.source.title %>"><%~ it.source.body_html %></div>
   </div>
+  <%/* 引用鈕黏在來源面板的下緣：它是讀到哪就想引哪的動作，
+       跟著文章捲到末段就等於在你需要它的時候不在。 */%>
   <div class="quotebar">
     <button type="button" class="ghost" id="quotebtn" disabled>＋ 引用選取的段落</button>
   </div>
@@ -32,6 +36,8 @@
 </ul>
 <% } %>
 
+<h1 class="formtitle"><%= it.action %></h1>
+
 <form method="post" action="/new" class="newform" id="newform"
       data-specs='<%= JSON.stringify(it.specs) %>' data-rels='<%= JSON.stringify(it.relTable) %>'>
   <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
@@ -40,7 +46,8 @@
   <%/* 型別是入口決定的。那些入口同時預填了型別與連結，改了型別就會讓
        預填的關係不合法，所以這裡只陳述事實，不給選擇。 */%>
   <p class="typefixed">
-    <span class="rtype rtype-<%= it.values.type %>"><%= it.typeLabel %></span>
+    <span class="dot dot-<%= it.values.type %>"></span>
+    <span class="tname"><%= it.typeLabel %></span>
   </p>
   <input type="hidden" name="type" value="<%= it.values.type %>">
   <% } else { %>
@@ -79,7 +86,7 @@
     <textarea name="body" rows="14" spellcheck="false"><%= it.values.body %></textarea>
   </label>
 
-  <div class="field<%= it.spec.source ? '' : ' off' %>" id="sourcefields">
+  <div class="field secondary<%= it.spec.source ? '' : ' off' %>" id="sourcefields">
     <div class="fieldpair">
       <label><span>作者</span>
         <input type="text" name="source_author" autocomplete="off" value="<%= it.values.source_author %>">
@@ -112,22 +119,28 @@
     <div id="linkrows">
       <% it.links.forEach(function (l, i) { %>
       <% const opts = it.rowRels[i] || it.rels; %>
-      <div class="linkrow rel-<%= l.rel %>">
+      <%/* U15：目標一律顯示標題，ID 不外露。整套設計的目的就是使用者
+           永遠不必碰 ID——把 18 位數當欄位主值是主次相反。
+           U16：從卡片 `+` 預填的那條是唯讀列，只有 rel 可改，沒有減號。 */%>
+      <div class="linkrow<%= l.fixed ? ' fixed' : '' %>">
         <select name="link_rel">
           <% opts.forEach(function (r) { %>
           <option value="<%= r.value %>" <%= l.rel === r.value ? 'selected' : '' %>><%= r.label %></option>
           <% }) %>
         </select>
-        <input type="text" name="link_to" class="linkto" autocomplete="off"
-               placeholder="ID 或標題" value="<%= l.to %>"
-               data-target-type="<%= l.targetType || '' %>" <%= l.fixed ? 'readonly' : '' %>>
-        <%/* 從卡片延伸出來的那一條刪不掉，只能調整關係——你是從那張卡
-             按進來的，那條連結就是這張卡存在的理由。 */%>
-        <% if (!l.fixed) { %>
+        <% if (l.fixed) { %>
+        <span class="linktarget" title="<%= l.to %>"><%= l.title || l.to %></span>
+        <input type="hidden" name="link_to" value="<%= l.to %>">
+        <% } else { %>
+        <%/* 看得到的是標題，送出去的是 ID（U15）。
+             直接貼 ID 也還能用：打字時會鏡射到底下那個 hidden。 */%>
+        <input type="text" class="linkto" autocomplete="off"
+               placeholder="輸入標題搜尋" value="<%= l.title || l.to %>"
+               data-target-type="<%= l.targetType || '' %>">
+        <input type="hidden" name="link_to" value="<%= l.to %>">
         <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
-        <% } %>
-        <span class="linkname"><%= l.title || '' %></span>
         <div class="picker"></div>
+        <% } %>
       </div>
       <% }) %>
     </div>
@@ -151,10 +164,10 @@
       <option value="<%= r.value %>"><%= r.label %></option>
       <% }) %>
     </select>
-    <input type="text" name="link_to" class="linkto" autocomplete="off" placeholder="ID 或標題"
+    <input type="text" class="linkto" autocomplete="off" placeholder="輸入標題搜尋"
            data-target-type="">
+    <input type="hidden" name="link_to" value="">
     <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
-    <span class="linkname"></span>
     <div class="picker"></div>
   </div>
 </template>

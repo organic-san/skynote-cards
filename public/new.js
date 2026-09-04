@@ -102,10 +102,24 @@
 
   // ---------------------------------------------------------------- 內文長高
 
+  // 隨內容長高，但有上限——貼一篇長文進來時，欄位若無限長高，
+  // 底下的標籤與連結就會被推到幾千像素之外，整份表單變得沒辦法調整。
+  // 到頂之後改成內部捲動。
+  // 使用者一旦自己拖過高度，就別再自動改它——那是他明確表達過的偏好。
+  var grown = null;
   function grow() {
     if (!body) return;
+    if (grown !== null && Math.abs(body.offsetHeight - grown) > 1) return;
     body.style.height = 'auto';
-    body.style.height = body.scrollHeight + 'px';
+    var max = parseInt(getComputedStyle(body).getPropertyValue('--grow-max'), 10);
+    if (getComputedStyle(body).getPropertyValue('--grow-max').indexOf('vh') > -1) {
+      max = (window.innerHeight * max) / 100;
+    }
+    var want = body.scrollHeight;
+    var h = isNaN(max) ? want : Math.min(want, max);
+    body.style.height = h + 'px';
+    body.style.overflowY = !isNaN(max) && want > max ? 'auto' : 'hidden';
+    grown = body.offsetHeight;
   }
   if (body) body.addEventListener('input', grow);
 
@@ -128,6 +142,16 @@
     });
   }
 
+  // 每一列的 ID 存在同一列的 hidden 欄位裡，看得到的那個框只放標題。
+  function hiddenOf(input) {
+    var row = input.closest('.linkrow');
+    return row ? row.querySelector('input[type=hidden][name=link_to]') : null;
+  }
+  function setTarget(input, id) {
+    var h = hiddenOf(input);
+    if (h) h.value = id;
+  }
+
   function closePicker(picker) {
     picker.classList.remove('on');
     picker.textContent = '';
@@ -145,11 +169,12 @@
       meta.textContent = ' ' + r.type + ' · ' + r.id;
       b.appendChild(meta);
       b.addEventListener('click', function () {
-        input.value = r.id;
+        // U15：看得到的是標題，送出去的是 ID。整套設計的目的就是
+        // 使用者永遠不必碰 ID——把 18 位數當欄位主值是主次相反。
+        input.value = r.title;
+        setTarget(input, r.id);
         // 換了參照對象，這一列可用的關係就跟著換——目標的型別決定了一半的規則。
         input.dataset.targetType = r.type || '';
-        var name = input.parentNode.querySelector('.linkname');
-        if (name) name.textContent = r.title;
         closePicker(picker);
         paintRow(input.closest('.linkrow'));
       });
@@ -173,6 +198,10 @@
         input.dataset.targetType = '';
         paintRow(input.closest('.linkrow'));
       }
+
+      // 沒有從選單挑、直接打字的內容原樣送出去：貼 ID 仍然可用，
+      // 打了標題卻沒挑的話，伺服器會說「ID 格式錯誤」——那比靜默丟掉好。
+      setTarget(input, q);
 
       clearTimeout(timers.get(input));
       if (q === '' || /^[0-9]{8,}$/.test(q)) { closePicker(picker); return; }

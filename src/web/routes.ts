@@ -9,11 +9,12 @@ import { renderMarkdown, renderPage, safeHref, type PageOptions } from './render
 import {
   FORM_SPEC_TABLE,
   actionsFor,
+  formTitle,
   decorateThread,
-  fmtDate,
-  fmtTime,
   formSpec,
   relOptions,
+  stampFull,
+  stampShort,
   toItem,
 } from './present.ts';
 import {
@@ -141,14 +142,18 @@ export function registerRoutes(
    * 清單的名字與去處在這裡定義一次，模板只負責 forEach。
    */
   const shell = (view: string, data: Record<string, unknown>, opts: PageOptions) => {
-    const n = lists.counts(index);
     return renderPage(view, data, {
       ...opts,
+      // U9：不掛數量。這些清單實務上不會歸零，數字提供不了「還剩多少」的訊號，
+      // 只是每次進站都在閃一個不會變的數；清單本身的長度就是它的量。
+      // 連帶把每個請求的四次 COUNT(*) 一起省掉。
       lists: [
-        { nav: 'pending', href: '/pending', name: '待思考', count: n.pending },
-        { nav: 'loose', href: '/loose', name: '初步想法', count: n.looseThinking },
-        { nav: 'fleeting', href: '/fleeting', name: '碎片', count: n.looseFleeting },
-        { nav: 'settling', href: '/settling', name: '沉澱', count: n.settling },
+        { nav: 'pending', href: '/pending', name: '待思考' },
+        { nav: 'loose', href: '/loose', name: '初步想法' },
+        // U8：側欄這項是「fleeting 且無入向連結」，跟首頁篩選列的「碎片」
+        // （全部 fleeting）不是同一個集合，同名會讓兩處的數字對不起來。
+        { nav: 'fleeting', href: '/fleeting', name: '雜筆' },
+        { nav: 'settling', href: '/settling', name: '沉澱' },
       ],
       recent: lists.recent(index).map((r) => ({ id: r.id, title: r.title })),
     });
@@ -208,6 +213,7 @@ export function registerRoutes(
       {
         values: {
           type: '',
+          rel: '',
           title: '',
           body: '',
           tags: '',
@@ -227,11 +233,13 @@ export function registerRoutes(
               typeLabel: TYPE_LABELS[opts.source.type as CardType] ?? opts.source.type,
               title: opts.source.title,
               tags: opts.source.tags,
-              date: fmtDate(opts.source.created),
+              date: stampShort(opts.source.created),
               body_html: renderMarkdown(opts.source.body),
               provenance: opts.source.provenance === 'default' ? null : opts.source.provenance,
             }
           : null,
+        // U14：說出這是什麼動作，而且在送出**前**就看得到。
+        action: formTitle(values.type ?? '', values.rel ?? '', opts.source ?? null),
         types: CARD_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })),
         // 型別由入口決定時就鎖住：那些入口同時預填了型別與那條連結，
         // 改了型別，預填的關係多半就不再合法，表單會變成一張送不出去的表，
@@ -277,7 +285,10 @@ export function registerRoutes(
 
     return html(
       reply,
-      newFormPage({ type, body }, links, { replyTo: target?.id, source: target }),
+      newFormPage({ type, body, rel: rel ?? '' }, links, {
+        replyTo: target?.id,
+        source: target,
+      }),
     );
   });
 
@@ -382,8 +393,8 @@ export function registerRoutes(
         'card',
         {
           card,
-          created_display: fmtTime(card.created),
-          revised_display: card.revised ? fmtTime(card.revised) : null,
+          created_display: stampFull(card.created),
+          revised_display: card.revised ? stampFull(card.revised) : null,
           provenance: card.provenance === 'default' ? null : card.provenance,
           lock_at: isWithinEditWindow(card) ? lockAt(card) : '',
           url_href: safeHref(card.url),
@@ -394,6 +405,8 @@ export function registerRoutes(
           upstream_count: out.length,
           downstream_count: index.backLinks(id).length,
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
+          // U27：選取文字帶當前卡片的型別色，因為選取是「引用選取的段落」的前置動作。
+          type_slug: card.type,
           from: from ? { id: from.id, title: from.title } : null,
           editable: isWithinEditWindow(card),
         },
@@ -422,7 +435,7 @@ export function registerRoutes(
         {
           card,
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
-          created_display: fmtTime(card.created),
+          created_display: stampFull(card.created),
           lock_at: lockAt(card),
           tags_line: card.tags.join(', '),
         },
@@ -491,7 +504,7 @@ export function registerRoutes(
     {
       nav: 'fleeting',
       path: '/fleeting',
-      heading: '碎片',
+      heading: '雜筆',
       empty: '沒有任何碎片是無人指向的。',
       rows: () => lists.looseFleeting(index),
     },
@@ -511,7 +524,7 @@ export function registerRoutes(
         reply,
         shell(
           'worklist',
-          { heading: l.heading, empty: l.empty, count: items.length, items },
+          { heading: l.heading, empty: l.empty, items },
           { title: l.heading, nav: l.nav },
         ),
       );

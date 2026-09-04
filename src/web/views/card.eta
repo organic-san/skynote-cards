@@ -1,25 +1,25 @@
 <% if (it.from) { %>
 <p class="fromsource">已從 <a href="/c/<%= it.from.id %>"><%= it.from.title %></a> 建立</p>
 <% } else { %>
-<p class="back"><a href="/">←</a></p>
+<p class="back"><a href="/">← 返回</a></p>
 <% } %>
 
-<% if (it.upstream.length) { %>
-<%/* 計數緊貼著卡片，箭頭才指得對：↑ 在上游那一疊的**下緣**，
-     指的是「往上是這些」。放在最頂端的話，箭頭指向的是頁面外面。 */%>
-<section class="stream up">
-  <%~ include('thread', { nodes: it.upstream }) %>
-  <p class="streamcount">↑ <%= it.upstream_count %></p>
-</section>
-<% } %>
-
-<article class="card<%= it.upstream.length ? ' has-up' : '' %><%= it.downstream.length ? ' has-down' : '' %>">
+<%/* U12：卡片內容在前，關聯區塊在後。
+     先前把關聯樹放在標題之上，一進頁面先讀到後設資料，而且標題的垂直位置
+     隨連結多寡浮動，頁面沒有固定落點。 */%>
+<article class="card">
   <h1><%= it.card.title %></h1>
   <p class="cardmeta">
-    <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
-    <time><%= it.created_display %></time>
-    <% if (it.revised_display) { %><span>改於 <%= it.revised_display %></span><% } %>
-    <% if (it.provenance) { %><span><%= it.provenance %></span><% } %>
+    <span class="dot dot-<%= it.card.type %>"></span>
+    <span class="tname"><%= it.type_label %></span>
+    <span class="sep">·</span>
+    <time datetime="<%= it.created_display.iso %>"><%= it.created_display.text %></time>
+    <% if (it.revised_display) { %>
+    <span class="sep">·</span><span>改於 <time datetime="<%= it.revised_display.iso %>"><%= it.revised_display.text %></time></span>
+    <% } %>
+    <% if (it.provenance) { %><span class="sep">·</span><span><%= it.provenance %></span><% } %>
+    <%/* 反芻期上線後在同一行末尾追加第三段（可修改 N 小時／已定案），
+         不加框、不做倒數跳動。位置先留著（U12）。 */%>
   </p>
 
   <% if (it.card.tags.length) { %>
@@ -51,9 +51,23 @@
   <% } %>
 </article>
 
-<% if (it.downstream.length) { %>
-<section class="stream down">
-  <p class="streamcount">↓ <%= it.downstream_count %></p>
-  <%~ include('thread', { nodes: it.downstream }) %>
+<%/* U13：關聯區塊維持縱向的體感式結構。上游在上、下游在下，
+     中間是「你在這裡」，方向由**空間位置**表達而不是由文字說明表達。
+     卡片本身沒有任何連結時兩側不留空欄，只顯示「你在這裡」一行。 */%>
+<section class="links">
+  <% if (it.upstream.length) { %>
+  <div class="stream up">
+    <%~ include('thread', { nodes: it.upstream }) %>
+    <p class="streamcount">↑ <%= it.upstream_count %></p>
+  </div>
+  <% } %>
+
+  <p class="youarehere">你在這裡：<span><%= it.card.title %></span></p>
+
+  <% if (it.downstream.length) { %>
+  <div class="stream down">
+    <p class="streamcount">↓ <%= it.downstream_count %></p>
+    <%~ include('thread', { nodes: it.downstream }) %>
+  </div>
+  <% } %>
 </section>
-<% } %>

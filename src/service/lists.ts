@@ -38,21 +38,9 @@ export function recent(index: CardIndex): CardRowWithTags[] {
 
 // ---------------------------------------------------------------- 工作狀態清單
 
-/**
- * 四份清單，以及側欄每一項後面的數字。
- *
- * 側欄出現在**每一頁**，所以 `counts()` 是每個請求都會跑的四次 COUNT。
- * 目前走 idx_links_target，語料庫這個量級完全無感；但這是會隨卡片數
- * 線性成長的東西，日後若首頁變慢，先來看這裡。
- */
-export function counts(index: CardIndex): {
-  pending: number;
-  looseThinking: number;
-  looseFleeting: number;
-  settling: number;
-} {
-  return index.listCounts(editableSince());
-}
+// 側欄每一項後面的數字被 U9 推翻——那些清單實務上不會歸零，
+// 數字提供不了「還剩多少」的訊號。連帶把每個請求的四次 COUNT(*) 省掉，
+// 那個成本本來會隨卡片數線性成長。
 
 /** 待思考：收進來但沒有人接手的原始資料。 */
 export function pending(index: CardIndex): CardRowWithTags[] {

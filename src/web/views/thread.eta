@@ -1,27 +1,24 @@
 <ul class="thread">
 <% it.nodes.forEach(function (n) { %>
   <li class="node">
-    <%/* 關係用圖示加中文，不再用顏色——顏色改由型別承接。 */%>
+    <%/* U13 每列：色點 + rel + 型別：標題 + 日期。
+         關係詞在標題前面，方向編在詞裡（節錄自／節錄出）。 */%>
     <% if (n.missing) { %>
     <div class="nodehead">
       <p class="nodeline">
-        <%~ include('icon', { name: n.rel }) %>
         <span class="noderel"><%= n.relLabel %></span>
         <span class="nodemissing">找不到 <%= n.id %></span>
       </p>
     </div>
     <% } else { %>
     <div class="nodehead">
-      <%/* 關係詞在標題前面：一行掃過去就是一句話，
-           不必先看標題再回頭找關係。方向編在詞裡（節錄自／節錄出）。 */%>
       <p class="nodeline">
-        <%~ include('icon', { name: n.rel }) %>
+        <span class="dot dot-<%= n.type %>"></span>
         <span class="noderel"><%= n.relLabel %></span>
-        <a href="/c/<%= n.id %>"><%= n.title %></a>
-      </p>
-      <p class="nodemeta">
-        <span class="rtype rtype-<%= n.type %>"><%= n.typeLabel %></span>
-        <time><%= n.date %></time><% if (n.repeated) { %> · 上方已展開<% } %>
+        <a href="/c/<%= n.id %>"><span class="tname"><%= n.typeLabel %>：</span><%= n.title %></a>
+        <time datetime="<%= n.date.iso %>" data-rel><%= n.date.text %></time>
+        <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>
+        <% if (n.repeated) { %><span class="noderel">上方已展開</span><% } %>
       </p>
     </div>
     <% } %>

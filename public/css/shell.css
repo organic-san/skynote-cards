@@ -1,0 +1,157 @@
+/* 版面骨架：側欄與內容欄。 */
+
+@layer shell {
+
+.menubtn {
+  position: fixed;
+  z-index: 60;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  width: var(--sp-7);
+  height: var(--sp-7);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+.menubtn span { display: block; height: 1px; background: var(--text-2); }
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+}
+
+.drawer {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--drawer-w);
+  padding: var(--sp-5) var(--sp-3) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  background: var(--surface-page);
+  border-right: 1px solid var(--line);
+  transform: translateX(-100%);
+  transition: transform var(--motion-dur) var(--motion-ease);
+}
+.drawer.open { transform: none; }
+
+.drawerclose {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-3);
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-4);
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 站名是標題，不是連結——手會先落在下面第一列，回首頁那件事交給它。 */
+.drawerbrand {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 var(--sp-2) var(--sp-1);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/*
+  側欄分三段：首頁、四份工作清單、動作與工具。
+  分隔線畫在 .drawernav 的上緣，所以每多一個 .drawernav 就多一條線——
+  三段之間因此有兩條線，不必另外標記段落。
+*/
+.drawerwork,
+.drawernav { display: flex; flex-direction: column; gap: 2px; }
+.drawernav { padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+
+.drawerwork a,
+.drawernav a {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-field);
+  font-size: var(--fs-2);
+  color: var(--text-2);
+}
+.drawerwork a:hover,
+.drawernav a:hover { background: var(--hover-bg); text-decoration: none; }
+
+/* U32 selected：底色塊，字重不變。 */
+.drawerwork a.on,
+.drawernav a.on { background: var(--selected-bg); color: var(--text); }
+
+.drawerwork .icon,
+.drawernav .icon { flex: 0 0 auto; color: var(--text-3); }
+
+/*
+  U11：卡片索引。用途是建立連結時查名稱，不是導覽，所以字級小一級、
+  顏色跟側欄其他項目一致——不再是這裡唯一的藍色連結。
+*/
+.cardindex {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* 這一份吃掉側欄剩下的全部高度，所以上面每一組的留白都直接從它身上扣——
+     清單要夠長，才有「查得到東西」的價值。 */
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+/* U34：非 hover 時隱藏捲軸。 */
+.cardindex:hover { scrollbar-color: var(--line) transparent; }
+.cardindex::-webkit-scrollbar { width: var(--sp-1); }
+.cardindex::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--sp-1); }
+.cardindex:hover::-webkit-scrollbar-thumb { background: var(--line); }
+
+.indexhead {
+  margin: 0 0 var(--sp-1);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+.cardindex ul { list-style: none; margin: 0; padding: 0; }
+.cardindex a {
+  display: block;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-field);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cardindex a:hover { background: var(--hover-bg); text-decoration: none; }
+.cardindex a.on { background: var(--selected-bg); color: var(--text); }
+
+/*
+  U19：內容欄靠左對齊，距側欄右緣一個固定間距。
+  置中會讓整個版面右漂、側欄與內容看起來不屬於同一個版面。
+*/
+@media (min-width: 60rem) {
+  .menubtn, .drawerclose, .scrim { display: none; }
+  .drawer { transform: none; }
+  /* 側欄是 fixed，用 body 的左內距把它的寬度讓出來。 */
+  body { padding-left: var(--drawer-w); }
+  main {
+    max-width: calc(var(--content-w) + var(--content-gap) * 2);
+    margin-inline: auto;
+    padding-inline: var(--content-gap);
+  }
+}
+}

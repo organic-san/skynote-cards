@@ -1,0 +1,134 @@
+/* reset、字體二分、字級、互動狀態，以及沒有歸屬的共用小零件。 */
+
+@layer base {
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+/*
+  U25：介面用黑體。卡片標題與內文另外指定宋體（見 card.css / list.css），
+  所以「這裡是文件、那裡是工具」在畫面上是一眼可分的兩種材質。
+
+  U34：line-break 避免標點跑到行首，text-wrap 避免最後一行只剩一兩個字。
+  兩者都是中文網頁排版的必要設定，不是加分項。
+*/
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  letter-spacing: var(--tracking-cjk);
+  line-break: strict;
+  text-wrap: pretty;
+}
+
+/* U27：連結不用藍色——資料的色點已經是藍的。改為接近黑的文字，hover 加底線。 */
+a { color: inherit; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* U26：所有數字等寬。列表左欄的日期要靠這條才會每一列落在同一個位置，
+   形成 U3 說的第二條對齊線；比例數字做不到。 */
+time, .num { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+/*
+  U19 / U20：內容欄靠左對齊，距側欄右緣一個固定間距，寬度固定。
+  置中會讓整個版面右漂、側欄與內容看起來不屬於同一個版面。
+*/
+main {
+  max-width: var(--content-w);
+  margin: 0;
+  padding: var(--page-top) var(--sp-4) var(--sp-8);
+}
+
+/* U32 focus：2px 描邊、2px offset，不用瀏覽器預設。全站鍵盤可達。 */
+:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* U27：選取文字是「引用選取的段落」的前置動作，讓它帶型別色是有語義的。
+   卡片頁把 --type-current 設成當前卡片的型別色（見 card.eta）。 */
+::selection { background: color-mix(in srgb, var(--type-current, var(--text)) 12%, transparent); }
+
+/* ---------------------------------------------------------- 共用 */
+
+h1 {
+  font-size: var(--fs-4);
+  line-height: var(--lh-4);
+  font-weight: 600;
+  margin: 0 0 var(--sp-2);
+}
+
+.tag { font-size: var(--fs-1); color: var(--text-2); }
+.tag:hover { color: var(--text); }
+
+/* U32 空狀態：一句與 meta 同灰階的話，不放插圖、不放按鈕。 */
+.empty, .message { color: var(--text-3); font-size: var(--fs-1); }
+
+/* 返回是這一頁唯一的離開路徑，13px 的一個箭頭太不明顯。
+   給它字級與一個字，並讓可點範圍大於文字本身。 */
+.back { margin: 0 0 var(--sp-5); font-size: var(--fs-2); }
+.back a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  margin-left: calc(var(--sp-2) * -1);
+  border-radius: var(--radius-field);
+  color: var(--text-2);
+}
+.back a:hover { background: var(--hover-bg); color: var(--text); text-decoration: none; }
+
+/* 「已從 ⟨來源卡標題⟩ 建立」。建立一張卡幾乎總是為了回到剛才在看的東西，
+   所以這一行取代了返回鍵的位置，而不是加在它旁邊。 */
+.fromsource { margin: 0 0 var(--sp-4); font-size: var(--fs-1); color: var(--text-3); }
+.fromsource a { color: var(--text-2); }
+
+.errors {
+  margin: 0 0 var(--sp-5);
+  padding: var(--sp-2) var(--sp-4);
+  border-left: 2px solid var(--alert);
+  color: var(--alert);
+  font-size: var(--fs-1);
+}
+
+.actions { margin: var(--sp-6) 0 0; font-size: var(--fs-1); }
+.actions a { color: var(--text-2); }
+
+/*
+  U1 / U6：型別以左側色點標示，並且一律附上無色的型別名。
+  色點負責一眼分辨，文字負責記得住——顏色本身不可記憶，
+  不得單獨承擔型別資訊。彩色外框徽章全部移除。
+*/
+.dot {
+  display: inline-block;
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--type-fleeting);
+}
+.dot-original { background: var(--type-original); }
+.dot-restatement { background: var(--type-restatement); }
+.dot-thinking { background: var(--type-thinking); }
+
+/* 碎片空心：原本虛線徽章那個「尚未定案」語義的延續，是唯一的形狀例外。
+   空心在視覺上比實心輕，環的邊寬補回重量（U6）。
+   環改成虛線——「還沒定案」在這個系統裡一直是用虛線講的，實線的空心環
+   只說了「不一樣」，虛線才說得出是哪裡不一樣。 */
+.dot-fleeting {
+  background: transparent;
+  border: 1px dashed var(--type-fleeting);
+}
+
+/* 型別名不上色、不加框，與日期同一個次要灰階（U1）。 */
+.tname { color: var(--text-3); }
+
+/* U33：動效只出現在浮層，其餘一律不加。 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+}

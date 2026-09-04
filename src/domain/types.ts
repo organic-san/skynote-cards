@@ -15,9 +15,15 @@
 export const CARD_TYPES = ['original', 'restatement', 'thinking', 'fleeting'] as const;
 export type CardType = (typeof CARD_TYPES)[number];
 
-/** 介面上顯示的名字。程式裡一律用英文型別名，只有呈現時翻成這個。 */
+/**
+ * 介面上顯示的名字。程式裡一律用英文型別名，只有呈現時翻成這個。
+ *
+ * `original` 的標籤是「資料」不是「原始」：它跟側欄的「追加外部資料」一致，
+ * 而且「原始」單獨出現時讀起來像形容詞。型別名 `original` 不變，
+ * 卡片檔與解析器完全不受影響。
+ */
 export const TYPE_LABELS: Record<CardType, string> = {
-  original: '原始',
+  original: '資料',
   restatement: '重述',
   thinking: '思考',
   fleeting: '碎片',

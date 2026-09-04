@@ -1,7 +1,9 @@
 <div class="filters">
   <a href="/" class="<%= !it.type ? 'on' : '' %>">全部</a>
+  <%/* U7：篩選列各項前方也放同一顆色點——這是使用者學會色彩對應的唯一場所。 */%>
   <% it.types.forEach(function (t) { %>
-  <a href="/?type=<%= t.value %><%= it.tagQuery %>" class="<%= it.type === t.value ? 'on' : '' %>"><%= t.label %></a>
+  <a href="/?type=<%= t.value %><%= it.tagQuery %>" class="<%= it.type === t.value ? 'on' : '' %>">
+    <span class="dot dot-<%= t.value %>"></span><%= t.label %></a>
   <% }) %>
   <% if (it.tag) { %><span class="filtertag">#<%= it.tag %></span><% } %>
   <span class="filtercount"><%= it.total %></span>

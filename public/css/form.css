@@ -1,0 +1,311 @@
+/* 建立與編輯：右下的按鈕與浮層、表單、連結列、分割視窗。 */
+
+@layer components {
+
+/*
+  U22：`+` 按鈕在桌機錨在內容欄的右下角，不再貼視窗角落——
+  兩者相距一大片空白時，「從這張卡建立」的語義關聯會被距離稀釋。
+  手機維持右下浮動，符合單手可及。
+*/
+.fab {
+  position: fixed;
+  z-index: 30;
+  right: var(--sp-5);
+  bottom: var(--sp-5);
+  width: var(--sp-8);
+  height: var(--sp-8);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--fs-4);
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-float);
+}
+
+/* U23：浮層保留陰影。U31：固定兩層——接觸陰影加環境陰影。 */
+/* 浮層的下緣要離 + 一段：按鈕在 bottom 24px、高 56px，
+   所以 80px 剛好貼齊它的上緣——那是零間距，看起來像黏在一起。 */
+.fabmenu, .quick {
+  position: fixed;
+  z-index: 31;
+  right: var(--sp-5);
+  bottom: calc(var(--sp-5) + var(--sp-8) + var(--sp-3));
+  padding: var(--sp-2);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-float);
+  box-shadow: var(--shadow-float);
+  /* U33：從 scale(0.96) 展開，transform-origin 在觸發按鈕那一角，
+     讓它看起來是從按鈕長出來的。ease-out，不用彈跳。 */
+  transform-origin: bottom right;
+  animation: pop var(--motion-dur) var(--motion-ease);
+}
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+.fabmenu { min-width: var(--min-control); }
+.fabmenu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-field);
+  font-size: var(--fs-2);
+  color: var(--text);
+}
+.fabmenu-item:hover { background: var(--hover-bg); text-decoration: none; }
+.fabmenu-item .icon { flex: 0 0 auto; color: var(--text-3); }
+.fabmenu-item:hover .icon { color: var(--text-2); }
+
+/* 隨手記：兩個欄位加一顆送出鍵。沒有型別、沒有標籤、沒有連結——
+   憑空記一句話如果需要一次型別決策，它就輸給 Discord。 */
+.quick { width: min(var(--quick-w), calc(100vw - var(--sp-7))); padding: var(--sp-3); }
+.quickhead { margin: 0 0 var(--sp-2); font-size: var(--fs-1); color: var(--text-3); }
+.quick input, .quick textarea {
+  display: block;
+  width: 100%;
+  font: inherit;
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  resize: vertical;
+}
+.quick textarea { font-family: var(--font-doc); line-height: var(--lh-2); }
+.willsave { margin: 0 0 var(--sp-2); font-size: var(--fs-1); color: var(--text-3); }
+.willsave span { color: var(--text-2); }
+.quick button { width: 100%; }
+
+/* ---------------------------------------------------------- 表單 */
+
+/* U14：動作標題。這行同時滿足來源可見，而且在送出**前**就看得到。 */
+.formtitle {
+  margin: 0 0 var(--sp-6);
+  font-size: var(--fs-4);
+  line-height: var(--lh-4);
+  font-weight: 600;
+}
+
+.typefixed {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-7);
+  font-size: var(--fs-1);
+}
+
+.typepick { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-7); }
+.typebtn input { position: absolute; opacity: 0; pointer-events: none; }
+.typebtn span {
+  display: inline-block;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  font-size: var(--fs-2);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.typebtn input:checked + span { border-color: var(--text-2); color: var(--text); }
+
+/*
+  U17：標籤→欄位 12px，欄位→下一組標籤 40px。
+  兩者相近時整份表單讀起來是一疊等距方框，眼睛沒有落腳點。
+
+  但在分割視窗裡 40px 會讓整份表單長到必須捲很久才看得完，
+  欄位之間反而失去關聯。所以節奏的比例保留，絕對值在分欄時收緊（見下方）。
+*/
+.field { display: block; margin-bottom: var(--sp-6); }
+.field > span, .fieldhead { display: block; margin-bottom: var(--sp-2); font-size: var(--fs-1); color: var(--text-2); }
+.field input, .field textarea, .field select {
+  width: 100%;
+  font: inherit;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  color: inherit;
+}
+/* 貼一篇長文進來時，欄位若無限長高，底下的標籤與連結會被推到幾千像素之外，
+   整份表單就沒辦法調整了。到頂之後改成內部捲動。
+
+   上限寫成自訂屬性給 new.js 讀，**不是** max-height——max-height 會連手動拖曳
+   一起擋掉，於是欄位只能變短不能變高。自動長高有上限，手動拖曳沒有。 */
+.field textarea {
+  font-family: var(--font-doc);
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+  resize: vertical;
+  --grow-max: 60vh;
+}
+
+/* original 依主次分兩段：主群組（標題／網址／內文）與次群組，中間留一段。 */
+.field.secondary { margin-top: var(--sp-7); }
+.fieldpair { display: flex; gap: var(--sp-3); }
+.fieldpair label { flex: 1 1 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.field.off, .optional.off, .fieldnote.off { display: none; }
+.fieldnote { margin: 0 0 var(--sp-7); font-size: var(--fs-1); color: var(--text-3); }
+
+.optional { margin-bottom: var(--sp-7); }
+.optional summary { font-size: var(--fs-1); color: var(--text-3); cursor: pointer; }
+.optional .field { margin: var(--sp-3) 0 0; }
+
+.fieldhead { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* ---------------------------------------------------------- 連結列 */
+
+.linkrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  position: relative;
+  margin-bottom: var(--sp-2);
+}
+.linkrow select { width: auto; flex: 0 0 auto; font-size: var(--fs-1); }
+.linkrow .linkto { flex: 1 1 var(--min-control); }
+
+/* U15：目標顯示標題，ID 不外露。U16：預填的那條是唯讀列，沒有輸入框也沒有減號。 */
+.linktarget {
+  flex: 1 1 var(--min-control);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  font-size: var(--fs-2);
+  color: var(--text-2);
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-1);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+.ghost:hover { color: var(--text); }
+
+.picker {
+  display: none;
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: var(--sp-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-float);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+.picker.on { display: block; }
+.picker button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-2);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+}
+.picker button:hover { background: var(--hover-bg); }
+.picker .pid { color: var(--text-3); font-size: var(--fs-1); }
+
+.primary {
+  border: 0;
+  border-radius: var(--radius-field);
+  background: var(--text);
+  color: var(--surface-raised);
+  font: inherit;
+  font-size: var(--fs-2);
+  padding: var(--sp-2) var(--sp-5);
+  cursor: pointer;
+}
+
+.stepnav { display: flex; align-items: center; gap: var(--sp-4); }
+
+
+/* ---------------------------------------------------------- 左右／上下分欄 */
+
+/* 只有帶著來源卡片的建立頁會分欄，其他頁面完全不受影響。
+   中線可拖動（U19），比例分左右分與上下分各記一份。 */
+/*
+  分欄頁不吃內容欄的任何內距。
+
+  main 的左右內距會夾在捲軸與視窗邊界之間，看起來像捲軸沒貼齊任何東西；
+  更要緊的是左右分割時它從兩側各吃掉一段，兩欄能用的寬度被壓得很小。
+  留白改由兩欄各自負責——它們才知道自己哪一側靠著分隔線、哪一側靠著視窗。
+  上下不留：分欄頁是滿版的工作區，不是一份文件。
+*/
+main:has(> .split) {
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
+}
+
+.split { display: grid; gap: 0; }
+/* 來源面板自己捲，引用鈕黏在它的下緣——那是讀到哪就想引哪的動作，
+   跟著文章捲到末段就等於在你需要它的時候不在（e）。 */
+.pane { min-width: 0; min-height: 0; }
+.pane-source {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-5) var(--sp-4) var(--sp-4) var(--sp-5);
+}
+.sourcebody { 
+  flex: 1 1 auto; 
+  min-height: 0; 
+  overflow: auto; 
+  padding: var(--sp-5) var(--sp-4) var(--sp-4) var(--sp-5);
+}
+
+.quotebar {
+  flex: 0 0 auto;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface-page);
+}
+
+/* 表單那一欄也自己捲，而且左右都要留白——貼著分隔線讀起來很擠。 */
+.pane-form { overflow: auto; padding: var(--sp-5) var(--sp-5) var(--sp-4) var(--sp-4); }
+/* 分欄時欄位收緊：這裡的高度是有限的，40px 的間距會讓捲動距離長得沒有必要。 */
+.pane-form .field { margin-bottom: var(--sp-5); }
+.pane-form .field.secondary { margin-top: var(--sp-6); }
+.pane-form .formtitle { margin-bottom: var(--sp-5); }
+.pane-form .typefixed { margin-bottom: var(--sp-5); }
+.pane-form textarea { --grow-max: 40vh; }
+
+.splitbar {
+  cursor: col-resize;
+  background: var(--line);
+  width: 1px;
+}
+
+.sourceopen { color: var(--text-2); margin-left: auto; }
+
+@media (min-width: 50rem) {
+  .split {
+    grid-template-columns: var(--split, 50%) auto 1fr;
+    /* main 不再出內距，所以這裡就是滿版的視窗高。 */
+    height: 100vh;
+  }
+}
+@media (max-width: 49.99rem) {
+  .split {
+    grid-template-rows: var(--split, 50%) auto 1fr;
+    height: 100vh;
+  }
+  .splitbar { cursor: row-resize; width: auto; height: 1px; margin: var(--sp-4) 0; }
+  .pane-source { padding: var(--sp-4) var(--sp-4) 0; }
+  .pane-form { padding: var(--sp-4) var(--sp-4) 0; }
+}
+}

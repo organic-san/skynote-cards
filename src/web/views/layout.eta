@@ -5,7 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= it.title %> | skynote</title>
 <link rel="icon" href="/static/favicon.ico" sizes="any">
-<link rel="stylesheet" href="/static/style.css">
+<%/* 走 Google Fonts 是因為它把 CJK 切成一百多個 unicode-range 子集，
+     一頁中文只下載用到的那幾片。font-display=swap 加上 tokens.css 裡的退回鏈：
+     連不上時頁面照常可讀，只是換成系統字體。
+     襯體（Noto Serif TC）隨字體二分一起撤掉了，不再下載。 */%>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap">
+<%/* 樣式依職責分檔，順序由 tokens.css 裡的 @layer 宣告保證，不靠這裡的先後。
+     沒有打包步驟——改完存檔就生效，這是單人開發時很值錢的性質。 */%>
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/shell.css">
+<link rel="stylesheet" href="/static/css/list.css">
+<link rel="stylesheet" href="/static/css/card.css">
+<link rel="stylesheet" href="/static/css/form.css">
 </head>
 <body>
 
@@ -26,22 +41,24 @@
        帶數字的是四份待辦清單，帶圖示的是去處與動作。 */
     const lists = it.lists || [];
   %>
-  <nav class="drawernav drawertop">
+  <nav class="drawerwork">
     <a href="/" class="<%= it.nav === 'feed' ? 'on' : '' %>">
       <%~ include('icon', { name: 'home' }) %><span>首頁</span>
     </a>
   </nav>
 
-  <nav class="drawerwork">
+  <nav class="drawernav">
     <% lists.forEach(function (l) { %>
-    <a href="<%= l.href %>" class="<%= it.nav === l.nav ? 'on' : '' %>">
-      <span class="wname"><%= l.name %></span><span class="wcount"><%= l.count %></span>
-    </a>
+    <a href="<%= l.href %>" class="<%= it.nav === l.nav ? 'on' : '' %>"><%= l.name %></a>
     <% }) %>
   </nav>
 
+  <%/* U10：「追加外部資料」與旁邊兩項同格式。
+       先前刻意做成不一致（理由是它是動作、另兩個是去處），那個決定被撤回——
+       實測壓力偏重，而且它已經在分隔線下方的動作與工具區，
+       位置本身足以表達它不是去處。 */%>
   <nav class="drawernav">
-    <a class="draweraction" href="/new?type=original">
+    <a href="/new?type=original" class="<%= it.nav === 'source' ? 'on' : '' %>">
       <%~ include('icon', { name: 'plus' }) %><span>追加外部資料</span>
     </a>
     <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">
@@ -52,7 +69,11 @@
     </a>
   </nav>
 
-  <div class="recent">
+  <%/* U11：卡片索引。它的用途是**建立連結時的名稱參照**，不是導覽——
+       所以它屬於下半的工具區，不與上半的工作狀態競爭。
+       加一行小標讓它的職責在畫面上可讀，字級小一級，顏色跟其他項目一致。 */%>
+  <div class="cardindex">
+    <p class="indexhead">卡片索引</p>
     <ul>
       <% const recent = it.recent || []; recent.forEach(function (c) { %>
       <li><a href="/c/<%= c.id %>" class="<%= it.activeId === c.id ? 'on' : '' %>"><%= c.title %></a></li>
@@ -83,12 +104,16 @@
 <%/* 其他地方：隨手記。兩個欄位加一個送出鍵，沒有型別選單。
       不填標題就是碎片——那個判斷你在寫的時候本來就會做。 */%>
 <div class="quick" id="fabmenu" hidden>
-  <form method="post" action="/quick">
+  <p class="quickhead">隨手記</p>
+  <form method="post" action="/quick" id="quickform">
     <%/* 先寫那句話，標題擺後面。你總是先有東西要記，
          「要不要給它一個名字」是寫完之後才做的判斷——欄位的順序照著那個順序。 */%>
     <textarea name="body" rows="5" spellcheck="false" placeholder="現在想到什麼" autofocus></textarea>
     <input type="text" name="title" autocomplete="off" placeholder="標題（可不填）">
-    <button type="submit" class="primary">記下來</button>
+    <%/* U18：把已經做完的判斷顯示出來。這不是多一次決策——
+         生死線（不填標題就是碎片）不動，只是讓結果在送出前可見。
+         寫在按鈕上而不是按鈕上方：同一件事講兩次就是兩個名字。 */%>
+    <button type="submit" class="primary" id="quicksubmit">記為<span>碎片</span></button>
   </form>
 </div>
 <% } %>

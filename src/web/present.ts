@@ -29,15 +29,15 @@ export interface Item {
   type: string;
   typeLabel: string;
   title: string;
-  date: string;
+  /** U3 左欄的日期。U4 的相對說法由用戶端改寫。 */
+  date: Stamp;
   /** 內文開頭。null 代表這一型不顯示內文。 */
   excerpt: string | null;
-  /** 標題**之上**的一行：目前只有 original 用，放它的出處。 */
-  eyebrow: string | null;
-  /** 標題**之下**的一行：目前只有 restatement 用，放它在講哪一份。 */
-  meta: string | null;
-  /** 數量摘要。只在真的有東西可數時出現。 */
-  counts: string | null;
+  /**
+   * U5 的 meta 行，型別名之後的那幾段。已經按 `·` 的順序排好，
+   * 模板只負責用分隔符串起來——哪一型顯示什麼在 ITEM_SHAPES 分岔一次。
+   */
+  meta: string[];
   tags: string[];
 }
 
@@ -48,39 +48,34 @@ export interface Item {
  * 掃過去就是一片同樣的東西。現在讓形狀自己說話：
  * `original` 把出處放到標題之上、`restatement` 在底下指出它在講哪一份、
  * `thinking` 只有標題與內文、`fleeting` 根本不長得像一張卡。
- * 型別籤留著，但改由顏色承接辨識（見 style.css 的 .rtype-*）。
+ * 型別籤留著，但改由顏色承接辨識（見 css/tokens.css 的 --type-*）。
  */
-type Shape = (row: ListRow) => Pick<Item, 'excerpt' | 'eyebrow' | 'meta' | 'counts'>;
+type Shape = (row: ListRow) => Pick<Item, 'excerpt' | 'meta'>;
 
 const ITEM_SHAPES: Record<CardType, Shape> = {
   /**
-   * 出處放在標題**之上**：這張卡最要緊的事實是「它從哪裡來」，
-   * 不是它自己說了什麼。不顯示內文開頭。
-   * 作者與年份缺一就退回網址的網域，再缺就是「未署名」——
-   * 這一行永遠在，因為「這份材料沒有署名」本身就是關於它的事實。
+   * 資料：作者與原始年份，加上被接住的次數。不顯示內文開頭——
+   * 這張卡最要緊的事實是它從哪裡來，不是它自己說了什麼。
+   * 作者或年份缺漏整段略過（U5）。
    */
   original: (row) => ({
     excerpt: null,
-    eyebrow: sourceLine(row.source_author, row.source_date, row.url),
-    meta: null,
-    counts: row.restatements > 0 ? `${row.restatements} 則重述` : null,
+    meta: [sourceLine(row.source_author, row.source_date), citeLine(row)].filter(
+      (x): x is string => x !== null,
+    ),
   }),
-  /** 標題與內文是我寫的，底下指出它在對照哪一份原始資料。 */
+  /** 重述：標題加內文前兩行，以及它在講哪一份資料。 */
   restatement: (row) => ({
     excerpt: excerpt(row.body),
-    eyebrow: null,
-    meta: row.about ? row.about.title : null,
-    counts: null,
+    meta: row.about ? [row.about.title] : [],
   }),
-  /** 只有標題與內文。連結數在列表上不驅動任何決定，拿掉了。 */
+  /** 思考：標題加內文前兩行，以及兩個方向的連結數。 */
   thinking: (row) => ({
     excerpt: excerpt(row.body),
-    eyebrow: null,
-    meta: null,
-    counts: null,
+    meta: [`出向 ${row.link_count} · 入向 ${row.inbound}`],
   }),
-  /** 整句話就是它的全部內容。它不是一張卡，是一行字。 */
-  fleeting: () => ({ excerpt: null, eyebrow: null, meta: null, counts: null }),
+  /** 碎片：標題即全部內容，沒有摘要行也沒有其他欄位。 */
+  fleeting: () => ({ excerpt: null, meta: [] }),
 };
 
 export function toItem(row: ListRow): Item {
@@ -90,7 +85,7 @@ export function toItem(row: ListRow): Item {
     type: row.type,
     typeLabel: TYPE_LABELS[row.type as CardType] ?? row.type,
     title: row.title,
-    date: fmtDate(row.created),
+    date: stampShort(row.created),
     tags: row.tags,
     ...shape(row),
   };
@@ -106,30 +101,21 @@ export function relLabel(rel: string, direction: 'in' | 'out' = 'out'): string {
 }
 
 /**
- * 一份原始資料的出處，一行。
+ * 「Herbert A. Simon · 1962」。
  *
- * 「Herbert A. Simon · 1962」→「Herbert A. Simon」→「example.com」→「未署名」。
- * 逐級退，但永遠有一行——隨手貼進來的文章通常沒有作者與年份，
- * 而那正是最需要一眼看出「這是外面的東西」的時候。
+ * U5：作者或年份缺漏就整段略過，不留空欄——半行資訊比沒有更難讀。
+ * `source_date` 是自由字串，照原樣顯示。
  */
-function sourceLine(
-  author: string | null,
-  date: string | null,
-  url: string | null,
-): string {
+function sourceLine(author: string | null, date: string | null): string | null {
   const parts = [author, date].filter((x): x is string => !!x && x.trim() !== '');
-  if (parts.length > 0) return parts.join(' · ');
-  const host = hostOf(url);
-  return host ?? '未署名';
+  return parts.length === 0 ? null : parts.join(' · ');
 }
 
-function hostOf(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return null;
-  }
+/** 「3 則重述 / 2 則引用」。都是 0 就整段不要。 */
+function citeLine(row: ListRow): string | null {
+  const cites = row.inbound - row.restatements;
+  if (row.restatements === 0 && cites === 0) return null;
+  return `${row.restatements} 則重述 / ${cites} 則引用`;
 }
 
 /**
@@ -155,7 +141,7 @@ export function decorateThread(
     title: n.title,
     missing: n.title === null,
     repeated: n.repeated,
-    date: fmtDate(n.created),
+    date: stampShort(n.created),
     open: n.depth < openDepth,
     children: n.children.map(walk),
   });
@@ -164,7 +150,39 @@ export function decorateThread(
 
 // ---------------------------------------------------------------- 格式化
 
-/** UTC 時間，精簡到分。系統只有一個使用者，不做時區轉換。 */
+/**
+ * 時間的呈現。
+ *
+ * **資料一律 UTC，渲染時區以用戶端為主。** 所以伺服器只給兩樣東西：
+ * `datetime` 屬性放 UTC 的真值，內容放伺服器算的保底文字；
+ * 真正的呈現由 public/app.js 依瀏覽器時區改寫（U4 的相對日期表）。
+ *
+ * 沒有 JS 也讀得到（只是可能差一天），有 JS 就依你所在的時區正確——
+ * 這是漸進增強，不是依賴 JS。
+ */
+export interface Stamp {
+  /** UTC ISO，放進 <time datetime>。用戶端據此重算。 */
+  iso: string;
+  /** 伺服器算的保底文字。 */
+  text: string;
+}
+
+// 模板一律寫成 <time datetime="{iso}">{text}</time>，相對日期再加 data-rel。
+// 這一小段曾經是個 partial，被移除了——Eta 在非 production 下每次 include 都會
+// 重新編譯模板，一頁 50 列就是 50 次，實測讓首頁從 250ms 掉到 460ms。
+// 一個元素的抽象換不到那個代價。
+
+/** 卡片詳細頁一律顯示絕對日期與時間，不套 U4 的相對說法。 */
+export function stampFull(iso: string): Stamp {
+  return { iso, text: fmtTime(iso) };
+}
+
+/** 列表與關聯區塊用相對說法，由用戶端改寫。 */
+export function stampShort(iso: string | null): Stamp {
+  return { iso: iso ?? '', text: fmtDate(iso) };
+}
+
+/** UTC 時間，精簡到分。用戶端會依自己的時區改寫。 */
 export function fmtTime(iso: string): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return iso;
@@ -218,6 +236,26 @@ const FORM_SPECS: Record<CardType, FormSpec> = {
   thinking: { single: false, url: false, source: false, links: true },
   fleeting: { single: true, url: false, source: false, links: false },
 };
+
+/**
+ * U14：表單頂端的一行，說這是什麼動作。
+ *
+ * 從卡片的 `+` 進來時要說出是從哪一張、做什麼——那是 v2 C.4 對「來源可見」
+ * 的要求，但提前到送出**之前**：送出後才知道自己剛才在做什麼已經太遲了。
+ */
+export function formTitle(
+  type: string,
+  rel: string,
+  source: { title: string; type: string } | null,
+): string {
+  if (!source || rel === '') {
+    return type === 'original' ? '追加外部資料' : '新增卡片';
+  }
+  const action = (CARD_ACTIONS[source.type as CardType] ?? []).find(
+    (a) => a.rel === rel && a.creates === type,
+  );
+  return `從《${source.title}》的${action ? action.label : '建立'}`;
+}
 
 /**
  * 還沒選型別時什麼都不開，包括連結。

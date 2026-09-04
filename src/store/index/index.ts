@@ -133,15 +133,6 @@ export class CardIndex implements IndexDb {
     return q.settling(this, since);
   }
 
-  listCounts(since: string): {
-    pending: number;
-    looseThinking: number;
-    looseFleeting: number;
-    settling: number;
-  } {
-    return q.listCounts(this, since);
-  }
-
   inboundBreakdown(id: string): { total: number; restatements: number } {
     return q.inboundBreakdown(this, id);
   }

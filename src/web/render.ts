@@ -61,7 +61,7 @@ export interface PageOptions {
    */
   fab?: false | { actions?: { label: string; href: string; rel: string }[] };
   /** 側欄的工作狀態清單。由路由填，模板只 forEach。 */
-  lists?: { nav: string; href: string; name: string; count: number }[];
+  lists?: { nav: string; href: string; name: string }[];
   /** 側欄的最近卡片。由路由填，模板直接用。 */
   recent?: { id: string; title: string }[];
   /** 目前正在看的卡片，用來把側欄裡對應的那一列標起來。 */

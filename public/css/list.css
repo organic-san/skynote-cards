@@ -1,0 +1,172 @@
+/* 卡片流：列表項、清單頁、篩選列、分頁器。 */
+
+@layer components {
+
+/*
+  U7：篩選列各項前方也放同一顆色點——這是學會色彩對應的唯一場所，成本一顆點。
+
+  U3 說整份列表只有兩條垂直線（左欄與內容欄）。篩選列原本是一條平的 flex，
+  於是畫面上出現第三條左緣。改成跟列表共用同一組欄位：左欄留空，
+  篩選項從內容欄那條線開始。
+*/
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  align-items: center;
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-1);
+}
+.filters a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-3);
+}
+.filters a.on { color: var(--text); }
+.filtertag { color: var(--text-2); }
+.filtercount { margin-left: auto; color: var(--text-3); }
+
+/*
+  U2：項目之間不使用分隔線，改用間距。
+  色點同時是項目起點的視覺錨，分界由它與間距共同承擔——
+  原本的「彩色徽章 + 全寬分隔線」是用兩個偏重的東西做同一件事。
+*/
+.rows { list-style: none; margin: 0; padding: 0; }
+
+/*
+  兩欄用 grid 而不是 flex，是為了 `align-items: baseline`：
+  grid 會把同一列的兩個項目**依第一條基線**對齊，所以色點跟標題落在同一條
+  基線上，不必靠算 margin 去湊——湊出來的東西換一個字級就又歪了。
+*/
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--dot) minmax(0, 1fr);
+  column-gap: var(--sp-5);
+  /*
+    這裡曾經是 `align-items: baseline`，想讓色點自動跟標題對齊。那是錯的：
+    grid item 會被 blockify，而色點裡沒有文字，所以它根本沒有基線可對——
+    瀏覽器拿盒子下緣當合成基線，於是調 margin 只會撐高列，不會移動點。
+
+    真正需要基線對齊的是「日期跟標題」，而它們同在 .rowhead 那條 flex 線上，
+    由那裡處理。grid 這一層只要把兩欄的頂端對齊。
+  */
+  align-items: start;
+  padding: 0;
+  margin-bottom: var(--sp-6);
+}
+.row:last-child { margin-bottom: 0; }
+
+/* U32：hover 向左右各溢出，讓它看起來是一塊可點區域而不是文字變色。 */
+.row::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--sp-2) * -1) calc(var(--hover-bleed) * -1);
+  border-radius: var(--radius-field);
+  background: transparent;
+}
+.row:hover::before { background: var(--hover-bg); }
+
+/* 時刻比日期再退一階：它是補充精度，不是分界。 */
+.rowtime {
+  flex: 0 0 auto;
+  margin-left: calc(var(--sp-3) * -1 + var(--sp-2));
+  font-size: var(--fs-1);
+  color: var(--text-3);
+  opacity: .65;
+}
+.rowtime:empty { display: none; }
+
+/*
+  U30 的光學對齊：把色點放在標題第一行的行框中心，再由 --dot-nudge 微調。
+  `.rowmain` 一定比色點高，所以這個 margin-top 只是在欄位裡把點往下推，
+  不會改變列高——改多少就動多少。
+*/
+.row > .dot {
+  margin-top: calc((var(--fs-3) * var(--lh-3) - var(--dot)) / 2 + var(--dot-nudge));
+}
+
+/* 標題、日期、時刻同一行。日期與時刻跟在標題之後：它們不是掃視時最先
+   參照的東西，但看某一列的時候要能一眼看到。 */
+.rowhead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin: 0;
+}
+.rowhead time { font-size: var(--fs-1); color: var(--text-3); }
+
+/* U25：卡片標題與內文用宋體——「這裡是文件」。 */
+.rowtitle {
+  font-family: var(--font-doc);
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+  font-weight: 600;
+  color: var(--text);
+}
+.rowtitle::after { content: ""; position: absolute; inset: 0; }
+.row:hover .rowtitle { text-decoration: underline; }
+
+/* U2 的節奏：標題→摘要 4px、摘要→meta 8px。 */
+.rowtext {
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-doc);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--text-2);
+  /* U34：前兩行截斷。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rowmeta {
+  margin: var(--sp-2) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+/* 分隔點原本用 --line（那是畫線用的極淡灰），在文字之間幾乎看不見，
+   於是「思考 出向 1 入向 0」讀起來像一串沒有斷句的字。 */
+.rowmeta .sep { color: var(--text-3); opacity: .55; }
+.rowmeta .tag { position: relative; z-index: 1; }
+
+/* 清單頁只有標題——清單有東西的時候，東西本身就是說明；
+   只有空的時候才需要一句話說剛才問了什麼（那句話在 .empty）。 */
+.listhead { margin: 0 0 var(--sp-6); }
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: var(--sp-7) 0 0;
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+
+.taglist { list-style: none; margin: 0; padding: 0; }
+.taglist li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: var(--sp-2) 0;
+  font-size: var(--fs-2);
+}
+.taglist .n { font-size: var(--fs-1); color: var(--text-3); }
+
+.searchpage { margin-bottom: var(--sp-6); }
+.searchpage input {
+  width: 100%;
+  font: inherit;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+}
+}

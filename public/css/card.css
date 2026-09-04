@@ -1,0 +1,160 @@
+/* 卡片詳細頁：內文、關聯區塊、外部來源的嵌入。 */
+
+@layer components {
+
+/* U25：卡片標題與內文用宋體。中文宋體標題的字重取 600 不用 700——
+   700 會讓筆畫在小字級下糊成一團。 */
+.card h1 { font-family: var(--font-doc); }
+
+.cardmeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+.cardmeta .sep { color: var(--text-3); opacity: .55; }
+.cardmeta .dot { align-self: center; }
+
+.tags { margin: 0 0 var(--sp-5); display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.body {
+  font-family: var(--font-doc);
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+}
+.body > * { margin: 0 0 var(--sp-5); }
+.body > *:last-child { margin-bottom: 0; }
+.body h1, .body h2, .body h3 {
+  font-size: var(--fs-3);
+  font-weight: 600;
+  margin-top: var(--sp-6);
+}
+.body blockquote {
+  margin-left: 0;
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--line);
+  color: var(--text-2);
+}
+.body code, .body pre { font-size: var(--fs-2); }
+.body pre { overflow-x: auto; }
+.body a { text-decoration: underline; text-underline-offset: 2px; }
+.body :target { background: var(--hover-bg); }
+
+/* ---------------------------------------------------------- 關聯區塊 */
+
+/*
+  U13：上游在上、下游在下，中間是「你在這裡」。
+  方向由空間位置表達而不是由文字說明表達——這是刻意的，
+  不改成兩組並列的清單。
+*/
+.links {
+  margin-top: var(--sp-7);
+  padding-top: var(--sp-7);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-1);
+}
+
+/* 「你在這裡」是關聯區塊的原點，說出是哪一張才有定位作用。 */
+.youarehere {
+  margin: var(--sp-3) 0;
+  color: var(--text-3);
+}
+.youarehere span { color: var(--text); }
+
+/* ↑ n / ↓ n 是展開深度指示，緊貼「你在這裡」那一側，箭頭才指得對。 */
+.streamcount { margin: 0; color: var(--text-3); }
+
+.thread { list-style: none; margin: 0; padding: 0; }
+.node {
+  border-left: 1px solid var(--line);
+  padding-left: var(--sp-3);
+  margin-top: var(--sp-1);
+}
+.thread .thread { margin-top: var(--sp-1); }
+
+/*
+  上游那一疊要向上長，而且要跟下游鏡像對稱。
+  下游的規矩是：離卡片越近的越靠近卡片、同層第一個排最前、展開鈕緊貼著
+  它自己那一則。上游把同樣三件事整個翻過來，缺一件就會露出破綻。
+*/
+.stream.up .thread,
+.stream.up .node,
+.stream.up .node > details {
+  display: flex;
+  flex-direction: column-reverse;
+}
+/* details 一旦被改成 flex，就不能只靠瀏覽器預設樣式去藏收合的內容。 */
+.stream.up .node > details:not([open]) > .thread { display: none; }
+/* 翻轉之後，節點之間的間距要改掛在下緣，否則會全部擠在一起。 */
+.stream.up .node { margin-top: 0; margin-bottom: var(--sp-2); }
+.stream.up .thread .thread { margin-top: 0; margin-bottom: var(--sp-1); }
+
+.nodehead { position: relative; width: fit-content; max-width: 100%; }
+.nodeline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  line-height: var(--lh-1);
+}
+.nodeline .dot { align-self: center; }
+.noderel { color: var(--text-3); }
+.nodeline a { color: var(--text); }
+.nodeline a::after { content: ""; position: absolute; inset: 0; }
+.nodehead:hover .nodeline a { text-decoration: underline; }
+.nodemissing { color: var(--alert); }
+
+/*
+  展開鈕原本各佔一整行，每多一層就多一行空的縱向噪音。
+  改成貼在縮排線上的一顆小記號：行高壓到 1、只有數字，
+  三角形用 ::before 的絕對定位掛在線外，不佔文字的位置。
+*/
+.node details > summary {
+  position: relative;
+  margin: 0;
+  padding-left: var(--sp-3);
+  line-height: 1;
+  font-size: var(--fs-1);
+  color: var(--text-3);
+  cursor: pointer;
+  list-style: none;
+}
+.node details > summary::-webkit-details-marker { display: none; }
+.node details > summary::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--line);
+}
+.node details[open] > summary::before { content: "▾"; }
+.node details > summary:hover { color: var(--text-2); }
+
+/* ---------------------------------------------------------- 外部來源 */
+
+.source { margin: 0 0 var(--sp-5); }
+.embed { display: block; width: 100%; border: 0; border-radius: var(--radius-field); }
+.embed-youtube, .embed-pdf {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-raised);
+}
+.embed-pdf { aspect-ratio: 3 / 4; }
+.embed-youtube iframe, .embed-pdf iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: var(--radius-field);
+}
+.sourcelink {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-1);
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+}

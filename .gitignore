@@ -1,7 +1,41 @@
+# 依賴與編譯輸出
 node_modules/
 dist/
+*.tsbuildinfo
+
+# 本機資料庫與暫存（SQLite）
 *.db
-*.db-journal
+*.db-*
+*.sqlite*
 *.tmp
-.env
+
+# 本機語料庫（不進版控）
 corpus-dev/
+corpus/
+corpus-*/
+
+# 環境變數與機密（保留範本）
+.env
+.env.*
+!.env.example
+
+# 執行日誌
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 測試覆蓋率報告
+coverage/
+.c8_output/
+
+# 系統與編輯器雜檔
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
+*.swo
+*~

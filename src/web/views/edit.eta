@@ -5,7 +5,7 @@
 <form class="newform" id="editcard" data-id="<%= it.card.id %>">
   <p class="cardmeta">
     <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
-    <time><%= it.created_display %></time>
+    <time datetime="<%= it.created_display.iso %>"><%= it.created_display.text %></time>
     <%/* 倒數只出現在這一頁。卡片頁是拿來讀的，一個每秒跳一次的數字
          放在內文上方是干擾；在這裡你就是在跟那段時間賽跑。 */%>
     <span class="lock" id="lock" data-until="<%= it.lock_at %>"></span>
