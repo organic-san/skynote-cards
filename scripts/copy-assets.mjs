@@ -4,5 +4,5 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-cpSync(join(root, 'src', 'views'), join(root, 'dist', 'views'), { recursive: true });
-console.log('views copied to dist/views');
+cpSync(join(root, 'src', 'web', 'views'), join(root, 'dist', 'web', 'views'), { recursive: true });
+console.log('views copied to dist/web/views');

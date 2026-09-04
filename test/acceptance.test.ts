@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
-import type { ReindexReport } from '../src/db.ts';
-import { EPOCH } from '../src/id.ts';
-import { W1_MESSAGE } from '../src/validate.ts';
+import type { ReindexReport } from '../src/store/index/index.ts';
+import { EPOCH } from '../src/domain/id.ts';
+import { W1_MESSAGE } from '../src/domain/rules.ts';
 import {
   countCards,
   createCard,

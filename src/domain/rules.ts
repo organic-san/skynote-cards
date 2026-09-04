@@ -164,3 +164,12 @@ export function isWithinEditWindow(card: Pick<Card, 'created'>, now = Date.now()
   if (Number.isNaN(created)) return false;
   return now - created <= EDIT_WINDOW_MS;
 }
+
+/**
+ * 這張卡什麼時候鎖上，ISO 字串。
+ * 路由與模板都要顯示倒數，各自算一次就會有兩份對時窗的理解；
+ * 規則只有一份，問這個函式。
+ */
+export function lockAt(card: Pick<Card, 'created'>): string {
+  return new Date(Date.parse(card.created) + EDIT_WINDOW_MS).toISOString();
+}
