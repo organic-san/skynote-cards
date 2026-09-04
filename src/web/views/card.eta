@@ -57,7 +57,7 @@
 <section class="links">
   <% if (it.upstream.length) { %>
   <div class="stream up">
-    <%~ include('thread', { nodes: it.upstream }) %>
+    <%~ include('thread', { rows: it.upstream }) %>
     <p class="streamcount">↑ <%= it.upstream_count %></p>
   </div>
   <% } %>
@@ -67,7 +67,7 @@
   <% if (it.downstream.length) { %>
   <div class="stream down">
     <p class="streamcount">↓ <%= it.downstream_count %></p>
-    <%~ include('thread', { nodes: it.downstream }) %>
+    <%~ include('thread', { rows: it.downstream }) %>
   </div>
   <% } %>
 </section>

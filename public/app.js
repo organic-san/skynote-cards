@@ -84,10 +84,44 @@
     if (isNaN(d.getTime())) return;
     el.textContent = el.hasAttribute('data-rel') ? relDate(d, new Date()) : absDate(d);
     el.title = d.toLocaleString();
-    // 時刻跟日期在同一列的不同欄，所以從整列去找那個位置。
-    var row = el.closest ? el.closest('.row') : null;
-    var slot = row && row.querySelector('.rowtime');
-    if (slot) slot.textContent = clock(d);
+    // 時刻永遠緊接在日期後面（列表與引用串都是這個排法），所以找相鄰的那一格
+    // 就夠了——不必再往上找整列，也就不必替每一種列各認一次容器。
+    var slot = el.nextElementSibling;
+    if (slot && slot.classList.contains('clock')) slot.textContent = clock(d);
+  });
+
+  // ------------------------------------------------------------ 引用串的收合
+  //
+  // 引用串攤平成一維之後，收合不再由 <details> 代勞：收起一列，底下所有
+  // 把它列為祖先的列就一起消失。祖先寫在 data-anc 上，所以這只是一次集合
+  // 判斷，不必再走一次樹，也不管那些列在文件裡排的是正序還是反序。
+  //
+  // 代價：沒有 JS 就展不開（仍看得到伺服器給的預設深度）。
+
+  Array.prototype.forEach.call(document.querySelectorAll('.thread'), function (thread) {
+    var rows = Array.prototype.slice.call(thread.querySelectorAll('.node'));
+    var toggles = Array.prototype.slice.call(thread.querySelectorAll('.nodetoggle'));
+    var folded = {};
+
+    var apply = function () {
+      rows.forEach(function (row) {
+        var anc = (row.getAttribute('data-anc') || '').split(' ');
+        row.classList.toggle('off', anc.some(function (k) { return k && folded[k]; }));
+      });
+    };
+
+    toggles.forEach(function (btn) {
+      var key = btn.getAttribute('data-toggle');
+      // 初始狀態以伺服器印出來的為準，兩邊才不會各說各話。
+      if (btn.getAttribute('aria-expanded') === 'false') folded[key] = true;
+      btn.addEventListener('click', function () {
+        if (folded[key]) delete folded[key]; else folded[key] = true;
+        btn.setAttribute('aria-expanded', folded[key] ? 'false' : 'true');
+        apply();
+      });
+    });
+
+    apply();
   });
 
   // ------------------------------------------------------------ 將存為什麼

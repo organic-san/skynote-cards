@@ -67,71 +67,143 @@
 /* ↑ n / ↓ n 是展開深度指示，緊貼「你在這裡」那一側，箭頭才指得對。 */
 .streamcount { margin: 0; color: var(--text-3); }
 
+/*
+  引用串是一維的列，縮排由每一列自己畫的軌道表達（見 present.ts 的
+  flattenThread）。這裡不再有巢狀容器，所以也不再有「翻轉三層 flex」
+  那一套：上游的順序在伺服器就排好了，CSS 只剩下面那一條鏡射。
+*/
 .thread { list-style: none; margin: 0; padding: 0; }
-.node {
-  border-left: 1px solid var(--line);
-  padding-left: var(--sp-3);
-  margin-top: var(--sp-1);
-}
-.thread .thread { margin-top: var(--sp-1); }
 
 /*
-  上游那一疊要向上長，而且要跟下游鏡像對稱。
-  下游的規矩是：離卡片越近的越靠近卡片、同層第一個排最前、展開鈕緊貼著
-  它自己那一則。上游把同樣三件事整個翻過來，缺一件就會露出破綻。
+  每一列固定一行高。列與列之間沒有 margin——有的話軌道就會斷成一截一截，
+  縱向的連續性正是這個結構要換來的東西。呼吸感改由 min-height 給。
 */
-.stream.up .thread,
-.stream.up .node,
-.stream.up .node > details {
+.node {
   display: flex;
-  flex-direction: column-reverse;
+  align-items: stretch;
+  min-height: var(--rail-h);
 }
-/* details 一旦被改成 flex，就不能只靠瀏覽器預設樣式去藏收合的內容。 */
-.stream.up .node > details:not([open]) > .thread { display: none; }
-/* 翻轉之後，節點之間的間距要改掛在下緣，否則會全部擠在一起。 */
-.stream.up .node { margin-top: 0; margin-bottom: var(--sp-2); }
-.stream.up .thread .thread { margin-top: 0; margin-bottom: var(--sp-1); }
+.node.off { display: none; }
 
-.nodehead { position: relative; width: fit-content; max-width: 100%; }
-.nodeline {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin: 0;
-  line-height: var(--lh-1);
+/* 軌道。每一格的直線落在該層節點色點的正中心，所以格寬就是縮排單位。 */
+.rails { display: flex; flex: 0 0 auto; }
+.rail { position: relative; width: var(--rail-w); }
+
+/*
+  直線穿過整列：這一層的祖先後面還有兄弟。
+
+  左緣是 --dot 的一半而不是格子的中線：直線要正對**上一層那顆色點**的圓心。
+  色點就貼在自己那一格的左緣，而每深一層就整整往右一格，所以「格左緣 + 半顆點」
+  剛好落在上一層色點的中心；用 50% 的話會偏右半格。
+*/
+.rail-line::before,
+.rail-tee::before,
+.rail-elbow::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--dot) / 2);
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--line);
 }
-.nodeline .dot { align-self: center; }
-.noderel { color: var(--text-3); }
-.nodeline a { color: var(--text); }
-.nodeline a::after { content: ""; position: absolute; inset: 0; }
-.nodehead:hover .nodeline a { text-decoration: underline; }
+/* 最後一個子節點：直線到這一列為止，不再往下。 */
+.rail-elbow::before { bottom: 50%; }
+/* 分枝往右接到自己的色點。50% 是列高的一半，也就是色點的垂直中心。 */
+.rail-tee::after,
+.rail-elbow::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--dot) / 2);
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--line);
+}
+
+/*
+  上游是下游那一串的反序（伺服器排的），所以軌道只要再垂直鏡射一次，
+  整張圖就是下游的鏡像：直線對稱不受影響，轉角自動翻到正確的一側。
+  這一條取代了先前那三條 column-reverse 加一條 details 的補丁。
+*/
+.stream.up .rails { transform: scaleY(-1); }
+
+/*
+  列的內容。整條（軌道除外）都是連往那張卡的點擊區，所以 ::after 蓋在
+  .nodebody 上而不是整個 .node 上——蓋到軌道上會變成點線也會跳頁。
+*/
+.nodebody {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: var(--sp-2);
+}
+.nodebody .dot { flex: 0 0 auto; }
+.noderel { flex: 0 0 auto; color: var(--text-3); }
+
+/* 中文標題長度沒有上限，所以讓它吃掉剩下的寬度並截斷——
+   一列一行是這個結構的前提，換行會把軌道的節奏打散。 */
+.nodetitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.nodetitle::after { content: ""; position: absolute; inset: 0; }
+.nodebody:hover .nodetitle { text-decoration: underline; }
 .nodemissing { color: var(--alert); }
 
-/*
-  展開鈕原本各佔一整行，每多一層就多一行空的縱向噪音。
-  改成貼在縮排線上的一顆小記號：行高壓到 1、只有數字，
-  三角形用 ::before 的絕對定位掛在線外，不佔文字的位置。
-*/
-.node details > summary {
-  position: relative;
-  margin: 0;
-  padding-left: var(--sp-3);
-  line-height: 1;
+/* 日期靠右對齊成一欄，時刻再退一階：它是補充精度，不是分界。 */
+.nodebody time { flex: 0 0 auto; margin-left: auto; color: var(--text-3); }
+.nodetime {
+  flex: 0 0 auto;
   font-size: var(--fs-1);
   color: var(--text-3);
+  opacity: .65;
+}
+.nodetime:empty { display: none; }
+
+/*
+  展開鈕。先前它自成一行，落在比父深、比子淺的縮排上，誰的都不是；
+  現在併回它自己那一列。z-index 是必要的——上面那層 ::after 蓋滿整條。
+*/
+.nodetoggle {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-field);
+  background: none;
+  font: inherit;
+  font-size: var(--fs-1);
+  color: var(--text-2);
   cursor: pointer;
-  list-style: none;
 }
-.node details > summary::-webkit-details-marker { display: none; }
-.node details > summary::before {
+/* 下游（預設）：展開朝下 ▾，收合朝右 ▸ */
+.nodetoggle::before {
+  content: "▾";
+  color: currentColor;
+}
+.nodetoggle[aria-expanded="false"]::before {
   content: "▸";
-  position: absolute;
-  left: 0;
-  color: var(--line);
 }
-.node details[open] > summary::before { content: "▾"; }
-.node details > summary:hover { color: var(--text-2); }
+/* 上游：子節點向上展開，因此展開時箭頭朝上 ▴，收合維持朝右 ▸ */
+.stream.up .nodetoggle::before {
+  content: "▴";
+}
+.stream.up .nodetoggle[aria-expanded="false"]::before {
+  content: "▸";
+}
+.nodetoggle:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
 
 /* ---------------------------------------------------------- 外部來源 */
 

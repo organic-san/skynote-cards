@@ -14,7 +14,7 @@
         <%/* datetime 是 UTC 真值，內容是保底文字；app.js 依瀏覽器時區改寫（U4）。
              時刻由腳本填，沒有 JS 時那一格是空的，不佔位。 */%>
         <time datetime="<%= c.date.iso %>" data-rel><%= c.date.text %></time>
-        <span class="rowtime num"></span>
+        <span class="rowtime clock num"></span>
       </p>
       <% if (c.excerpt) { %><p class="rowtext"><%= c.excerpt %></p><% } %>
       <p class="rowmeta">

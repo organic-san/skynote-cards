@@ -1,32 +1,36 @@
+<%/*
+  引用串攤平成一維的列（見 present.ts 的 flattenThread）。
+
+  縮排不再是巢狀 <ul> 疊出來的 border-left，而是每一列自己畫的軌道；
+  伺服器已經把上游排成反序，所以這裡不分方向，照著印就好。
+*/%>
 <ul class="thread">
-<% it.nodes.forEach(function (n) { %>
-  <li class="node">
-    <%/* U13 每列：色點 + rel + 型別：標題 + 日期。
+<% it.rows.forEach(function (n) { %>
+  <li class="node<%= n.visible ? '' : ' off' %>" data-key="<%= n.key %>" data-anc="<%= n.ancestors.join(' ') %>">
+    <span class="rails" aria-hidden="true"
+      ><% n.rails.forEach(function (r) { %><span class="rail rail-<%= r %>"></span><% }) %><%
+        if (n.branch) { %><span class="rail rail-<%= n.branch %>"></span><% } %></span>
+    <%/* U13 每列：色點 + rel + 型別：標題 + 日期時刻。
          關係詞在標題前面，方向編在詞裡（節錄自／節錄出）。 */%>
     <% if (n.missing) { %>
-    <div class="nodehead">
-      <p class="nodeline">
-        <span class="noderel"><%= n.relLabel %></span>
-        <span class="nodemissing">找不到 <%= n.id %></span>
-      </p>
-    </div>
+    <span class="nodebody">
+      <span class="noderel"><%= n.relLabel %></span>
+      <span class="nodemissing">找不到 <%= n.id %></span>
+    </span>
     <% } else { %>
-    <div class="nodehead">
-      <p class="nodeline">
-        <span class="dot dot-<%= n.type %>"></span>
-        <span class="noderel"><%= n.relLabel %></span>
-        <a href="/c/<%= n.id %>"><span class="tname"><%= n.typeLabel %>：</span><%= n.title %></a>
-        <time datetime="<%= n.date.iso %>" data-rel><%= n.date.text %></time>
-        <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>
-        <% if (n.repeated) { %><span class="noderel">上方已展開</span><% } %>
-      </p>
-    </div>
-    <% } %>
-    <% if (n.children.length) { %>
-    <details<%= n.open ? ' open' : '' %>>
-      <summary><%= n.children.length %></summary>
-      <%~ include('thread', { nodes: n.children }) %>
-    </details>
+    <span class="nodebody">
+      <span class="dot dot-<%= n.type %>"></span>
+      <span class="noderel"><%= n.relLabel %></span>
+      <a class="nodetitle" href="/c/<%= n.id %>"><span class="tname"><%= n.typeLabel %>：</span><%= n.title %></a>
+      <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>
+      <% if (n.repeated) { %><span class="noderel">上方已展開</span><% } %>
+      <% if (n.children) { %>
+      <button type="button" class="nodetoggle" data-toggle="<%= n.key %>"
+        aria-expanded="<%= n.expanded ? 'true' : 'false' %>"><%= n.children %></button>
+      <% } %>
+      <time datetime="<%= n.date.iso %>" data-rel><%= n.date.text %></time>
+      <span class="nodetime clock num"></span>
+    </span>
     <% } %>
   </li>
 <% }) %>

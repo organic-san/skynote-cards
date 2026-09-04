@@ -1261,25 +1261,72 @@ describe('關係怎麼讀', () => {
     assert.ok(down.includes('被反駁'), '這張是被反駁方');
   });
 
-  test('上游那一疊跟下游鏡像對稱，三層都翻', () => {
-    // 下游的規矩：離卡片越近的越靠近卡片、同層第一個排最前、展開鈕緊貼自己那一則。
-    // 上游要把同樣三件事整個翻過來，缺一件就會露出破綻——只翻一層的話，
-    // 展開鈕會離它自己那一則好幾行遠，同層的第一個也會變成離卡片最遠的那個。
+  test('上游那一疊跟下游鏡像對稱', async () => {
+    // 下游的規矩：離卡片越近的越靠近卡片、同層第一個排最前。
+    // 上游要把這些整個翻過來——缺一件就會露出破綻。
+    //
+    // 這件事先前是三條 column-reverse 加一條 details 的補丁做的；引用串攤平
+    // 之後改由伺服器直接輸出反序，所以這裡盯的是**輸出的順序**，
+    // CSS 只剩軌道要跟著鏡射。
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    const b = await createCard(h, {
+      type: 'restatement',
+      title: 'B 重述 A',
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+    const c = await createCard(h, {
+      type: 'thinking',
+      title: 'C 引用 B',
+      body: 'z',
+      links: [{ rel: 'supports', to: b }],
+    });
+
+    // 下游：離卡片近的（B）在上，遠的（C）在下。
+    const onA = (await h.app.fastify.inject(`/c/${a}`)).body;
+    const down = onA.slice(onA.indexOf('class="stream down"'));
+    assert.ok(down.indexOf('B 重述 A') < down.indexOf('C 引用 B'), '下游由近而遠往下長');
+
+    // 上游：整個翻過來，離卡片近的（B）在下，遠的（A）在上。
+    const onC = (await h.app.fastify.inject(`/c/${c}`)).body;
+    const up = onC.slice(onC.indexOf('class="stream up"'), onC.indexOf('youarehere'));
+    assert.ok(up.indexOf('A 原文') < up.indexOf('B 重述 A'), '上游由遠而近往下長');
+
+    // 軌道跟著鏡射一次，轉角才會翻到正確的一側。
     const css = readCss();
-    const at = css.indexOf('.stream.up .thread,');
-    assert.ok(at > -1, '上游的翻轉規則不見了');
+    assert.match(css, /\.stream\.up \.rails\s*\{[^}]*scaleY\(-1\)/);
+    // 翻轉容器那一套已經拆掉了，不該再有人靠 column-reverse 排引用串。
+    assert.ok(!/\.stream\.up[^{]*\{[^}]*column-reverse/.test(css), '容器不再翻轉');
+    assert.ok(!css.includes('.node details'), '收合不再靠 <details>');
+  });
 
-    const rule = css.slice(at, css.indexOf('}', at));
-    for (const sel of ['.stream.up .thread', '.stream.up .node', '.stream.up .node > details']) {
-      assert.ok(rule.includes(sel), `上游少翻了 ${sel}`);
+  test('軌道只在那一層還有兄弟時才畫線', async () => {
+    // 攤平之後縮排由每一列自己畫，所以「這是不是最後一個」必須寫進標記裡：
+    // 不是最後一個畫 T 形（線繼續往下），是最後一個畫 L 形（線到此為止）。
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    const b = await createCard(h, {
+      type: 'restatement',
+      title: 'B 重述 A',
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+    for (const t of ['C 支撐 B', 'D 支撐 B']) {
+      await createCard(h, {
+        type: 'thinking',
+        title: t,
+        body: 'z',
+        links: [{ rel: 'supports', to: b }],
+      });
     }
-    assert.match(rule, /column-reverse/, '翻轉靠的是 column-reverse');
 
-    // details 一旦改成 flex，收合的內容要自己藏。
-    assert.ok(css.includes('.stream.up .node > details:not([open]) > .thread'));
+    const page = (await h.app.fastify.inject(`/c/${a}`)).body;
+    const down = page.slice(page.indexOf('class="stream down"'));
 
-    // 下游不翻：它本來就是從卡片往下長的。
-    assert.ok(!/\.stream\.down[^{]*\{[^}]*column-reverse/.test(css));
+    // B 在深度 0，沒有軌道；C 與 D 在深度 1，兩個之中只有一個是最後一個。
+    assert.equal(down.split('rail-elbow').length - 1, 1, '只有最後一個收尾');
+    assert.equal(down.split('rail-tee').length - 1, 1, '另一個要讓線繼續往下');
   });
 
   test('牴觸是對稱的，兩端說法相同', () => {
@@ -1700,9 +1747,43 @@ describe('連結列與引用串的操作', () => {
     });
 
     const page = (await h.app.fastify.inject(`/c/${a}`)).body;
-    assert.ok(page.includes('class="nodehead"'), '可點區域要包住標題與日期');
-    const head = page.slice(page.indexOf('class="nodehead"'));
-    assert.ok(head.indexOf('nodemeta') < head.indexOf('</div>'), '日期與類型要在可點區域裡面');
+    const at = page.indexOf('class="nodebody"');
+    assert.ok(at > -1, '可點區域要自成一塊');
+
+    // 可點區域包住標題與日期，但不包住左邊的軌道——蓋到軌道上會變成
+    // 點線也跳頁。所以 .rails 在 .nodebody 外面。
+    const row = page.slice(at, page.indexOf('</li>', at));
+    assert.ok(row.includes('nodetitle'), '標題在可點區域裡');
+    assert.ok(row.includes('<time'), '日期也在可點區域裡');
+    assert.ok(page.slice(page.indexOf('<li class="node'), at).includes('rails'), '軌道在外面');
+
+    const css = readCss();
+    assert.match(css, /\.nodetitle::after\s*\{[^}]*inset:\s*0/, '整塊靠 ::after 蓋出來');
+    // 展開鈕在那層蓋子上面，否則按不到。
+    assert.match(css, /\.nodetoggle\s*\{[^}]*z-index/);
+  });
+
+  test('引用串一列一行：標題截斷，時刻補在日期後面', async () => {
+    // 軌道要連續，列與列之間就不能有間隙，於是每一列必須是固定的一行高。
+    // 中文標題沒有長度上限，所以它得截斷——這是攤平換來的節奏的代價。
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    await createCard(h, {
+      type: 'thinking',
+      title: '一個長到不可能排得下的中文標題'.repeat(4),
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+
+    const page = (await h.app.fastify.inject(`/c/${a}`)).body;
+    // 時刻緊接在日期後面（app.js 找的是相鄰的那一格）。
+    assert.match(page, /<\/time>\s*<span class="nodetime clock/);
+
+    const css = readCss();
+    assert.match(css, /\.nodetitle\s*\{[^}]*text-overflow:\s*ellipsis/);
+    assert.match(css, /\.node\s*\{[^}]*min-height:\s*var\(--rail-h\)/);
+    // 沒有 margin，軌道才接得起來。
+    assert.ok(!/\.node\s*\{[^}]*margin/.test(css), '列與列之間不留間距');
   });
 });
 

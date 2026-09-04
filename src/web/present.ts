@@ -119,33 +119,115 @@ function citeLine(row: ListRow): string | null {
 }
 
 /**
- * 引用串的節點。
+ * 引用串的一列。
+ *
+ * 這裡曾經是一棵巢狀的樹，交給模板遞迴出巢狀的 `<ul>`。那個結構有兩個毛病：
+ *
+ * 1. 展開鈕自成一行，落在「比父深、比子淺」的縮排上，眼睛沒辦法把它歸給誰。
+ * 2. 上游要向上長，於是三層 `column-reverse`，再補一條「flex 化的 details
+ *    不會自己藏收合內容」的規則——一個機制配一條補丁。
+ *
+ * 攤平之後兩個都消失：**伺服器直接依視覺順序輸出**，上游就是下游那串的反序，
+ * 模板不再遞迴、CSS 不再翻轉容器；縮排改由每一列自己畫的軌道表達，
+ * 展開鈕併回它自己那一列。
+ *
+ * 代價講明白：收合從 `<details>`（瀏覽器內建）換成 class 切換（app.js）。
+ * 沒有 JS 時仍看得到預設深度，但展不開。
+ */
+export interface ThreadRow {
+  id: string;
+  rel: string;
+  relLabel: string;
+  type: string | null;
+  typeLabel: string;
+  title: string | null;
+  date: Stamp;
+  missing: boolean;
+  repeated: boolean;
+  depth: number;
+  /**
+   * 縮排軌道。第 j 格對應深度 j 的那一層：畫線表示那一層的祖先後面還有兄弟，
+   * 線要穿過這一列繼續往下。最後一格是這一列自己的分枝，見 `branch`。
+   */
+  rails: ('line' | 'blank')[];
+  /** `tee` 後面還有同層的兄弟，`elbow` 是最後一個（軌道到此為止）。 */
+  branch: 'tee' | 'elbow' | null;
+  /** 子節點數。0 表示這一列沒有展開鈕。 */
+  children: number;
+  /** 這一列的識別碼，給 data-key 用。 */
+  key: string;
+  /** 祖先的 key，由淺到深。收合時靠這個認親。 */
+  ancestors: string[];
+  /** 預設看不看得到。 */
+  visible: boolean;
+  /** 預設展不展開（只有 children > 0 時有意義）。 */
+  expanded: boolean;
+}
+
+interface Walked {
+  node: ThreadNode;
+  depth: number;
+  key: string;
+  ancestors: string[];
+  /** DOM 順序裡是不是同層的最後一個。軌道的判斷一律在下游的框架裡做。 */
+  last: boolean;
+}
+
+/**
+ * 把 linkTree 的樹攤成依視覺順序排好的列。
  *
  * 同一條連結從兩端看是兩件事，所以關係名分兩套（見 REL_LABELS）：
  * - `out`（上游，本卡指向的目標）→「節錄自 ⟨那張卡⟩」
  * - `in`（下游，指向本卡的來源）→「節錄出 ⟨那張卡⟩」
  *
- * 兩邊用同一個詞會把關係講反，所以方向不能只由呼叫端知道。
+ * 方向另外還決定順序：下游是前序（父在上、子在下），上游是它的**完整反序**。
+ * 軌道一律按下游算，上游靠 CSS 把軌道垂直翻一次——反序加上鏡射就是鏡像，
+ * 所以不需要第二套判斷。
  */
-export function decorateThread(
+export function flattenThread(
   nodes: ThreadNode[],
   openDepth: number,
   direction: 'in' | 'out',
-): Record<string, unknown>[] {
-  const walk = (n: ThreadNode): Record<string, unknown> => ({
-    id: n.id,
-    rel: n.rel,
-    relLabel: relLabel(n.rel, direction),
-    type: n.type,
-    typeLabel: n.type === null ? '' : (TYPE_LABELS[n.type as CardType] ?? n.type),
-    title: n.title,
-    missing: n.title === null,
-    repeated: n.repeated,
-    date: stampShort(n.created),
-    open: n.depth < openDepth,
-    children: n.children.map(walk),
+): ThreadRow[] {
+  const walked: Walked[] = [];
+  const walk = (list: ThreadNode[], depth: number, ancestors: string[]): void => {
+    list.forEach((n, i) => {
+      const key = `${direction}${walked.length}`;
+      walked.push({ node: n, depth, key, ancestors, last: i === list.length - 1 });
+      walk(n.children, depth + 1, [...ancestors, key]);
+    });
+  };
+  walk(nodes, 0, []);
+
+  const byKey = new Map(walked.map((w) => [w.key, w]));
+  const rows = walked.map((w): ThreadRow => {
+    const n = w.node;
+    return {
+      id: n.id,
+      rel: n.rel,
+      relLabel: relLabel(n.rel, direction),
+      type: n.type,
+      typeLabel: n.type === null ? '' : (TYPE_LABELS[n.type as CardType] ?? n.type),
+      title: n.title,
+      date: stampShort(n.created),
+      missing: n.title === null,
+      repeated: n.repeated,
+      depth: w.depth,
+      // 自己那一格是分枝，其餘才是祖先的直線。
+      rails: w.ancestors
+        .slice(1)
+        .map((k) => ((byKey.get(k) as Walked).last ? 'blank' : 'line')),
+      branch: w.depth === 0 ? null : w.last ? 'elbow' : 'tee',
+      children: n.children.length,
+      key: w.key,
+      ancestors: w.ancestors,
+      // 父層展開，這一列才看得見；深度 0 永遠看得見。
+      visible: w.depth <= openDepth,
+      expanded: w.depth < openDepth,
+    };
   });
-  return nodes.map(walk);
+
+  return direction === 'out' ? rows.reverse() : rows;
 }
 
 // ---------------------------------------------------------------- 格式化
