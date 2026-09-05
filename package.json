@@ -10,7 +10,7 @@
     "dev": "node --watch src/server.ts",
     "start": "node dist/server.js",
     "build": "tsc && node scripts/copy-assets.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "node --test 'test/**/*.test.ts'"
   },
   "dependencies": {

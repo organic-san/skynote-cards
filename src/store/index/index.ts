@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3';
 import type { Card } from '../../domain/types.ts';
 import { type IndexDb, openDb, replaceFile } from './schema.ts';
 import * as q from './query.ts';
-import { putCard } from './write.ts';
+import { putCard, removeCard } from './write.ts';
 import { rebuildInto } from './rebuild.ts';
 
 /**
@@ -70,6 +70,11 @@ export class CardIndex implements IndexDb {
   // -------------------------------------------------------------- 寫入
 
   /** 把一張卡片寫進索引。同 ID 先清掉舊的列，所以可重複呼叫。 */
+  /** R9：把一張卡從索引裡拿掉。 */
+  removeCard(id: string): void {
+    removeCard(this, id);
+  }
+
   putCard(card: Card): void {
     putCard(this, card);
   }
@@ -105,6 +110,11 @@ export class CardIndex implements IndexDb {
 
   backLinks(id: string): LinkRow[] {
     return q.backLinks(this, id);
+  }
+
+  /** R6：有沒有任何卡片指向它。定案的判準。 */
+  isCited(id: string): boolean {
+    return q.isCited(this, id);
   }
 
   linkTree(rootId: string, direction: 'in' | 'out', maxDepth: number): ThreadNode[] {

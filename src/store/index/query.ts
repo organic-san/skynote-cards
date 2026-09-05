@@ -207,8 +207,24 @@ const LOOSE_FLEETING = `c.type = 'fleeting' AND ${NO_INBOUND}`;
  */
 const LOOSE_THINKING = `c.type = 'thinking' AND c.link_count = 0 AND ${NO_INBOUND}`;
 
-/** 沉澱：還在反芻期內、仍然改得動的卡片。界線由呼叫端算好傳進來。 */
-const SETTLING = 'c.created > ?';
+/**
+ * 沉澱：還在反芻期內、仍然改得動的卡片。界線由呼叫端算好傳進來。
+ *
+ * 兩個條件都要：時間還沒到（R5），而且還沒有人指向它（R6）。
+ * 被指向就定案，那一刻它就不再屬於「還可以動的東西」——
+ * 這跟關閉編輯、禁止刪除是同一個判準，只是在這裡寫成 SQL。
+ */
+const SETTLING = `c.created > ? AND ${NO_INBOUND}`;
+
+/**
+ * R6：有沒有任何卡片指向它。
+ *
+ * 「被指向」是定案的判準，所以它值得一個自己的名字，而不是讓呼叫端
+ * 去數 backLinks 的長度——那會讓「為什麼要數」這件事消失在呼叫端。
+ */
+export function isCited(idx: IndexDb, id: string): boolean {
+  return idx.s('SELECT 1 FROM links WHERE target_id = ? LIMIT 1').get(id) !== undefined;
+}
 
 export function pending(idx: IndexDb): CardRowWithTags[] {
   return listOf(idx, PENDING);

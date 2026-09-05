@@ -5,7 +5,7 @@ import { parseCard, serializeCard } from '../domain/card.ts';
 
 /**
  * 卡片檔案的讀寫。檔案是唯一真相。
- * 這是唯一碰 cards/ 的模組，寫入動作只有兩種：建立、五分鐘時窗內重寫。
+ * 這是唯一碰 cards/ 的模組，寫入動作有三種：建立、反芻期內重寫、反芻期內刪除。
  */
 
 export function cardsDir(corpusPath: string): string {
@@ -92,4 +92,14 @@ export function writeCardFile(corpusPath: string, card: Card): string {
     // 有些平台不允許 fsync 目錄，忽略。
   }
   return finalPath;
+}
+
+/**
+ * R9：刪掉一張卡的檔案。
+ *
+ * 「刪除不等於抹除」——卡片在建立當下就已經 commit、可能已經 push，
+ * 這裡只讓它從 cards/ 消失，內容仍留在 git 歷史裡。那是備份該有的行為。
+ */
+export function deleteCardFile(corpusPath: string, id: string): void {
+  fs.rmSync(cardPath(corpusPath, id), { force: true });
 }

@@ -85,8 +85,13 @@ export class GitBackup {
     await this.chain;
   }
 
-  /** 一張卡片一個 commit。不 await、不阻塞回應。 */
-  commitCard(id: string, action: 'add' | 'edit'): void {
+  /**
+   * 一張卡片一個 commit。不 await、不阻塞回應。
+   *
+   * `rm` 也走這裡：`git add` 對已經從工作區消失的檔案會 stage 那次刪除，
+   * 所以三種動作是同一條路徑，不需要第二套。
+   */
+  commitCard(id: string, action: 'add' | 'edit' | 'rm'): void {
     if (!this.git) return;
     this.enqueue(async (git) => {
       await git.add([path.join('cards', `${id}.md`)]);

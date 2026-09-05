@@ -157,6 +157,22 @@
 
 .fieldhead { display: flex; align-items: center; gap: var(--sp-2); }
 
+/*
+  R7：既有的連結是一份唯讀清單，不是表單列。
+
+  兩者長得不一樣是刻意的——「只能新增，不能刪除」因此不需要一句說明去守，
+  畫面上根本沒有那個入口。做成一排 disabled 的表單列反而更糟：
+  看起來像壞掉的欄位。
+*/
+.linklist {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  font-size: var(--fs-1);
+}
+.linklist li { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+.linklist a { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
 /* ---------------------------------------------------------- 連結列 */
 
 .linkrow {
@@ -183,18 +199,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-
-.ghost {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-field);
-  background: var(--surface-raised);
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--fs-1);
-  padding: var(--sp-1) var(--sp-2);
-  cursor: pointer;
-}
-.ghost:hover { color: var(--text); }
 
 .picker {
   display: none;
@@ -225,8 +229,31 @@
 .picker button:hover { background: var(--hover-bg); }
 .picker .pid { color: var(--text-3); font-size: var(--fs-1); }
 
+/* ---------------------------------------------------------- 按鈕 */
+
+/*
+  三種按鈕，一個共同的形。
+
+  `.ghost` 同時服務兩種尺度：動作列裡的「取消」，以及行內那些小記號
+  （＋ 加一列、− 去一列、引用選取的段落）。所以尺寸不寫死在這裡——
+  跟 .textbtn 同一個做法：**形式統一，尺寸由所在的地方決定**。
+  動作列的尺寸在 .stepnav 那條規則裡。
+*/
+.ghost {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-1);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+.ghost:hover { color: var(--text); }
+
+/* 這一列的預設動作。填色只有它一顆——不必讀字就知道要按哪個。 */
 .primary {
-  border: 0;
+  border: 1px solid var(--text);
   border-radius: var(--radius-field);
   background: var(--text);
   color: var(--surface-raised);
@@ -236,7 +263,54 @@
   cursor: pointer;
 }
 
-.stepnav { display: flex; align-items: center; gap: var(--sp-4); }
+/*
+  刪除。跟「取消」同一個盒子——同樣的邊框、同樣的底色——**只有字是紅的**。
+
+  不填色是刻意的：填色是「這是預設動作」的訊號，而刪除永遠不是預設動作。
+  三顆一起填色會讓那個訊號消失，每次都得讀字才知道要按哪個；
+  而刪除又剛好站在最左邊——那在多數介面裡是「上一步／取消」的位置。
+  一顆看起來像主要動作、又站在習慣性離開位置的刪除鈕，是誤觸的組合。
+
+  （.danger 那個隔一條線的獨立區塊已經被推翻，所以現在保護只剩
+    位置的距離、這個顏色，與送出前的再確認。）
+*/
+.destructive {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  color: var(--alert);
+  font: inherit;
+  font-size: var(--fs-1);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+.destructive:hover { border-color: var(--alert); }
+
+/*
+  動作列。**破壞性與離開的靠左，前進的靠右。**
+
+  一條規矩管所有的動作列：只有一顆送出鈕的建立頁，那顆也在右邊。
+  刪除靠 margin-right: auto 頂到另一端——那是這一列裡離「儲存」最遠的位置，
+  而距離是它現在唯一的物理保護（先前那條分隔線沒有了）。
+*/
+.stepnav {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-4);
+  margin-top: var(--sp-6);
+}
+/*
+  這一列的按鈕一律同一個尺寸。先前三顆是三種形（裸文字 < 邊框 < 填色），
+  高度與內距都不一樣，排起來是雜的。統一交給容器，跟 .textbtn 同一個做法：
+  按鈕自己只管「我是哪一種重量」，「多大」由它站的地方決定——
+  所以 ＋／− 那些行內的 .ghost 不受影響。
+*/
+.stepnav > * {
+  font-size: var(--fs-2);
+  padding: var(--sp-2) var(--sp-5);
+}
+.stepnav .destructive { margin-right: auto; }
 
 
 /* ---------------------------------------------------------- 左右／上下分欄 */
@@ -314,3 +388,17 @@ main:has(> .split) {
   .pane-form { padding: var(--sp-4) var(--sp-4) 0; }
 }
 }
+
+/* ---------------------------------------------------------- 反芻期 */
+
+/*
+  編輯頁的倒數。它是這一頁唯一會自己動的東西，所以推到行末自成一段——
+  卡片頁的 meta 行只說靜態的狀態，會跳的數字只留在你正在跟時間賽跑的地方。
+*/
+.lock { margin-left: auto; color: var(--text-2); }
+
+/*
+  R9 的刪除。它跟「儲存／取消」不是同一類動作：那兩個都可以再按一次改回來，
+  這個不行。所以它不排進同一條動作列，而是隔一條線放在最下面，
+  用警示色說明它是什麼——不是為了嚇人，是為了讓手指不會順勢滑過去。
+*/

@@ -101,7 +101,11 @@
   U11：卡片索引。用途是建立連結時查名稱，不是導覽，所以字級小一級、
   顏色跟側欄其他項目一致——不再是這裡唯一的藍色連結。
 */
+/* 這一欄的文字是 13px，色點跟著縮一號（見 tokens 的 --dot-sm）。
+   碎片的虛線環在 6px 上幾乎看不出是虛線，只剩「空心」這個區別——
+   空心才是它跟另外三型的分界，虛線是那之上的修飾，縮小時優雅地退掉。 */
 .cardindex {
+  --dot: var(--dot-sm);
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -126,12 +130,18 @@
 }
 .cardindex ul { list-style: none; margin: 0; padding: 0; }
 .cardindex a {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2);
   border-radius: var(--radius-field);
   font-size: var(--fs-1);
   line-height: var(--lh-1);
   color: var(--text-2);
+}
+/* 截斷落在標題上，不落在整條連結上——否則色點會跟著被裁掉。 */
+.indextitle {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

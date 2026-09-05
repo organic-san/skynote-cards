@@ -121,8 +121,12 @@ export interface CardDraft {
   tags: string[];
   url: string | null;
   provenance: string | null;
-  source_author: string | null;
-  source_date: string | null;
+  /* 出處那兩欄是 original 專屬的，其他型別的表單根本不會送——所以是選填。
+     先前它們是必填，於是每一個手寫 draft 的呼叫端都得補兩個 null 才過得了
+     型別檢查，而那兩個 null 不代表任何事實。validateDraft 一律走 emptyToNull，
+     undefined 與 null 在那裡是同一件事。 */
+  source_author?: string | null;
+  source_date?: string | null;
   links: { rel: string; to: string }[];
 }
 

@@ -2,15 +2,35 @@ import type { Card } from '../../domain/types.ts';
 import { type IndexDb, segmentCjk } from './schema.ts';
 
 /**
+ * 一張卡在索引裡佔的四張表。
+ *
+ * 寫入前要先清掉舊的列，刪除時要清掉全部——同一組動作，兩個用途。
+ * 分開寫兩次的話，日後多一張表就會有一邊漏掉，而症狀是「刪掉的卡還搜得到」。
+ */
+function purge(idx: IndexDb, id: string): void {
+  idx.s('DELETE FROM cards WHERE id = ?').run(id);
+  idx.s('DELETE FROM tags WHERE card_id = ?').run(id);
+  idx.s('DELETE FROM links WHERE source_id = ?').run(id);
+  idx.s('DELETE FROM cards_fts WHERE id = ?').run(id);
+}
+
+/**
+ * R9：把一張卡從索引裡拿掉。檔案的刪除由 service 負責，這裡只管投影。
+ *
+ * 只清 source_id 那一邊的連結，不清 target_id：被指向的卡片刪不掉（R6），
+ * 所以不會有指向它的連結留在表裡。
+ */
+export function removeCard(idx: IndexDb, id: string): void {
+  idx.db.transaction(() => purge(idx, id))();
+}
+
+/**
  * 索引的唯一寫入口。索引是投影，所以這裡只接受已經落地的卡片。
  * 同 ID 先清掉舊的列，所以可重複呼叫。
  */
 export function putCard(idx: IndexDb, card: Card): void {
   const tx = idx.db.transaction((c: Card) => {
-    idx.s('DELETE FROM cards WHERE id = ?').run(c.id);
-    idx.s('DELETE FROM tags WHERE card_id = ?').run(c.id);
-    idx.s('DELETE FROM links WHERE source_id = ?').run(c.id);
-    idx.s('DELETE FROM cards_fts WHERE id = ?').run(c.id);
+    purge(idx, c.id);
 
     idx.s(
         `INSERT INTO cards

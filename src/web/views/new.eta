@@ -41,7 +41,7 @@
 <h1 class="formtitle"><%= it.action %></h1>
 
 <form method="post" action="/new" class="newform" id="newform"
-      data-specs='<%= JSON.stringify(it.specs) %>' data-rels='<%= JSON.stringify(it.relTable) %>'>
+      data-specs='<%= JSON.stringify(it.specs) %>'>
   <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
 
   <% if (it.locked) { %>
@@ -66,7 +66,7 @@
   <%/* 碎片只有一個大文字框，不區分標題與內文。那段話會存進 title，
        但介面上不呈現這個區分（見 domain/card.ts 的 fleetingText）。 */%>
   <label class="field<%= it.spec.single ? '' : ' off' %>" id="singlefield">
-    <textarea name="quick_body" rows="10" spellcheck="false" placeholder="寫下那句話"
+    <textarea name="quick_body" rows="10" spellcheck="false" placeholder="寫下那句話" data-grow
               <%= it.spec.single ? 'required' : 'disabled' %>><%= it.spec.single ? it.values.title : '' %></textarea>
   </label>
 
@@ -85,7 +85,7 @@
 
   <label class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
     <span>內文</span>
-    <textarea name="body" rows="14" spellcheck="false"><%= it.values.body %></textarea>
+    <textarea name="body" rows="14" spellcheck="false" data-grow><%= it.values.body %></textarea>
   </label>
 
   <div class="field secondary<%= it.spec.source ? '' : ' off' %>" id="sourcefields">
@@ -114,7 +114,11 @@
 
   <p class="fieldnote<%= it.spec.links ? ' off' : '' %>" id="linkshint">選好類型才知道可以建立哪些關係。</p>
 
-  <div class="field<%= it.spec.links ? '' : ' off' %>" id="linksfield">
+  <%/* data-card-type 由 typefields.js 改寫，links.js 看著它重畫關係選項。
+       兩支檔案因此不互相呼叫，也不必知道對方存在。 */%>
+  <div class="field<%= it.spec.links ? '' : ' off' %>" id="linksfield"
+       data-rels='<%= JSON.stringify(it.relTable) %>'
+       data-card-type="<%= it.values.type %>">
     <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>
     </span>
@@ -154,19 +158,20 @@
     <input type="text" name="tags" autocomplete="off" value="<%= it.values.tags %>">
   </label>
 
-  <button type="submit" class="primary">送出</button>
+  <%/* 跟編輯頁同一條規矩：前進的動作靠右。 */%>
+  <div class="stepnav">
+    <button type="submit" class="primary">送出</button>
+  </div>
 </form>
 
 </section>
 </div>
 
+<%/* 選項留空：links.js 一定會重畫（型別與目標都會改變可選的關係），
+     伺服器先畫一份只是讓同一件事有兩個來源。 */%>
 <template id="linkrowtpl">
   <div class="linkrow">
-    <select name="link_rel">
-      <% it.rels.forEach(function (r) { %>
-      <option value="<%= r.value %>"><%= r.label %></option>
-      <% }) %>
-    </select>
+    <select name="link_rel"></select>
     <input type="text" class="linkto" autocomplete="off" placeholder="輸入標題搜尋"
            data-target-type="">
     <input type="hidden" name="link_to" value="">
@@ -175,4 +180,10 @@
   </div>
 </template>
 
-<script src="/static/new.js" defer></script>
+<%/* 依職責分檔，跟 css/ 一樣。每一支只做一件事，名字就說了是哪一件：
+     欄位長高、連結列、依型別開關欄位、來源面板（拖曳與引用）。
+     連結列跟編輯頁共用同一支。 */%>
+<script src="/static/js/grow.js" defer></script>
+<script src="/static/js/links.js" defer></script>
+<script src="/static/js/typefields.js" defer></script>
+<script src="/static/js/sourcepane.js" defer></script>

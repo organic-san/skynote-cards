@@ -190,21 +190,13 @@
   展開鈕。先前它自成一行，落在比父深、比子淺的縮排上，誰的都不是；
   現在併回它自己那一列。z-index 是必要的——上面那層 ::after 蓋滿整條。
 */
+/* 形式來自 .textbtn，這裡只加它自己的事：蓋在標題那層 ::after 上面
+   （不然按不到），以及不被 flex 壓縮。 */
 .nodetoggle {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-1);
-  padding: var(--sp-1) var(--sp-2);
-  border: 0;
-  border-radius: var(--radius-field);
-  background: none;
-  font: inherit;
-  font-size: var(--fs-1);
-  color: var(--text-2);
-  cursor: pointer;
 }
 /* 下游（預設）：展開朝下 ▾，收合朝右 ▸ */
 .nodetoggle::before {
@@ -242,25 +234,7 @@ html:not(.js) .threadtoggleall { display: none; }
   文字隨狀態換（全部展開／全部收合），報的是「按下去會發生什麼」，
   不是「現在是什麼狀態」。
 */
-.threadtoggleall {
-  position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-1) var(--sp-2);
-  border: 0;
-  border-radius: var(--radius-field);
-  background: none;
-  font: inherit;
-  font-size: var(--fs-1);
-  color: var(--text-2);
-  cursor: pointer;
-}
-.threadtoggleall:hover {
-  background: var(--hover-bg);
-  color: var(--text);
-}
+.threadtoggleall { position: relative; flex: 0 0 auto; }
 
 /* ---------------------------------------------------------- 外部來源 */
 

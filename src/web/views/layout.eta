@@ -79,7 +79,11 @@
     <p class="indexhead">卡片索引</p>
     <ul>
       <% const recent = it.recent || []; recent.forEach(function (c) { %>
-      <li><a href="/c/<%= c.id %>" class="<%= it.activeId === c.id ? 'on' : '' %>"><%= c.title %></a></li>
+      <%/* 色點而不是型別名：這一欄很窄，標題本來就在截斷邊緣，
+           再塞兩個字進去等於把標題再砍掉兩個字。U1 說顏色不得單獨承擔
+           型別資訊——在這裡它沒有單獨承擔，點進去就看得到型別名。 */%>
+      <li><a href="/c/<%= c.id %>" class="<%= it.activeId === c.id ? 'on' : '' %>"><span
+        class="dot dot-<%= c.type %>"></span><span class="indextitle"><%= c.title %></span></a></li>
       <% }) %>
     </ul>
   </div>
@@ -122,6 +126,6 @@
 <% } %>
 <% } %>
 
-<script src="/static/app.js" defer></script>
+<script src="/static/js/app.js" defer></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp, type App } from '../src/app.ts';
+import { DEFAULT_EDIT_WINDOW_HOURS } from '../src/domain/rules.ts';
 
 /** 每個測試自己一個暫存語料庫與索引，彼此不共用狀態。 */
 
@@ -33,6 +34,8 @@ export function gitInit(corpus: string, remote?: string): void {
 export async function start(ws: {
   corpus: string;
   indexPath: string;
+  /** 反芻期長度。想測「窗口關了」的行為就把它調短。 */
+  editWindowMs?: number;
 }): Promise<Harness & { dir: string }> {
   const logs: string[] = [];
   const app = createApp({
@@ -42,6 +45,7 @@ export async function start(ws: {
       port: 0,
       gitAuthorName: 'test',
       gitAuthorEmail: 'test@localhost',
+      editWindowMs: ws.editWindowMs ?? DEFAULT_EDIT_WINDOW_HOURS * 60 * 60 * 1000,
     },
     logger: {
       level: 'info',
@@ -74,6 +78,8 @@ export interface NewCardPayload {
   tags?: string[] | string;
   url?: string | null;
   provenance?: string | null;
+  source_author?: string | null;
+  source_date?: string | null;
   links?: { rel: string; to: string }[];
 }
 

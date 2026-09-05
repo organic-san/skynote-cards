@@ -1,4 +1,5 @@
 import type { ThreadNode } from '../store/index/index.ts';
+import type { Rumination } from '../domain/rules.ts';
 import type { ListRow } from '../service/lists.ts';
 import {
   CARD_ACTIONS,
@@ -296,6 +297,43 @@ export interface Stamp {
 // 這一小段曾經是個 partial，被移除了——Eta 在非 production 下每次 include 都會
 // 重新編譯模板，一頁 50 列就是 50 次，實測讓首頁從 250ms 掉到 460ms。
 // 一個元素的抽象換不到那個代價。
+
+/**
+ * D.5：反芻期在 meta 行末尾的那一段。
+ *
+ * U12 說得很清楚：不加框、不做倒數跳動。所以這裡給的是一個靜態字串，
+ * 而不是一個每秒跳一次的數字——卡片頁是拿來讀的。代價是頁面開著幾小時之後
+ * 那個數字會過期，所以 `until` 帶著 UTC 真值進 <time datetime>，
+ * 由 app.js 算一次；重新整理就正確。秒級的倒數只留在編輯頁，
+ * 在那一頁你就是在跟那段時間賽跑。
+ *
+ * 已定案的卡片什麼都不顯示。那是絕大多數卡片的狀態，標出來等於在每一張卡上
+ * 重複一句沒有訊息量的話；有訊息量的是「這張還改得動，還剩多久」。
+ * U12 原本給的「已定案」那個狀態因此被拿掉。
+ */
+export interface RuminationView {
+  open: boolean;
+  /** 窗口結束的 UTC ISO。已定案時是空字串。 */
+  until: string;
+  /** 伺服器算的保底文字。 */
+  text: string;
+}
+
+export function ruminationView(r: Rumination, now = Date.now()): RuminationView {
+  // 定案不標出來：那是絕大多數卡片的狀態，標了等於在每一張卡上重複一句
+  // 沒有訊息量的話。有話要說的是還改得動的那少數。
+  if (!r.open) return { open: false, until: '', text: '' };
+  return { open: true, until: r.until, text: remainText(Date.parse(r.until) - now) };
+}
+
+/** 「3 小時」／「12 分鐘」。不到一分鐘就說「快結束了」，不報秒數。 */
+export function remainText(ms: number): string {
+  if (ms <= 0) return '已定案';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return '快結束了';
+  if (mins < 60) return `${mins} 分鐘`;
+  return `${Math.floor(mins / 60)} 小時`;
+}
 
 /** 卡片詳細頁一律顯示絕對日期與時間，不套 U4 的相對說法。 */
 export function stampFull(iso: string): Stamp {

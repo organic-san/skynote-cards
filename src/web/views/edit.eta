@@ -1,4 +1,4 @@
-<p class="back"><a href="/c/<%= it.card.id %>">← 回卡片</a></p>
+<p class="back"><a class="textbtn" href="/c/<%= it.card.id %>">← 回卡片</a></p>
 
 <ul class="errors" id="errors" hidden></ul>
 
@@ -8,7 +8,7 @@
     <time datetime="<%= it.created_display.iso %>"><%= it.created_display.text %></time>
     <%/* 倒數只出現在這一頁。卡片頁是拿來讀的，一個每秒跳一次的數字
          放在內文上方是干擾；在這裡你就是在跟那段時間賽跑。 */%>
-    <span class="lock" id="lock" data-until="<%= it.lock_at %>"></span>
+    <span class="lock num" id="lock" data-until="<%= it.lock_at %>"></span>
   </p>
 
   <label class="field">
@@ -18,13 +18,39 @@
 
   <label class="field">
     <span>內文</span>
-    <textarea name="body" rows="14" spellcheck="false"><%= it.card.body %></textarea>
+    <textarea name="body" rows="14" spellcheck="false" data-grow><%= it.card.body %></textarea>
   </label>
 
   <label class="field">
     <span>標籤</span>
     <input type="text" name="tags" autocomplete="off" value="<%= it.tags_line %>">
   </label>
+
+  <%/* R7：反芻期內連結只增不減。
+       既有的是一份唯讀清單，要新增的才是表單列——兩者長得不一樣，
+       所以「不能刪」不必用一句說明去講，畫面本身就沒有那個入口。
+       R8：碎片不得有連結，整個區塊不出現。 */%>
+  <% if (it.can_link) { %>
+  <div class="field" id="linksfield"
+       data-rels='<%= JSON.stringify(it.rel_table) %>'
+       data-card-type="<%= it.card.type %>">
+    <span class="fieldhead">連結
+      <button type="button" class="ghost addlink" id="addlink">＋</button>
+    </span>
+    <% if (it.links.length) { %>
+    <ul class="linklist">
+      <% it.links.forEach(function (l) { %>
+      <li>
+        <span class="noderel"><%= l.label %></span>
+        <a href="/c/<%= l.to %>"><%= l.title || l.to %></a>
+      </li>
+      <% }) %>
+    </ul>
+    <% } %>
+    <div id="linkrows"></div>
+    <p class="fieldnote">已經建立的連結不能刪除或修改。</p>
+  </div>
+  <% } %>
 
   <details class="optional">
     <summary>網址</summary>
@@ -34,10 +60,34 @@
     </label>
   </details>
 
+  <%/* 動作列的配置：破壞性與離開的靠左，前進的靠右。
+
+       刪除先前隔一條線自成一段，那條線本身就是保護——距離讓手指不會
+       順勢滑過去。移進同一列之後保護降級成「同一列的兩個極端 ＋ 警示色
+       ＋ 再確認一次」。這是一次實質的降級，記在這裡。 */%>
   <div class="stepnav">
+    <button type="button" class="destructive" id="deletecard" data-id="<%= it.card.id %>">
+      刪除
+    </button>
     <a class="ghost" href="/c/<%= it.card.id %>">取消</a>
     <button type="submit" class="primary">儲存</button>
   </div>
 </form>
 
-<script src="/static/edit.js" defer></script>
+<%/* 連結列跟建立頁共用同一支——收窄關係、搜尋目標、加一列，
+     那是同一件事，不該有兩份會慢慢長歪的實作。 */%>
+<script src="/static/js/grow.js" defer></script>
+<script src="/static/js/links.js" defer></script>
+<script src="/static/js/editform.js" defer></script>
+
+<%/* 新增的那幾列長什麼樣。跟建立頁同一份結構，選項由 links.js 畫。 */%>
+<template id="linkrowtpl">
+  <div class="linkrow">
+    <select name="link_rel"></select>
+    <input type="text" class="linkto" autocomplete="off" placeholder="輸入標題搜尋"
+           data-target-type="">
+    <input type="hidden" name="link_to" value="">
+    <button type="button" class="ghost rmlink" aria-label="移除這一列">−</button>
+    <div class="picker"></div>
+  </div>
+</template>

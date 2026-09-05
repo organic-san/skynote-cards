@@ -25,7 +25,7 @@
       <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>
       <% if (n.repeated) { %><span class="noderel">上方已展開</span><% } %>
       <% if (n.children) { %>
-      <button type="button" class="nodetoggle" data-toggle="<%= n.key %>"
+      <button type="button" class="textbtn nodetoggle" data-toggle="<%= n.key %>"
         aria-expanded="<%= n.expanded ? 'true' : 'false' %>"><%= n.children %></button>
       <% } %>
       <time datetime="<%= n.date.iso %>" data-rel><%= n.date.text %></time>

@@ -57,9 +57,12 @@ export function looseFleeting(index: CardIndex): CardRowWithTags[] {
   return index.looseFleeting();
 }
 
-/** 沉澱：還改得動的卡片。 */
-export function settling(index: CardIndex): CardRowWithTags[] {
-  return index.settling(editableSince());
+/**
+ * 沉澱：還改得動的卡片。
+ * 窗口長度是設定值，所以由呼叫端帶進來——這一層不讀 config。
+ */
+export function settling(index: CardIndex, editWindowMs: number): CardRowWithTags[] {
+  return index.settling(editableSince(editWindowMs));
 }
 
 // ---------------------------------------------------------------- 列表項的補充資料

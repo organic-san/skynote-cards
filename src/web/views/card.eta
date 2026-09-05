@@ -1,7 +1,7 @@
 <% if (it.from) { %>
 <p class="fromsource">已從 <a href="/c/<%= it.from.id %>"><%= it.from.title %></a> 建立</p>
 <% } else { %>
-<p class="back"><a href="/">← 返回</a></p>
+<p class="back"><a class="textbtn" href="/">← 返回</a></p>
 <% } %>
 
 <%/* U12：卡片內容在前，關聯區塊在後。
@@ -23,8 +23,12 @@
     <span class="sep">·</span><span>改於 <time datetime="<%= it.revised_display.iso %>"><%= it.revised_display.text %></time></span>
     <% } %>
     <% if (it.provenance) { %><span class="sep">·</span><span><%= it.provenance %></span><% } %>
-    <%/* 反芻期上線後在同一行末尾追加第三段（可修改 N 小時／已定案），
-         不加框、不做倒數跳動。位置先留著（U12）。 */%>
+    <%/* D.5：meta 行末尾的反芻狀態。不加框、不做倒數跳動（U12）——
+         這一頁是拿來讀的。數字由 app.js 依 datetime 算一次，重整就正確。 */%>
+    <% if (it.rumination.open) { %>
+    <span class="sep">·</span>
+    <span class="settling">尚可編輯 <time datetime="<%= it.rumination.until %>" data-remain><%= it.rumination.text %></time></span>
+    <% } %>
   </p>
 
   <% if (it.card.tags.length) { %>
@@ -52,7 +56,7 @@
   <div class="body"><%~ it.body_html %></div>
 
   <% if (it.editable) { %>
-  <p class="actions"><a href="/c/<%= it.card.id %>/edit">編輯</a></p>
+  <p class="actions"><a class="textbtn" href="/c/<%= it.card.id %>/edit">編輯</a></p>
   <% } %>
 </article>
 
@@ -70,7 +74,7 @@
   <p class="youarehere">
     <span class="youarehere-title">你在這裡：<span><%= it.card.title %></span></span>
     <% if (it.has_toggles) { %>
-    <button type="button" class="threadtoggleall">全部展開</button>
+    <button type="button" class="textbtn threadtoggleall">全部展開</button>
     <% } %>
     <time datetime="<%= it.created_short.iso %>" data-rel><%= it.created_short.text %></time>
     <span class="nodetime clock num"></span>

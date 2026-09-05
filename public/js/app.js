@@ -73,6 +73,16 @@
   // 相對說法把它弄丟了，所以補回來放在日期底下。
   function clock(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
 
+  // D.5：反芻期還剩多久。伺服器算過一次（present.ts 的 remainText），
+  // 這裡再算一次是因為頁面可能開著好幾個小時——但只算這一次，不做倒數跳動：
+  // 卡片頁是拿來讀的（U12）。秒級的倒數只在編輯頁。
+  function remain(d, now) {
+    var mins = Math.floor((d - now) / 60000);
+    if (mins < 1) return '快結束了';
+    if (mins < 60) return mins + ' 分鐘';
+    return Math.floor(mins / 60) + ' 小時';
+  }
+
   // 卡片詳細頁一律顯示絕對日期與時間，不套相對說法。
   function absDate(d) {
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
@@ -82,7 +92,9 @@
   Array.prototype.forEach.call(document.querySelectorAll('time[datetime]'), function (el) {
     var d = new Date(el.getAttribute('datetime'));
     if (isNaN(d.getTime())) return;
-    el.textContent = el.hasAttribute('data-rel') ? relDate(d, new Date()) : absDate(d);
+    el.textContent = el.hasAttribute('data-remain')
+      ? remain(d, new Date())
+      : el.hasAttribute('data-rel') ? relDate(d, new Date()) : absDate(d);
     el.title = d.toLocaleString();
     // 時刻永遠緊接在日期後面（列表與引用串都是這個排法），所以找相鄰的那一格
     // 就夠了——不必再往上找整列，也就不必替每一種列各認一次容器。
@@ -195,16 +207,4 @@
     syncWillSave();
   }
 
-  var lock = document.getElementById('lock');
-  var until = lock ? Date.parse(lock.dataset.until || '') : NaN;
-  if (!isNaN(until)) {
-    var tick = function () {
-      var left = Math.max(0, Math.round((until - Date.now()) / 1000));
-      var m = Math.floor(left / 60);
-      var s = left % 60;
-      lock.textContent = left > 0 ? m + ':' + (s < 10 ? '0' : '') + s : 'locked';
-    };
-    tick();
-    setInterval(tick, 1000);
-  }
 })();

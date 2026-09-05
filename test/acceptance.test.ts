@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -202,19 +203,21 @@ describe('驗收條件', () => {
     assert.ok((await h.app.fastify.inject(`/c/${id}`)).body.includes('改過的內文'));
   });
 
-  test('8. 超過五分鐘的卡片不可編輯，403 並提示改用 updates', async () => {
+  test('8. 反芻期關了就不可編輯，403 並提示改用 updates', async () => {
+    // 「五分鐘」的界線被 R5 推翻：五分鐘只夠對齊字句，而一個衝動記下的東西
+    // 需要一段窗口去補完還沒迭代完的內容。現在是 EDIT_WINDOW_HOURS，預設 8 小時。
     const h = await fresh();
-    // 不等六分鐘，直接放一張六分鐘前建立的卡片檔進去，效果相同。
-    const sixMinAgo = Date.now() - 6 * 60 * 1000;
-    const id = ((BigInt(sixMinAgo) - EPOCH) << 22n).toString();
+    // 不等九小時，直接放一張九小時前建立的卡片檔進去，效果相同。
+    const longAgo = Date.now() - 9 * 60 * 60 * 1000;
+    const id = ((BigInt(longAgo) - EPOCH) << 22n).toString();
     fs.writeFileSync(
       cardFile(h.corpus, id),
       [
         '---',
         `id: "${id}"`,
         'type: thinking',
-        `created: "${new Date(sixMinAgo).toISOString()}"`,
-        'title: 六分鐘前寫的',
+        `created: "${new Date(longAgo).toISOString()}"`,
+        'title: 九小時前寫的',
         'tags: []',
         'url: null',
         'archive_url: null',
@@ -241,6 +244,9 @@ describe('驗收條件', () => {
     await h.app.fastify.inject({ method: 'POST', url: '/_reindex' });
     const page = await h.app.fastify.inject(`/c/${id}`);
     assert.ok(!page.body.includes('/edit'), '鎖定後不應顯示編輯按鈕');
+    // D.5：定案的卡片什麼都不標——那是絕大多數卡片的狀態，標了等於在每一張卡上
+    // 重複一句沒有訊息量的話。有話要說的是還改得動的那少數。
+    assert.ok(!page.body.includes('尚可編輯'), '定案的卡片不掛反芻狀態');
     assert.equal(
       fs.readFileSync(cardFile(h.corpus, id), 'utf8').includes('想偷改'),
       false,
@@ -248,18 +254,114 @@ describe('驗收條件', () => {
     );
   });
 
-  test('9. 沒有任何刪除卡片的途徑', async () => {
+  test('8b. 被指向就立刻定案，不論反芻期是否結束', async () => {
+    // R6：有人開始依賴你，你就定案了。這一條同時管住三件事——
+    // 從待辦清單移出、關閉編輯、禁止刪除——所以它才值得取代「時間到就鎖」。
     const h = await fresh();
-    const id = await createCard(h, { type: 'thinking', title: '刪不掉', body: 'x' });
+    const a = await createCard(h, { type: 'original', title: '剛寫的原文', body: 'x' });
 
-    const routes = h.app.fastify.printRoutes({ commonPrefix: false });
-    assert.ok(!routes.includes('DELETE'), `不應註冊任何 DELETE 路由：\n${routes}`);
+    // 還在窗口內，改得動。
+    const before = await h.app.fastify.inject({
+      method: 'PUT',
+      url: `/c/${a}`,
+      payload: { title: '改一次' },
+      headers: { 'content-type': 'application/json' },
+    });
+    assert.equal(before.statusCode, 200, '沒人指向它的時候還改得動');
 
-    for (const url of [`/c/${id}`, '/admin', '/_delete', `/c/${id}/delete`]) {
-      const res = await h.app.fastify.inject({ method: 'DELETE', url });
-      assert.equal(res.statusCode, 404, `${url} 不應存在刪除途徑`);
-    }
-    assert.ok(fs.existsSync(cardFile(h.corpus, id)), '卡片檔案仍在');
+    // 有人指向它。時間一秒都沒有過去。
+    await createCard(h, {
+      type: 'restatement',
+      title: 'B 重述 A',
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+
+    const after = await h.app.fastify.inject({
+      method: 'PUT',
+      url: `/c/${a}`,
+      payload: { title: '再改一次' },
+      headers: { 'content-type': 'application/json' },
+    });
+    assert.equal(after.statusCode, 403, '被指向之後就改不動了');
+
+    const page = (await h.app.fastify.inject(`/c/${a}`)).body;
+    assert.ok(!page.includes(`/c/${a}/edit`), '編輯按鈕要收起來');
+    assert.ok(!page.includes('尚可編輯'), '定案的卡片不掛反芻狀態');
+
+    // 同一個判準也把它移出「沉澱」清單。
+    const page2 = (await h.app.fastify.inject('/settling')).body;
+    // 側欄的卡片索引每一頁都在，會把每張卡的標題都印一次——要看的是清單本身。
+    const settling = page2.slice(page2.indexOf('<main'), page2.indexOf('</main>'));
+    // 用 ID 而不是標題來判斷：B 的 meta 行會把 about 目標（也就是 A）的標題
+    // 印出來，拿標題比對會誤判成「A 還在清單裡」。
+    assert.ok(!settling.includes(`/c/${a}`), '定案的卡片不再是「還可以動的東西」');
+    assert.ok(settling.includes('B 重述 A'), '還沒被指向的 B 仍在清單裡');
+  });
+
+  test('9. 反芻期內、沒被指向的卡片可以刪除，其餘都不行', async () => {
+    // v1 的「沒有任何刪除卡片的途徑」被推翻，因為 R7 讓連結只增不減：
+    // 誤加一條就收不回，若連整張卡都不能刪，一次手滑會永久留在語料庫裡。
+    // 刪除是 R7 的必要配套，不是方便功能。（spec G 節：I2 被 D 節修訂。）
+    //
+    // R6 保證被指向的卡片刪不掉，所以這條路徑永遠不會製造壞連結。
+    // 要驗「刪除也走一次 commit」，所以這一份語料庫帶 git。
+    const h = await fresh({});
+
+    // ---- 剛建立、沒人指向：刪得掉。
+    const gone = await createCard(h, { type: 'thinking', title: '手滑建的', body: 'x' });
+    // 先讓建立的那次 commit 落地再刪——「刪除不等於抹除」的前提就是它已經
+    // 被 commit 過。備份是 fire-and-forget，建立後幾毫秒內就刪掉的話兩次
+    // git add 會一起撲空，那張卡等於從來沒有進過歷史。真實的反芻期有八小時，
+    // 不會這樣，但這裡要驗的是留在歷史裡這件事，所以順序要對。
+    await h.app.git.drain();
+    const res = await h.app.fastify.inject({ method: 'DELETE', url: `/c/${gone}` });
+    assert.equal(res.statusCode, 200);
+    assert.ok(!fs.existsSync(cardFile(h.corpus, gone)), '檔案要消失');
+    assert.equal((await h.app.fastify.inject(`/c/${gone}`)).statusCode, 404);
+    assert.equal(h.app.index.getCard(gone), null, '索引也要拿掉');
+
+    // 刪除不等於抹除：內容仍留在 git 歷史裡，這是備份該有的行為。
+    await h.app.git.drain();
+    const log = execFileSync('git', ['-C', h.corpus, 'log', '--oneline'], { encoding: 'utf8' });
+    assert.match(log, new RegExp(`rm ${gone}`), '刪除也走一次 commit');
+    assert.match(log, new RegExp(`add ${gone}`), '建立的那次 commit 還在歷史裡');
+
+    // ---- 被指向：刪不掉，不論反芻期是否結束（R6）。
+    const cited = await createCard(h, { type: 'original', title: '被引用的', body: 'y' });
+    await createCard(h, {
+      type: 'restatement',
+      title: '重述它',
+      body: 'z',
+      links: [{ rel: 'about', to: cited }],
+    });
+    const blocked = await h.app.fastify.inject({ method: 'DELETE', url: `/c/${cited}` });
+    assert.equal(blocked.statusCode, 403);
+    assert.ok(fs.existsSync(cardFile(h.corpus, cited)), '被指向的卡片檔案還在');
+
+    // ---- 不存在的 ID：404，不是 403。
+    assert.equal(
+      (await h.app.fastify.inject({ method: 'DELETE', url: '/c/99999999999999999' })).statusCode,
+      404,
+    );
+  });
+
+  test('9b. 反芻期關了就刪不掉', async () => {
+    const h = await fresh();
+    const longAgo = Date.now() - 9 * 60 * 60 * 1000;
+    const id = ((BigInt(longAgo) - EPOCH) << 22n).toString();
+    fs.writeFileSync(
+      cardFile(h.corpus, id),
+      ['---', `id: "${id}"`, 'type: thinking', `created: "${new Date(longAgo).toISOString()}"`,
+       'title: 九小時前寫的', 'tags: []', 'url: null', 'archive_url: null',
+       'provenance: null', 'revised: null', 'links: []', '---', '', 'body', ''].join('\n'),
+      'utf8',
+    );
+
+    const res = await h.app.fastify.inject({ method: 'DELETE', url: `/c/${id}` });
+    assert.equal(res.statusCode, 403);
+    assert.match((res.json() as { errors: string[] }).errors.join(), /定案/);
+    assert.ok(fs.existsSync(cardFile(h.corpus, id)), '檔案還在');
   });
 
   test('10. git remote 壞掉時仍然寫入成功', async () => {

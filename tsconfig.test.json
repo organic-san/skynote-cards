@@ -1,0 +1,15 @@
+{
+  // 測試也要型別檢查。
+  //
+  // 主 tsconfig 的 include 只有 src——它同時負責建置，rootDir 必須是 src。
+  // 於是測試從來沒被檢查過，而測試正是最需要它的地方：test/helpers.ts 少給
+  // Config 一個欄位，編譯期無聲，執行期才變成一整頁 500。
+  //
+  // 這一份只檢查、不建置，所以可以把 test/ 一起收進來。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

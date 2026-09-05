@@ -83,17 +83,34 @@ h1.long {
 
 /* 返回是這一頁唯一的離開路徑，13px 的一個箭頭太不明顯。
    給它字級與一個字，並讓可點範圍大於文字本身。 */
-.back { margin: 0 0 var(--sp-5); font-size: var(--fs-2); }
-.back a {
+/*
+  文字按鈕：返回、編輯、展開（▾ n）、全部展開。
+  這四個先前各寫一份幾乎相同的樣式——同樣的內距、同樣的圓角、同樣的
+  text-2 加 hover 底色——只有 .actions a 漏掉了內距與 hover。
+  於是同一種東西在四個地方長得不一樣，而且改一次要改四處。現在是一份。
+  <a> 與 <button> 都能用。
+
+  **刻意不設 font-size。** 大小由它所在的地方決定：返回是頁面層級的動作
+  （fs-2），展開住在 13px 的引用串列裡（fs-1）。統一的是形式，不是尺寸——
+  把展開鈕放大到跟返回一樣，會把引用串的行高撐開。
+*/
+.textbtn {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2);
-  margin-left: calc(var(--sp-2) * -1);
+  border: 0;
   border-radius: var(--radius-field);
+  background: none;
+  font: inherit;
   color: var(--text-2);
+  cursor: pointer;
 }
-.back a:hover { background: var(--hover-bg); color: var(--text); text-decoration: none; }
+.textbtn:hover { background: var(--hover-bg); color: var(--text); text-decoration: none; }
+
+/* 內距讓按鈕比文字寬，跟左緣就對不齊了——負 margin 把它拉回來。 */
+.back { margin: 0 0 var(--sp-5); font-size: var(--fs-2); }
+.back .textbtn { margin-left: calc(var(--sp-2) * -1); }
 
 /* 「已從 ⟨來源卡標題⟩ 建立」。建立一張卡幾乎總是為了回到剛才在看的東西，
    所以這一行取代了返回鍵的位置，而不是加在它旁邊。 */
@@ -109,7 +126,7 @@ h1.long {
 }
 
 .actions { margin: var(--sp-6) 0 0; font-size: var(--fs-1); }
-.actions a { color: var(--text-2); }
+.actions .textbtn { margin-left: calc(var(--sp-2) * -1); }
 
 /*
   U1 / U6：型別以左側色點標示，並且一律附上無色的型別名。

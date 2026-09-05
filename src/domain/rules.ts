@@ -69,33 +69,10 @@ export function validateDraft(draft: CardDraft, deps: ValidateDeps): ValidationR
   errors.push(...noLinksAllowed);
 
   // 連結：rel 在詞彙表內、目標存在、同 rel 同目標不得重複
-  const links: CardLink[] = [];
-  const seen = new Set<string>();
   const linksBefore = errors.length;
-  for (const [i, raw] of (draft.links ?? []).entries()) {
-    const rel = raw?.rel;
-    const to = typeof raw?.to === 'string' ? raw.to.trim() : '';
-
-    if (!isRel(rel)) {
-      errors.push(`第 ${i + 1} 條連結：關係不在詞彙表內`);
-      continue;
-    }
-    if (!isValidIdFormat(to)) {
-      errors.push(`第 ${i + 1} 條連結：ID 格式錯誤`);
-      continue;
-    }
-    if (!deps.cardExists(to)) {
-      errors.push(`第 ${i + 1} 條連結：目標不存在`);
-      continue;
-    }
-    const key = `${rel} ${to}`;
-    if (seen.has(key)) {
-      errors.push(`第 ${i + 1} 條連結：與前面重複`);
-      continue;
-    }
-    seen.add(key);
-    links.push({ rel: rel as Rel, to });
-  }
+  const checked = checkLinks(draft.links ?? [], deps);
+  const links = checked.links;
+  errors.push(...checked.errors);
 
   // provenance 是 original 專屬的欄位。其他類型送了什麼都不寫進卡片，
   // 也不當成錯誤——表單上這個欄位是關著的，送上來的值只是它自己的殘留。
@@ -140,6 +117,53 @@ export function validateDraft(draft: CardDraft, deps: ValidateDeps): ValidationR
       links,
     },
   };
+}
+
+/**
+ * 每一條連結自己的體檢：rel 在詞彙表內、ID 格式對、目標存在、彼此不重複。
+ *
+ * 這一段先前寫在 validateDraft 裡面。抽出來是因為 R7 也要用它——反芻期內
+ * 新增的連結必須通過當下的現行規則，而那是「同一組檢查」而不是「像那組的檢查」。
+ * 留在裡面的話，第二個呼叫端只能複製一份，然後兩份會慢慢長歪。
+ *
+ * `already` 是已經存在的連結，用來擋「跟既有的重複」——建立時是空的，
+ * 反芻期新增時是這張卡現有的那幾條。
+ */
+export function checkLinks(
+  raw: { rel?: string; to?: string }[],
+  deps: Pick<ValidateDeps, 'cardExists'>,
+  already: CardLink[] = [],
+): { links: CardLink[]; errors: string[] } {
+  const errors: string[] = [];
+  const links: CardLink[] = [];
+  const seen = new Set(already.map((l) => `${l.rel} ${l.to}`));
+
+  for (const [i, item] of raw.entries()) {
+    const rel = item?.rel;
+    const to = typeof item?.to === 'string' ? item.to.trim() : '';
+
+    if (!isRel(rel)) {
+      errors.push(`第 ${i + 1} 條連結：關係不在詞彙表內`);
+      continue;
+    }
+    if (!isValidIdFormat(to)) {
+      errors.push(`第 ${i + 1} 條連結：ID 格式錯誤`);
+      continue;
+    }
+    if (!deps.cardExists(to)) {
+      errors.push(`第 ${i + 1} 條連結：目標不存在`);
+      continue;
+    }
+    const key = `${rel} ${to}`;
+    if (seen.has(key)) {
+      errors.push(`第 ${i + 1} 條連結：與前面重複`);
+      continue;
+    }
+    seen.add(key);
+    links.push({ rel: rel as Rel, to });
+  }
+
+  return { links, errors };
 }
 
 // ---------------------------------------------------------------- 型別對連結的約束
@@ -222,42 +246,82 @@ export function validateLinkOrder(sourceId: string, links: CardLink[]): string[]
 // 不再是「推翻」，而 refutes 的目標也被矩陣收窄到 thinking / fleeting，
 // 原本那句「推翻一張原始資料卡」的舉例已經不可能發生。剩下的只有摩擦。
 
-// ---------------------------------------------------------------- 編輯時窗
+// ---------------------------------------------------------------- 反芻期
 
-export const EDIT_WINDOW_MS = 5 * 60 * 1000;
+/**
+ * 反芻期的預設長度，小時（R5）。
+ *
+ * 不是五分鐘：五分鐘只夠對齊字句。思維本來就會迭代，一個衝動記下的東西需要
+ * 一段窗口去補完還沒迭代完的內容——那段時間要用來想「哪些才是真正該被記錄的」。
+ * 8 小時跨得過一個工作段落與一次睡眠。
+ *
+ * 這是行為參數，靠使用經驗調整，所以真正生效的值來自 config 的
+ * EDIT_WINDOW_HOURS；這裡只放沒有設定時的預設。它只改變「還能不能改」，
+ * 永遠不會回頭改寫已經寫好的東西。
+ */
+export const DEFAULT_EDIT_WINDOW_HOURS = 8;
 
 export const LOCKED_MESSAGE = '這張卡已鎖定。要更正內容請建立新卡片並使用 updates 連結。';
 
+/** 刪除被擋下來時說的話。跟編輯分開，因為那句話講的是「改用 updates」。 */
+export const UNDELETABLE_MESSAGE = '這張卡已定案，不能刪除。';
+
 /**
- * 這張卡還改得動嗎。
+ * 一張卡的反芻狀態。
  *
- * 路由、模板、清單三處都要問這件事，所以只有這一個函式回答。
- * 目前它就是「還在反芻期內」，Phase 2 會再加上 R6（被指向就定案）——
- * 到時候只換這裡，問過它的地方一處都不必動。
+ * 「還能不能改」「還能不能刪」「meta 行要寫什麼」先前是三個各自判斷的問題
+ * （canEdit / isWithinEditWindow / lockAt 三個重疊的述詞），而它們的答案其實
+ * 是同一件事。R6 把它講明白了——**有人開始依賴你，你就定案了**：一個判準
+ * 同時管住從待辦清單移出、關閉編輯、禁止刪除。所以這裡只回答一次。
+ *
+ * `reason` 分兩種不是為了好看：時間到與被指向在畫面上要說不同的話
+ * （D.5：已被指向而提前定案的顯示定案狀態，而不是一個已經沒有意義的倒數）。
  */
-export function canEdit(card: Pick<Card, 'created'>, now = Date.now()): boolean {
-  return isWithinEditWindow(card, now);
-}
+export type Rumination =
+  | { open: true; until: string }
+  | { open: false; reason: 'cited' | 'expired' };
 
 /**
- * 還改得動的卡片，最早是什麼時候建立的。
- * 「沉澱」清單用一句 SQL 撈這一批，所以界線要先算成 ISO 字串。
+ * 純函式：兩個事實進來，狀態出去。
+ *
+ * 「有沒有人指向這張卡」是索引才知道的事，而這一層不能碰索引，所以它是
+ * 參數而不是查詢——跟 validateDraft 收 { cardExists, typeOf } 是同一個做法。
+ * 去問索引的那一步在 service/cards.ts 的 ruminationFor。
  */
-export function editableSince(now = Date.now()): string {
-  return new Date(now - EDIT_WINDOW_MS).toISOString();
-}
+export function ruminationOf(
+  card: Pick<Card, 'created'>,
+  ctx: { windowMs: number; cited: boolean; now?: number },
+): Rumination {
+  // R6 先判：被指向就立刻定案，不論反芻期是否結束。
+  if (ctx.cited) return { open: false, reason: 'cited' };
 
-export function isWithinEditWindow(card: Pick<Card, 'created'>, now = Date.now()): boolean {
   const created = Date.parse(card.created);
-  if (Number.isNaN(created)) return false;
-  return now - created <= EDIT_WINDOW_MS;
+  if (Number.isNaN(created)) return { open: false, reason: 'expired' };
+
+  const until = created + ctx.windowMs;
+  // 窗口長度算不出來（設定壞了）就當成關的。開著的分支要產生一個 ISO 字串，
+  // 而 new Date(NaN).toISOString() 會丟例外——那會把設定的手誤變成一整頁 500。
+  // 往「關」的方向倒也比較安全：它不會讓任何本來不該發生的修改發生。
+  if (!Number.isFinite(until)) return { open: false, reason: 'expired' };
+  if ((ctx.now ?? Date.now()) > until) return { open: false, reason: 'expired' };
+  return { open: true, until: new Date(until).toISOString() };
 }
 
 /**
- * 這張卡什麼時候鎖上，ISO 字串。
- * 路由與模板都要顯示倒數，各自算一次就會有兩份對時窗的理解；
- * 規則只有一份，問這個函式。
+ * 還在反芻期內的卡片，最早是什麼時候建立的。
+ * 「沉澱」清單用一句 SQL 撈這一批，所以界線要先算成 ISO 字串。
+ * R6 的另一半（被指向就出清單）由那句 SQL 自己的條件負責，見 query.ts。
  */
-export function lockAt(card: Pick<Card, 'created'>): string {
-  return new Date(Date.parse(card.created) + EDIT_WINDOW_MS).toISOString();
+export function editableSince(windowMs: number, now = Date.now()): string {
+  return new Date(now - windowMs).toISOString();
 }
+
+// ---------------------------------------------------------------- 已撤回
+
+// EDIT_WINDOW_MS（寫死的五分鐘）的決定被推翻，因為 R5 把窗口改成行為參數：
+// 長度要靠使用經驗調整，寫死在程式碼裡就調不動。現在來自 config。
+
+// canEdit / isWithinEditWindow / lockAt 三個述詞被 ruminationOf 取代，因為
+// R6 之後它們回答的是同一個問題的三個切面，而三個各自判斷就會有三種答案。
+// canEdit 當初是為這個 phase 預留的接縫，但它從來沒有被呼叫過——
+// 路由與寫入路徑一直直接問 isWithinEditWindow，接縫是死的。

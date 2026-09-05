@@ -12,8 +12,10 @@ import {
   formTitle,
   headingOf,
   clip,
+  ruminationView,
   flattenThread,
   formSpec,
+  relLabel,
   relOptions,
   stampFull,
   stampShort,
@@ -30,8 +32,14 @@ import {
   type CardType,
 } from '../domain/types.ts';
 import { fleetingDraft, fleetingText, quickDraft } from '../domain/card.ts';
-import { LOCKED_MESSAGE, isWithinEditWindow, lockAt } from '../domain/rules.ts';
-import { createCard, updateCard, type CardServiceDeps } from '../service/cards.ts';
+import { LOCKED_MESSAGE } from '../domain/rules.ts';
+import {
+  createCard,
+  deleteCard,
+  ruminationFor,
+  updateCard,
+  type CardServiceDeps,
+} from '../service/cards.ts';
 import * as lists from '../service/lists.ts';
 
 /** HTTP 這一層：解析請求、呼叫下面、選一份模板。業務判斷不放在這裡。 */
@@ -134,6 +142,7 @@ export function registerRoutes(
     index,
     git,
     logger: { error: (msg) => app.log.error(msg) },
+    editWindowMs: config.editWindowMs,
   };
 
   const html = (reply: FastifyReply, body: string, code = 200) =>
@@ -157,7 +166,7 @@ export function registerRoutes(
         { nav: 'fleeting', href: '/fleeting', name: '雜筆' },
         { nav: 'settling', href: '/settling', name: '沉澱' },
       ],
-      recent: lists.recent(index).map((r) => ({ id: r.id, title: r.title })),
+      recent: lists.recent(index).map((r) => ({ id: r.id, title: r.title, type: r.type })),
     });
   };
 
@@ -396,6 +405,9 @@ export function registerRoutes(
     // 「已從 X 建立」是一句話，所以 X 在這裡截（見 present.ts 的 clip）。
     const from = raw ? { id: raw.id, title: clip(raw.title, 24) } : null;
 
+    // D.5 與「還能不能編輯」是同一個狀態，所以只問一次。
+    const rumination = ruminationFor(cards, card);
+
     const upstream = flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out');
     const downstream = flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in');
     const has_toggles = upstream.some((r) => r.children > 0) || downstream.some((r) => r.children > 0);
@@ -413,7 +425,7 @@ export function registerRoutes(
           created_short: stampShort(card.created),
           revised_display: card.revised ? stampFull(card.revised) : null,
           provenance: card.provenance === 'default' ? null : card.provenance,
-          lock_at: isWithinEditWindow(card) ? lockAt(card) : '',
+          rumination: ruminationView(rumination),
           url_href: safeHref(card.url),
           embed: embedFor(card.url),
           body_html: renderMarkdown(
@@ -428,7 +440,7 @@ export function registerRoutes(
           // U27：選取文字帶當前卡片的型別色，因為選取是「引用選取的段落」的前置動作。
           type_slug: card.type,
           from: from ? { id: from.id, title: from.title } : null,
-          editable: isWithinEditWindow(card),
+          editable: rumination.open,
         },
         { title: card.title, fab: { actions: actionsFor(card.type, id) }, activeId: id },
       ),
@@ -441,7 +453,9 @@ export function registerRoutes(
     const { id } = req.params as { id: string };
     if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
     const card = readCard(config.corpusPath, id);
-    if (!isWithinEditWindow(card)) {
+    const out = index.outLinks(id);
+    const rumination = ruminationFor(cards, card);
+    if (!rumination.open) {
       return html(
         reply,
         shell('message', { message: LOCKED_MESSAGE, back_id: id }, { title: 'locked' }),
@@ -456,8 +470,21 @@ export function registerRoutes(
           card,
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
           created_display: stampFull(card.created),
-          lock_at: lockAt(card),
+          lock_at: rumination.until,
           tags_line: card.tags.join(', '),
+          // R7：既有的連結是一份唯讀清單，新增的才是表單列。兩者分開呈現，
+          // 因為它們能做的事不一樣——分不開的話「只增不減」就要靠說明去講。
+          links: out.map((l) => ({
+            rel: l.rel,
+            label: relLabel(l.rel, 'out'),
+            to: l.id,
+            title: l.title,
+          })),
+          // R8：碎片不得有連結，所以整個區塊不出現（跟建立表單同一張表）。
+          can_link: formSpec(card.type).links,
+          // links.js 讀的是一張「型別 → 可用關係」的表。這一頁型別是固定的，
+          // 所以表裡只有一格。
+          rel_table: { [card.type]: relOptions(card.type) },
         },
         { title: 'edit', fab: false },
       ),
@@ -479,6 +506,11 @@ export function registerRoutes(
             : splitTags(String(b.tags)),
       url: b.url === undefined ? undefined : String(b.url ?? ''),
       body: b.body === undefined ? undefined : String(b.body),
+      // R7：只有「要新增的」，沒有「完整的 links」——刪除在這條路徑上
+      // 沒有表示法，見 service 的 UpdatePatch。
+      addLinks: Array.isArray(b.add_links)
+        ? (b.add_links as { rel?: string; to?: string }[])
+        : undefined,
     });
 
     if (!result.ok) {
@@ -488,6 +520,23 @@ export function registerRoutes(
       });
     }
     return reply.send({ ok: true, id, revised: result.card.revised });
+  });
+
+  /**
+   * R9：反芻期內、尚未被指向的卡片可以刪除。
+   *
+   * v1 的「沒有任何 endpoint 能刪除卡片」被推翻（spec G 節：I2 被 D 節修訂）。
+   * 理由是 R7——連結只增不減，誤加就收不回；若連整張卡都不能刪，
+   * 一次手滑就永久留在語料庫裡。R6 保證被指向的卡片刪不掉，
+   * 所以這條路徑永遠不會製造壞連結。
+   */
+  app.delete('/c/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
+
+    const result = deleteCard(cards, id);
+    if (!result.ok) return reply.code(403).send({ ok: false, errors: result.errors });
+    return reply.send({ ok: true, id });
   });
 
   // ---- 標籤、孤兒、搜尋
@@ -533,7 +582,7 @@ export function registerRoutes(
       path: '/settling',
       heading: '沉澱',
       empty: '沒有任何卡片仍在可修改時間內。',
-      rows: () => lists.settling(index),
+      rows: () => lists.settling(index, config.editWindowMs),
     },
   ] as const;
 

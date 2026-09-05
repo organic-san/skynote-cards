@@ -39,6 +39,18 @@ async function fresh(): Promise<Harness> {
   return h;
 }
 
+/** 索引裡這張卡的出向關係，排序過方便比對。 */
+function index0(h: Harness, id: string): string[] {
+  return h.app.index
+    .outLinks(id)
+    .map((l) => l.rel)
+    .sort();
+}
+
+function errorsOf(res: { json(): unknown }): string {
+  return ((res.json() as { errors?: string[] }).errors ?? []).join(' | ');
+}
+
 describe('ID', () => {
   test('同一毫秒內連續產生的 ID 依先後遞增', () => {
     const ids: string[] = [];
@@ -677,7 +689,7 @@ describe('頁面與端點', () => {
       assert.ok(res.body.includes(`<span>${label}</span>`), `缺少型別標籤 ${label}`);
     }
     assert.ok(res.body.includes('<details'), 'provenance 維持收合');
-    assert.ok(res.body.includes('/static/new.js'));
+    assert.ok(res.body.includes('/static/js/typefields.js'));
   });
 
   test('連結選擇器同時吃 ID 與標題', async () => {
@@ -789,7 +801,7 @@ describe('頁面與端點', () => {
     const h = await fresh();
     const css = await h.app.fastify.inject('/static/css/base.css');
     assert.equal(css.statusCode, 200);
-    const js = await h.app.fastify.inject('/static/new.js');
+    const js = await h.app.fastify.inject('/static/js/links.js');
     assert.equal(js.statusCode, 200);
 
     // 改了 CSS 卻看到舊版面，是很難聯想到快取的症狀。
@@ -1146,7 +1158,10 @@ describe('記完之後去哪裡、看到什麼', () => {
 });
 
 describe('連結欄的關係選項', () => {
-  const js = fs.readFileSync(path.join('public', 'new.js'), 'utf8');
+  const js = fs.readFileSync(path.join('public', 'js', 'links.js'), 'utf8');
+  // 「這張卡是什麼型別」由 typefields.js 決定並寫進 data-card-type，
+  // links.js 只是看著那個屬性。所以讀型別的規矩要去那一支檢查。
+  const typefields = fs.readFileSync(path.join('public', 'js', 'typefields.js'), 'utf8');
 
   /** 連結列裡那個 select 的選項，依 value 取出來。 */
   const rowOptions = (html: string): string[] => {
@@ -1194,9 +1209,9 @@ describe('連結欄的關係選項', () => {
   test('前端讀型別要用 form.elements，不能只認被選中的 radio', () => {
     // 型別由入口決定時是一個 hidden input，':checked' 選不到它——
     // 於是 currentType() 回空字串，關係選項被清空、url 與作者欄被關掉。
-    assert.match(js, /form\.elements\.type/, 'new.js 應該用 form.elements 讀型別');
+    assert.match(typefields, /form\.elements\.type/, '應該用 form.elements 讀型別');
     assert.ok(
-      !/querySelector\('input\[name=type\]:checked'\)/.test(js),
+      !/querySelector\('input\[name=type\]:checked'\)/.test(typefields),
       "還留著 ':checked' 的寫法，鎖住型別時會整個瞎掉",
     );
   });
@@ -1209,7 +1224,7 @@ describe('連結欄的關係選項', () => {
     // 連結欄關著：伺服器與前端的退回值要一致，否則載入後畫面會自己跳一下。
     const at = form.indexOf('id="linksfield"');
     assert.ok(form.slice(at - 40, at).includes(' off'), '沒選型別時連結欄應該關著');
-    assert.match(js, /links: false \};/, 'new.js 的退回值要跟 formSpec\(\) 一致');
+    assert.match(typefields, /links: false \};/, '前端的退回值要跟 formSpec() 一致');
   });
 });
 
@@ -1749,7 +1764,7 @@ describe('卡片頁的方向', () => {
     assert.ok(hereA.includes('你在這裡：<span>A 思考</span>'), '標題在「你在這裡」中');
     assert.ok(hereA.includes('data-rel'), '時間帶 data-rel');
     assert.ok(hereA.includes('nodetime clock num'), '時刻插槽存在');
-    assert.ok(hereA.includes('class="threadtoggleall"'), '有巢狀子節點時應顯示全部展開按鈕');
+    assert.ok(hereA.includes('threadtoggleall'), '有巢狀子節點時應顯示全部展開按鈕');
     assert.ok(hereA.includes('全部展開'), '按鈕文字預設為全部展開');
 
     // 孤立卡片：無連結，只有時間，不顯示全部展開按鈕
@@ -1954,6 +1969,219 @@ describe('標題沒有長度上限', () => {
   });
 });
 
+describe('反芻期內的連結（R7、R8）', () => {
+  const put = (h: Harness, id: string, payload: Record<string, unknown>) =>
+    h.app.fastify.inject({
+      method: 'PUT',
+      url: `/c/${id}`,
+      payload,
+      headers: { 'content-type': 'application/json' },
+    });
+
+  test('只增不減：請求裡沒有刪除的表示法', async () => {
+    // 「只增不減」不是靠比對守住的——patch 裡根本沒有「完整的 links」這個欄位。
+    // 收整份再 diff 的話，那條規則會變成一段可能寫錯的程式碼，
+    // 而寫錯的樣子是一條連結無聲消失。
+    const h = await fresh();
+    const t1 = await createCard(h, { type: 'thinking', title: 'T1', body: 'x' });
+    const t2 = await createCard(h, {
+      type: 'thinking',
+      title: 'T2',
+      body: 'y',
+      links: [{ rel: 'related', to: t1 }],
+    });
+
+    // 送一份「只剩零條」的 links 上去：它不是這條路徑認得的欄位，所以什麼都沒發生。
+    const res = await put(h, t2, { links: [] });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(index0(h, t2), ['related'], '既有的連結一條都不能少');
+  });
+
+  test('新增的每一條都要通過當下的現行規則', async () => {
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    const t1 = await createCard(h, { type: 'thinking', title: 'T1', body: 'x' });
+    const t2 = await createCard(h, {
+      type: 'thinking',
+      title: 'T2',
+      body: 'y',
+      links: [{ rel: 'related', to: t1 }],
+    });
+
+    // 合法：既有的留著，新的接在後面。
+    assert.equal((await put(h, t2, { add_links: [{ rel: 'about', to: a }] })).statusCode, 200);
+    assert.deepEqual(index0(h, t2), ['about', 'related']);
+
+    // R3 的矩陣。
+    const matrix = await put(h, t2, { add_links: [{ rel: 'part-of', to: a }] });
+    assert.equal(matrix.statusCode, 400);
+    assert.match(errorsOf(matrix), /思考不能用 part-of/);
+
+    // 同 rel 同目標不得重複——跟**既有的**比，不只是跟這一批裡的比。
+    const dup = await put(h, t2, { add_links: [{ rel: 'related', to: t1 }] });
+    assert.equal(dup.statusCode, 400);
+    assert.match(errorsOf(dup), /重複/);
+
+    // 目標必須存在。
+    const missing = await put(h, t2, { add_links: [{ rel: 'related', to: '11111111111111111' }] });
+    assert.match(errorsOf(missing), /目標不存在/);
+
+    // 目標的 ID 必須比自己小：連結一律由新指向舊。
+    // 拿一張沒人指向的卡來試——t1 已經被 t2 指著，那會先撞上 R6 而不是順序。
+    const solo = await createCard(h, { type: 'thinking', title: '沒人指向它', body: 'z' });
+    const newer = await createCard(h, { type: 'thinking', title: '更新的', body: 'z' });
+    const order = await put(h, solo, { add_links: [{ rel: 'related', to: newer }] });
+    assert.equal(order.statusCode, 400);
+    assert.match(errorsOf(order), /目標比這張卡新/);
+
+    // 一路下來，t2 的連結還是那兩條——被擋下來的都沒有留下痕跡。
+    assert.deepEqual(index0(h, t2), ['about', 'related']);
+  });
+
+  test('R8：碎片不得有連結，編輯頁也不給那個區塊', async () => {
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    const f = await createCard(h, { type: 'fleeting', title: '一句話', body: '' });
+
+    const page = (await h.app.fastify.inject(`/c/${f}/edit`)).body;
+    assert.ok(!page.includes('id="linksfield"'), '碎片的編輯頁沒有連結欄');
+
+    const res = await put(h, f, { add_links: [{ rel: 'related', to: a }] });
+    assert.equal(res.statusCode, 400);
+    assert.match(errorsOf(res), /碎片/);
+  });
+
+  test('定案之後連結也加不了（R6）', async () => {
+    const h = await fresh();
+    const t1 = await createCard(h, { type: 'thinking', title: 'T1', body: 'x' });
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'y' });
+    // 有人指向 T1，它就定案了——三件事一個判準，新增連結也在那三件裡。
+    await createCard(h, {
+      type: 'thinking',
+      title: 'T2',
+      body: 'z',
+      links: [{ rel: 'related', to: t1 }],
+    });
+
+    const res = await put(h, t1, { add_links: [{ rel: 'about', to: a }] });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(index0(h, t1), []);
+  });
+
+  test('編輯頁上，既有的連結是一份唯讀清單，不是表單列', async () => {
+    // 兩者長得不一樣是刻意的：「不能刪」因此不必用一句說明去守，
+    // 畫面上根本沒有那個入口。
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A 原文', body: 'x' });
+    const b = await createCard(h, {
+      type: 'restatement',
+      title: 'B 重述 A',
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+
+    const page = (await h.app.fastify.inject(`/c/${b}/edit`)).body;
+    const at = page.indexOf('id="linksfield"');
+    assert.ok(at > -1);
+    const field = page.slice(at, page.indexOf('fieldnote', at));
+
+    // 既有的那一條在唯讀清單裡，帶著方向正確的關係詞。
+    assert.match(field, /<ul class="linklist">/);
+    assert.ok(field.includes('關聯自'), '關係詞用出向那一套說法');
+    assert.ok(field.includes(`/c/${a}`), '看得到它指向誰');
+    // 它不在 #linkrows 裡——那裡只放還沒送出的新列。
+    const rows = field.slice(field.indexOf('id="linkrows"'));
+    assert.ok(!rows.includes(`/c/${a}`), '既有的連結不會變成可編輯的表單列');
+
+    // 選項只給這張卡的型別用得到的那幾條。
+    assert.match(field, /data-card-type="restatement"/);
+    assert.ok(field.includes('&quot;restatement&quot;'), 'rel 表以型別為鍵');
+  });
+});
+
+describe('動作的形式是一份', () => {
+  test('四種文字按鈕共用同一份樣式，尺寸由所在的地方決定', async () => {
+    // 返回、編輯、展開（▾ n）、全部展開先前各寫一份幾乎相同的樣式，
+    // 只有 .actions a 漏掉了內距與 hover——同一種東西在四個地方長得不一樣。
+    const h = await fresh();
+    const a = await createCard(h, { type: 'original', title: 'A', body: 'x' });
+    const b = await createCard(h, {
+      type: 'restatement',
+      title: 'B',
+      body: 'y',
+      links: [{ rel: 'about', to: a }],
+    });
+    const c = await createCard(h, {
+      type: 'thinking',
+      title: 'C',
+      body: 'z',
+      links: [{ rel: 'supports', to: b }],
+    });
+
+    const card = (await h.app.fastify.inject(`/c/${a}`)).body;
+    for (const mark of ['back"><a class="textbtn"', 'textbtn threadtoggleall', 'textbtn nodetoggle']) {
+      assert.ok(card.includes(mark), `${mark} 要套同一份`);
+    }
+    // 編輯鈕只在還改得動的卡片上，所以看沒被指向的那一張（A 已經被 B 指著）。
+    assert.match((await h.app.fastify.inject(`/c/${c}`)).body, /class="actions"><a class="textbtn"/);
+    assert.ok((await h.app.fastify.inject(`/c/${c}/edit`)).body.includes('back"><a class="textbtn"'));
+
+    const css = readCss();
+    // 形式一份就好，但**不設 font-size**：返回是頁面層級的動作（fs-2），
+    // 展開住在 13px 的引用串列裡。統一的是形式，不是尺寸——把展開鈕放大到
+    // 跟返回一樣，會把引用串的行高撐開。
+    const rule = css.slice(css.indexOf('.textbtn {'), css.indexOf('}', css.indexOf('.textbtn {')));
+    assert.ok(!rule.includes('font-size'), '.textbtn 不該自己決定尺寸');
+    assert.match(css, /\.textbtn:hover\s*\{[^}]*background:\s*var\(--hover-bg\)/);
+  });
+
+  test('動作列的規矩：破壞性靠左，前進靠右', async () => {
+    // 一條規矩管所有的動作列，包括只有一顆送出鈕的建立頁。
+    const h = await fresh();
+    const id = await createCard(h, { type: 'thinking', title: '還改得動', body: 'x' });
+
+    const edit = (await h.app.fastify.inject(`/c/${id}/edit`)).body;
+    const nav = edit.slice(edit.indexOf('class="stepnav"'), edit.indexOf('</div>', edit.indexOf('class="stepnav"')));
+    assert.ok(nav.indexOf('deletecard') < nav.indexOf('取消'), '刪除排在最前');
+    assert.ok(nav.indexOf('取消') < nav.indexOf('儲存'), '取消在儲存之前');
+
+    // 建立頁的送出也在同一種列裡，才會落在同一個位置。
+    assert.match((await h.app.fastify.inject('/new')).body, /class="stepnav">\s*<button type="submit"/);
+
+    const css = readCss();
+    assert.match(css, /\.stepnav\s*\{[^}]*justify-content:\s*flex-end/);
+    // 三顆按鈕在這一列裡是同一個尺寸；尺寸由容器給，所以行內那些 ＋／− 的
+    // .ghost 不受影響（跟 .textbtn 同一個做法）。
+    assert.match(css, /\.stepnav > \*\s*\{[^}]*font-size:\s*var\(--fs-2\)[^}]*padding:/);
+    // 填色只有「儲存」一顆——那是「哪個是預設動作」唯一的訊號。
+    const del = css.slice(css.indexOf('.destructive {'), css.indexOf('}', css.indexOf('.destructive {')));
+    assert.ok(!del.includes('background: var(--alert)'), '刪除不填色');
+    assert.match(del, /color:\s*var\(--alert\)/, '但字是警示色');
+    // 刪除頂到另一端：那是這一列裡離「儲存」最遠的位置，而距離是它現在
+    // 唯一的物理保護——先前那條分隔線已經沒有了。
+    assert.match(css, /\.stepnav \.destructive\s*\{[^}]*margin-right:\s*auto/);
+  });
+
+  test('側欄索引用色點分辨型別，不放型別名', async () => {
+    // 那一欄很窄，標題本來就在截斷邊緣，再塞兩個字等於把標題再砍掉兩個字。
+    const h = await fresh();
+    await createCard(h, { type: 'fleeting', title: '一句話', body: '' });
+
+    const page = (await h.app.fastify.inject('/')).body;
+    const at = page.indexOf('cardindex');
+    const index = page.slice(at, page.indexOf('</div>', at));
+
+    assert.ok(index.includes('dot dot-fleeting'), '型別靠色點');
+    assert.ok(!index.includes('tname'), '不放型別名');
+    // 截斷落在標題上，不落在整條連結上——否則色點會跟著被裁掉。
+    const css = readCss();
+    assert.match(css, /\.indextitle\s*\{[^}]*text-overflow:\s*ellipsis/);
+    // 13px 的文字配小一號的色點。改寫容器上的 --dot 就整組跟著縮，
+    // 不必多一條 .dot 的規則。
+    assert.match(css, /\.cardindex\s*\{[^}]*--dot:\s*var\(--dot-sm\)/);
+  });
+});
+
 describe('中文全文檢索', () => {
   test('中日文逐字切開，其他語言維持整詞', () => {
     assert.equal(segmentCjk('近可分解').trim().replace(/ +/g, ' '), '近 可 分 解');
@@ -2117,7 +2345,8 @@ describe('樣式的紀律', () => {
 
 describe('分欄的斷點', () => {
   const css = readCss();
-  const js = fs.readFileSync('public/new.js', 'utf8');
+  // 分欄的拖曳跟引用選取一樣，只在有來源面板時存在，所以兩者同一支檔案。
+  const js = fs.readFileSync('public/js/sourcepane.js', 'utf8');
 
   test('CSS 與 JS 講的是同一條線', () => {
     // 版面由 CSS 切換、拖曳比例由 JS 記錄，兩邊對不上就會存錯方向的比例。
