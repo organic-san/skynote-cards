@@ -171,12 +171,17 @@
 .linkrow .linkto { flex: 1 1 var(--min-control); }
 
 /* U15：目標顯示標題，ID 不外露。U16：預填的那條是唯讀列，沒有輸入框也沒有減號。 */
+/* 標題自成一格，寬度由版面決定，所以截斷交給 CSS。完整的字在 title 屬性裡。 */
 .linktarget {
   flex: 1 1 var(--min-control);
+  min-width: 0;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid transparent;
   font-size: var(--fs-2);
   color: var(--text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .ghost {

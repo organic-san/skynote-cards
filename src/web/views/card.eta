@@ -8,7 +8,12 @@
      先前把關聯樹放在標題之上，一進頁面先讀到後設資料，而且標題的垂直位置
      隨連結多寡浮動，頁面沒有固定落點。 */%>
 <article class="card">
-  <h1><%= it.card.title %></h1>
+  <%/* 碎片沒有標題，那段話在下面的 .body 裡當內文排。 */%>
+  <% if (it.heading) { %>
+  <%/* 長到不像標題時降一階視覺重量：不截斷（這是唯一看得到完整標題的地方），
+       但不再用招牌的字級。 */%>
+  <h1 class="<%= it.heading.long ? 'long' : '' %>"><%= it.heading.text %></h1>
+  <% } %>
   <p class="cardmeta">
     <span class="dot dot-<%= it.card.type %>"></span>
     <span class="tname"><%= it.type_label %></span>

@@ -28,7 +28,8 @@ export interface Item {
   id: string;
   type: string;
   typeLabel: string;
-  title: string;
+  /** null 表示這一型沒有標題（碎片），那段話改由 excerpt 承接。 */
+  heading: Heading | null;
   /** U3 左欄的日期。U4 的相對說法由用戶端改寫。 */
   date: Stamp;
   /** 內文開頭。null 代表這一型不顯示內文。 */
@@ -39,6 +40,44 @@ export interface Item {
    */
   meta: string[];
   tags: string[];
+}
+
+/**
+ * 標題在畫面上的呈現。
+ *
+ * `null` 表示這一型**沒有標題**——目前只有碎片。碎片的整段話存在 `title`
+ * 欄位裡（見 domain/card.ts 的欄位反轉），但那是儲存上的權宜，不是說它
+ * 真的有一個名字。把它印成標題就會得到一面粗體的牆。
+ *
+ * `long` 是「這個標題長到不像標題」。標題沒有長度上限，而版面的每一處都
+ * 假設它很短。卡片主體上不截斷——那是唯一看得到完整標題的地方，截了就沒了；
+ * 改成降一階視覺重量，讓它排起來像一段話而不是一面招牌。
+ */
+export interface Heading {
+  text: string;
+  long: boolean;
+}
+
+/** 超過這個字數就算長。以碼位算，中文一個字算一個。 */
+export const TITLE_LONG = 40;
+
+/** 碎片沒有標題這件事，只在這裡判斷一次。 */
+export function headingOf(card: { type: string; title: string }): Heading | null {
+  if (card.type === 'fleeting') return null;
+  return { text: card.title, long: [...card.title].length > TITLE_LONG };
+}
+
+/**
+ * 把一段文字截到 max 個字。
+ *
+ * 只用在**標題被嵌進一句話裡**的位置（「從《X》的完整化」、「已從 X 建立」）。
+ * 那種地方 CSS 截不乾淨：要把 X 包成 inline-block 才截得動，而 inline-block
+ * 夾在句子中間，行高與基線都會歪。標題自成一格的位置一律交給 CSS，
+ * 因為那邊寬度由版面決定，伺服器不該猜。
+ */
+export function clip(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : text;
 }
 
 /**
@@ -74,8 +113,12 @@ const ITEM_SHAPES: Record<CardType, Shape> = {
     excerpt: excerpt(row.body),
     meta: [`出向 ${row.link_count} · 入向 ${row.inbound}`],
   }),
-  /** 碎片：標題即全部內容，沒有摘要行也沒有其他欄位。 */
-  fleeting: () => ({ excerpt: null, meta: [] }),
+  /**
+   * 碎片：那段話就是內容，所以它走**內文**的位置，不走標題的位置。
+   * 印成標題會得到一面粗體的牆；印在內文位置則自動吃到 .rowtext 的兩行截斷。
+   * meta 沒有別的欄位——型別籤已經說完了。
+   */
+  fleeting: (row) => ({ excerpt: excerpt(row.title), meta: [] }),
 };
 
 export function toItem(row: ListRow): Item {
@@ -84,7 +127,7 @@ export function toItem(row: ListRow): Item {
     id: row.id,
     type: row.type,
     typeLabel: TYPE_LABELS[row.type as CardType] ?? row.type,
-    title: row.title,
+    heading: headingOf(row),
     date: stampShort(row.created),
     tags: row.tags,
     ...shape(row),
@@ -336,7 +379,8 @@ export function formTitle(
   const action = (CARD_ACTIONS[source.type as CardType] ?? []).find(
     (a) => a.rel === rel && a.creates === type,
   );
-  return `從《${source.title}》的${action ? action.label : '建立'}`;
+  // 標題嵌在句子裡，所以在這裡截——見 clip 的說明。
+  return `從《${clip(source.title, 24)}》的${action ? action.label : '建立'}`;
 }
 
 /**

@@ -1301,6 +1301,13 @@ describe('關係怎麼讀', () => {
     assert.ok(!css.includes('.node details'), '收合不再靠 <details>');
   });
 
+  test('需要 JS 才有作用的按鈕，沒有 JS 就不畫', () => {
+    // 「沒有 JS 就展不開」是少一個能力；「按鈕在但按了沒反應」是介面在說謊。
+    const css = readCss();
+    assert.match(css, /html:not\(\.js\)[^{]*\.nodetoggle[^{]*\{[^}]*display:\s*none/);
+    assert.match(css, /html:not\(\.js\)[^{]*\.threadtoggleall[^{]*\{[^}]*display:\s*none/);
+  });
+
   test('軌道只在那一層還有兄弟時才畫線', async () => {
     // 攤平之後縮排由每一列自己畫，所以「這是不是最後一個」必須寫進標記裡：
     // 不是最後一個畫 T 形（線繼續往下），是最後一個畫 L 形（線到此為止）。
@@ -1818,6 +1825,132 @@ describe('連結列與引用串的操作', () => {
     assert.match(css, /\.node\s*\{[^}]*min-height:\s*var\(--rail-h\)/);
     // 沒有 margin，軌道才接得起來。
     assert.ok(!/\.node\s*\{[^}]*margin/.test(css), '列與列之間不留間距');
+  });
+});
+
+describe('碎片沒有標題', () => {
+  // 碎片的整段話存在 title 欄位裡（domain/card.ts 的欄位反轉），但那是儲存上的
+  // 權宜，不是說它真的有一個名字。印成標題就會得到一面粗體的牆。
+
+  test('卡片頁把那段話當內文排，不當標題', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'fleeting', title: '憑空想到的一句話', body: '' });
+    const page = (await h.app.fastify.inject(`/c/${id}`)).body;
+    const article = page.slice(page.indexOf('<article'), page.indexOf('</article>'));
+
+    assert.ok(!article.includes('<h1'), '碎片不該有標題');
+    const body = article.slice(article.indexOf('<div class="body"'));
+    assert.ok(body.includes('憑空想到的一句話'), '那段話要在內文的位置');
+
+    // 有標題的型別照舊。
+    const t = await createCard(h, { type: 'thinking', title: '有名字的', body: 'x' });
+    assert.ok((await h.app.fastify.inject(`/c/${t}`)).body.includes('<h1'));
+  });
+
+  test('列表用日期當列首，那段話走內文的位置而且點得進去', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'fleeting', title: '隨手記的一句', body: '' });
+    const feed = (await h.app.fastify.inject('/')).body;
+    // 側欄的卡片索引也有 <li>，而且排在前面，所以結尾要從列首開始找。
+    const rowAt = feed.indexOf('<li class="row untitled">');
+    const row = feed.slice(rowAt, feed.indexOf('</li>', rowAt));
+
+    assert.ok(rowAt > -1, '沒有標題的列要標出來，色點才知道自己該對哪一行');
+    assert.ok(!row.includes('rowtitle'), '碎片沒有標題那一格');
+    // 一則隨手記靠「什麼時候寫的」認，所以列首只剩日期。
+    const headAt = row.indexOf('class="rowhead"');
+    const head = row.slice(headAt, row.indexOf('</p>', headAt));
+    assert.ok(head.includes('<time'), '列首要有日期');
+    // 沒有標題的話，內文自己得是連結，否則這一列點不進去。
+    assert.match(row, /<a class="rowtext rowbody" href="\/c\/[^"]+">隨手記的一句<\/a>/);
+
+    const css = readCss();
+    assert.match(css, /\.rowbody::after\s*\{[^}]*inset:\s*0/);
+  });
+
+  test('沒有標題的那一列，色點對的是日期而不是標題', () => {
+    // 色點落在「列首那一行」的行框中心。列首是哪一行不是固定的：
+    // 有標題的列是 17px 的標題，碎片的列首只剩 13px 的日期。
+    // 這條規則先前寫死標題的行框，碎片的點因此落太低。
+    const css = readCss();
+    assert.match(
+      css,
+      /\.row > \.dot\s*\{[^}]*margin-top:\s*calc\(\(var\(--head-line\)/,
+      '色點的位置要讀 --head-line，不能寫死某一種字級',
+    );
+    assert.match(css, /\.row\b[^{]*\{[^}]*--head-line:\s*calc\(var\(--fs-3\)/);
+    assert.match(css, /\.row\.untitled\s*\{[^}]*--head-line:\s*calc\(var\(--fs-1\)/);
+    // 兩種列各有自己的微調旋鈕：校準的不是同一行字，共用必有一邊是歪的。
+    assert.match(css, /--dot-nudge-untitled:/);
+    assert.match(css, /\.row\.untitled\s*\{[^}]*--dot-shift:\s*var\(--dot-nudge-untitled\)/);
+  });
+
+  test('來源面板與完整化都走同一條判斷', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'fleeting', title: '值得再想的一句', body: '' });
+    const page = (await h.app.fastify.inject(`/new?to=${id}&type=thinking&rel=updates`)).body;
+    const pane = page.slice(page.indexOf('pane-source'), page.indexOf('quotebar'));
+
+    assert.ok(!pane.includes('<h1'), '來源面板也不該把碎片印成標題');
+    assert.ok(pane.includes('值得再想的一句'), '那段話要在面板的內文裡');
+  });
+});
+
+describe('標題沒有長度上限', () => {
+  // 任何型別的標題都可能過長，而版面每一處都假設它很短。
+  // 分兩種處理：自成一格的位置交給 CSS，嵌進句子裡的位置在伺服器截。
+
+  const LONG = '一個很長的標題'.repeat(12);
+
+  test('卡片頁不截標題，改降一階視覺重量', async () => {
+    const h = await fresh();
+    const long = await createCard(h, { type: 'thinking', title: LONG, body: 'x' });
+    const short = await createCard(h, { type: 'thinking', title: '短的', body: 'x' });
+
+    const pl = (await h.app.fastify.inject(`/c/${long}`)).body;
+    // 不截：這是唯一看得到完整標題的地方。
+    assert.ok(pl.includes(`<h1 class="long">${LONG}</h1>`), '長標題完整顯示並標記');
+
+    const ps = (await h.app.fastify.inject(`/c/${short}`)).body;
+    assert.ok(ps.includes('<h1 class="">短的</h1>'), '短標題不標記');
+
+    const css = readCss();
+    assert.match(css, /h1\.long\s*\{[^}]*font-size:\s*var\(--fs-3\)/);
+  });
+
+  test('嵌進句子裡的標題在伺服器截', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'original', title: LONG, body: 'x', url: '' });
+
+    // 「從《X》的節錄」——X 夾在句子中間，CSS 截不乾淨。
+    const form = (await h.app.fastify.inject(`/new?to=${id}&type=restatement&rel=about`)).body;
+    const titleAt = form.indexOf('class="formtitle"');
+    const title = form.slice(titleAt, form.indexOf('</h1>', titleAt));
+    assert.ok(title.includes('…'), '截過');
+    assert.ok(!title.includes(LONG), '不該印出完整標題');
+
+    // 「已從 X 建立」同理。
+    const other = await createCard(h, { type: 'thinking', title: '另一張', body: 'y' });
+    const page = (await h.app.fastify.inject(`/c/${other}?from=${id}`)).body;
+    const from = page.slice(page.indexOf('class="fromsource"'), page.indexOf('</p>', page.indexOf('class="fromsource"')));
+    assert.ok(from.includes('…') && !from.includes(LONG), '已從 X 建立也要截');
+  });
+
+  test('自成一格的位置交給 CSS，不在伺服器猜寬度', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'original', title: LONG, body: 'x', url: '' });
+
+    // 列表：完整標題照樣送出去，由 .rowtitle 截兩行。
+    const feed = (await h.app.fastify.inject('/')).body;
+    assert.ok(feed.includes(LONG), '伺服器不截，能排幾個字是版面決定的');
+
+    // 連結列的目標卡：同理，完整的字留在 title 屬性裡。
+    const form = (await h.app.fastify.inject(`/new?to=${id}&type=restatement&rel=about`)).body;
+    assert.match(form, /<span class="linktarget" title="[^"]*一個很長的標題/);
+
+    const css = readCss();
+    assert.match(css, /\.rowtitle\s*\{[^}]*-webkit-line-clamp:\s*2/);
+    assert.match(css, /\.linktarget\s*\{[^}]*text-overflow:\s*ellipsis/);
   });
 });
 

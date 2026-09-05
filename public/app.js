@@ -97,6 +97,10 @@
   // 判斷，不必再走一次樹，也不管那些列在文件裡排的是正序還是反序。
   //
   // 代價：沒有 JS 就展不開（仍看得到伺服器給的預設深度）。
+  //
+  // .threadtoggleall 是同一套機制的總開關：每個 .thread 交出一個 controller，
+  // 總開關只是對所有 controller 廣播。它的文字報的是「按下去會發生什麼」，
+  // 所以只要還有任何一支是收的，它就說「全部展開」。
 
   var toggleAllBtn = document.querySelector('.threadtoggleall');
   var threadControllers = [];
@@ -146,9 +150,6 @@
           return btn.getAttribute('aria-expanded') === 'false';
         });
       },
-      hasToggles: function () {
-        return toggles.length > 0;
-      },
     });
   });
 
@@ -161,24 +162,20 @@
     toggleAllBtn.setAttribute('aria-expanded', anyCollapsed ? 'false' : 'true');
   }
 
+  // 「串裡有沒有可展開的節點」由伺服器判斷（routes 的 has_toggles）：
+  // 沒有的話按鈕根本不會印出來，這裡也就找不到它。前端不再算第二次——
+  // 兩邊各算一次同一件事，模板一改就會分岔，而且無 JS 時只有伺服器那次算數。
   if (toggleAllBtn) {
-    var totalToggles = threadControllers.reduce(function (sum, c) {
-      return sum + (c.hasToggles() ? 1 : 0);
-    }, 0);
-    if (totalToggles === 0) {
-      toggleAllBtn.hidden = true;
-    } else {
-      syncToggleAll();
-      toggleAllBtn.addEventListener('click', function () {
-        var shouldExpand = threadControllers.some(function (ctrl) {
-          return ctrl.hasCollapsed();
-        });
-        threadControllers.forEach(function (ctrl) {
-          ctrl.setAll(shouldExpand);
-        });
-        syncToggleAll();
+    syncToggleAll();
+    toggleAllBtn.addEventListener('click', function () {
+      var shouldExpand = threadControllers.some(function (ctrl) {
+        return ctrl.hasCollapsed();
       });
-    }
+      threadControllers.forEach(function (ctrl) {
+        ctrl.setAll(shouldExpand);
+      });
+      syncToggleAll();
+    });
   }
 
   // ------------------------------------------------------------ 將存為什麼

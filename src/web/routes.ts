@@ -10,6 +10,8 @@ import {
   FORM_SPEC_TABLE,
   actionsFor,
   formTitle,
+  headingOf,
+  clip,
   flattenThread,
   formSpec,
   relOptions,
@@ -27,7 +29,7 @@ import {
   type CardDraft,
   type CardType,
 } from '../domain/types.ts';
-import { fleetingDraft, quickDraft } from '../domain/card.ts';
+import { fleetingDraft, fleetingText, quickDraft } from '../domain/card.ts';
 import { LOCKED_MESSAGE, isWithinEditWindow, lockAt } from '../domain/rules.ts';
 import { createCard, updateCard, type CardServiceDeps } from '../service/cards.ts';
 import * as lists from '../service/lists.ts';
@@ -231,10 +233,15 @@ export function registerRoutes(
               id: opts.source.id,
               type: opts.source.type,
               typeLabel: TYPE_LABELS[opts.source.type as CardType] ?? opts.source.type,
+              heading: headingOf(opts.source),
               title: opts.source.title,
               tags: opts.source.tags,
               date: stampShort(opts.source.created),
-              body_html: renderMarkdown(opts.source.body),
+              body_html: renderMarkdown(
+                opts.source.type === 'fleeting'
+                  ? fleetingText(opts.source)
+                  : opts.source.body,
+              ),
               provenance: opts.source.provenance === 'default' ? null : opts.source.provenance,
             }
           : null,
@@ -281,7 +288,7 @@ export function registerRoutes(
 
     // 完整化：把碎片那段文字帶進新卡的內文（A.5 的欄位反轉在這裡收尾）。
     const body =
-      target && rel === 'updates' && target.type === 'fleeting' ? target.title : '';
+      target && rel === 'updates' && target.type === 'fleeting' ? fleetingText(target) : '';
 
     return html(
       reply,
@@ -385,7 +392,9 @@ export function registerRoutes(
 
     const out = index.outLinks(id);
     const fromId = (req.query as Record<string, string | undefined>).from;
-    const from = fromId && isValidIdFormat(fromId) ? index.getCard(fromId) : null;
+    const raw = fromId && isValidIdFormat(fromId) ? index.getCard(fromId) : null;
+    // 「已從 X 建立」是一句話，所以 X 在這裡截（見 present.ts 的 clip）。
+    const from = raw ? { id: raw.id, title: clip(raw.title, 24) } : null;
 
     const upstream = flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out');
     const downstream = flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in');
@@ -397,6 +406,9 @@ export function registerRoutes(
         'card',
         {
           card,
+          // 碎片沒有標題（headingOf 回 null），那段話改走內文的位置——
+          // 它本來就是內容，印成 h1 會得到一面粗體的牆。
+          heading: headingOf(card),
           created_display: stampFull(card.created),
           created_short: stampShort(card.created),
           revised_display: card.revised ? stampFull(card.revised) : null,
@@ -404,7 +416,9 @@ export function registerRoutes(
           lock_at: isWithinEditWindow(card) ? lockAt(card) : '',
           url_href: safeHref(card.url),
           embed: embedFor(card.url),
-          body_html: renderMarkdown(card.body),
+          body_html: renderMarkdown(
+            card.type === 'fleeting' ? fleetingText(card) : card.body,
+          ),
           upstream,
           downstream,
           has_toggles,

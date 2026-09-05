@@ -11,7 +11,9 @@
       <% if (it.source.provenance) { %><span class="sep">·</span><span><%= it.source.provenance %></span><% } %>
       <a class="sourceopen" href="/c/<%= it.source.id %>">開啟</a>
     </p>
-    <h1><%= it.source.title %></h1>
+    <% if (it.source.heading) { %>
+    <h1 class="<%= it.source.heading.long ? 'long' : '' %>"><%= it.source.heading.text %></h1>
+    <% } %>
     <% if (it.source.tags.length) { %>
     <p class="tags">
       <% it.source.tags.forEach(function (t) { %><span class="tag">#<%= t %></span><% }) %>
@@ -129,7 +131,8 @@
           <% }) %>
         </select>
         <% if (l.fixed) { %>
-        <span class="linktarget" title="<%= l.to %>"><%= l.title || l.to %></span>
+        <%/* 標題自成一格，所以截斷交給 CSS；完整的字留在 title 屬性裡。 */%>
+        <span class="linktarget" title="<%= l.title || l.to %>"><%= l.title || l.to %></span>
         <input type="hidden" name="link_to" value="<%= l.to %>">
         <% } else { %>
         <%/* 看得到的是標題，送出去的是 ID（U15）。

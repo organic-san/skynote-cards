@@ -6,17 +6,28 @@
   <%/* 色點直接服務於標題，所以它就在標題正前方；日期與時刻跟在標題之後。
        原本把色點與日期關在一個 72px 的左欄裡（U3），那讓標題離頁面左緣很遠，
        而色點要標示的正是標題那一行。項目之間不用分隔線，改用間距（U2）。 */%>
-  <li class="row">
+  <li class="row<%= c.heading ? '' : ' untitled' %>">
     <span class="dot dot-<%= c.type %>"></span>
     <div class="rowmain">
+      <%/* 碎片沒有標題，這一行就只剩日期——那也正是它的識別方式：
+           一則隨手記靠「什麼時候寫的」認，不靠名字。 */%>
       <p class="rowhead">
-        <a class="rowtitle" href="/c/<%= c.id %>"><%= c.title %></a>
+        <% if (c.heading) { %>
+        <a class="rowtitle" href="/c/<%= c.id %>"><%= c.heading.text %></a>
+        <% } %>
         <%/* datetime 是 UTC 真值，內容是保底文字；app.js 依瀏覽器時區改寫（U4）。
              時刻由腳本填，沒有 JS 時那一格是空的，不佔位。 */%>
         <time datetime="<%= c.date.iso %>" data-rel><%= c.date.text %></time>
         <span class="rowtime clock num"></span>
       </p>
-      <% if (c.excerpt) { %><p class="rowtext"><%= c.excerpt %></p><% } %>
+      <% if (c.excerpt) { %>
+        <% if (c.heading) { %>
+        <p class="rowtext"><%= c.excerpt %></p>
+        <% } else { %>
+        <%/* 沒有標題時，內文自己就是那條連結——否則這一列點不進去。 */%>
+        <a class="rowtext rowbody" href="/c/<%= c.id %>"><%= c.excerpt %></a>
+        <% } %>
+      <% } %>
       <p class="rowmeta">
         <%/* U5：型別名固定在第一段，其餘以 · 分隔。 */%>
         <span class="tname"><%= c.typeLabel %></span>

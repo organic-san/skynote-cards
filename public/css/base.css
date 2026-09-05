@@ -62,6 +62,19 @@ h1 {
   margin: 0 0 var(--sp-2);
 }
 
+/*
+  長到不像標題的標題。
+
+  不截斷——卡片頁是唯一看得到完整標題的地方，截了就沒有任何地方看得到。
+  改成降一階視覺重量：22px 粗體排到七行是一面招牌，17px 的中等字重排起來
+  才像一段話。門檻在 present.ts 的 TITLE_LONG。
+*/
+h1.long {
+  font-size: var(--fs-3);
+  line-height: var(--lh-2);
+  font-weight: 500;
+}
+
 .tag { font-size: var(--fs-1); color: var(--text-2); }
 .tag:hover { color: var(--text); }
 

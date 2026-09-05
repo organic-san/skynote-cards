@@ -2,6 +2,9 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<%/* 只在有 JS 時才畫需要 JS 的控制項（見 card.css 的 html:not(.js)）。
+     放在 head 而且是行內的，否則按鈕會先畫出來再消失。 */%>
+<script>document.documentElement.classList.add('js')</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= it.title %> | skynote</title>
 <link rel="icon" href="/static/favicon.ico" sizes="any">

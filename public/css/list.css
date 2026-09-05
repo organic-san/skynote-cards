@@ -55,6 +55,20 @@
   align-items: start;
   padding: 0;
   margin-bottom: var(--sp-6);
+
+  /* 列首是標題：17px 的中文，行高 --lh-3。 */
+  --head-line: calc(var(--fs-3) * var(--lh-3));
+  --dot-shift: var(--dot-nudge);
+}
+
+/*
+  碎片沒有標題，列首是日期與時刻那一行——13px，行高沿用 body 的 --lh-2
+  （.rowhead 沒有自己的 line-height）。字級差了 4px，行框差了將近 10px，
+  所以色點必須跟著換一個基準，否則它會停在標題本來會在的高度上。
+*/
+.row.untitled {
+  --head-line: calc(var(--fs-1) * var(--lh-2));
+  --dot-shift: var(--dot-nudge-untitled);
 }
 .row:last-child { margin-bottom: 0; }
 
@@ -79,12 +93,16 @@
 .rowtime:empty { display: none; }
 
 /*
-  U30 的光學對齊：把色點放在標題第一行的行框中心，再由 --dot-nudge 微調。
+  U30 的光學對齊：色點落在**列首那一行**的行框中心，再由 --dot-nudge 微調。
   `.rowmain` 一定比色點高，所以這個 margin-top 只是在欄位裡把點往下推，
   不會改變列高——改多少就動多少。
+
+  「列首是哪一行」不是固定的：有標題的列是標題，碎片沒有標題，列首只剩日期。
+  所以每一種列自己宣告 --head-line 與 --dot-shift，這條規則只有一份。
+  先前這裡直接寫死 --fs-3 × --lh-3（標題的行框），碎片那一列的點因此落太低。
 */
 .row > .dot {
-  margin-top: calc((var(--fs-3) * var(--lh-3) - var(--dot)) / 2 + var(--dot-nudge));
+  margin-top: calc((var(--head-line) - var(--dot)) / 2 + var(--dot-shift));
 }
 
 /* 標題、日期、時刻同一行。日期與時刻跟在標題之後：它們不是掃視時最先
@@ -98,13 +116,23 @@
 }
 .rowhead time { font-size: var(--fs-1); color: var(--text-3); }
 
-/* U25：卡片標題與內文用宋體——「這裡是文件」。 */
+/*
+  U25：卡片標題與內文用宋體——「這裡是文件」。
+
+  標題沒有長度上限，而列表假設它很短，所以在這裡截兩行。截斷交給 CSS 而不是
+  伺服器，因為能排幾個字是版面決定的，伺服器猜不到（見 present.ts 的 clip）。
+*/
 .rowtitle {
   font-family: var(--font-doc);
   font-size: var(--fs-3);
   line-height: var(--lh-3);
   font-weight: 600;
   color: var(--text);
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .rowtitle::after { content: ""; position: absolute; inset: 0; }
 .row:hover .rowtitle { text-decoration: underline; }
@@ -122,6 +150,13 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/*
+  碎片沒有標題，所以它的內文就是那條連結。
+  不加底線——整列已經有 hover 底色，再加一條兩行長的底線太吵；
+  標題那條底線之所以成立，是因為它只有一行。
+*/
+.rowbody::after { content: ""; position: absolute; inset: 0; }
 
 .rowmeta {
   margin: var(--sp-2) 0 0;
