@@ -1622,6 +1622,30 @@ describe('provenance 欄位', () => {
   });
 });
 
+describe('內文的換行', () => {
+  test('單一換行就是換行，不併成一個空格', () => {
+    // 刻意偏離 CommonMark。那條規則服務的是「原始碼裡硬斷行、輸出時重新排版」
+    // 的寫作方式，而這裡的內文是打在 textarea 裡的——沒有人在文字框裡把散文
+    // 斷在第 80 個字元。在這個輸入情境下，一個換行就是一次刻意的換行。
+    const html = renderMarkdown('第一行\n第二行');
+    assert.match(html, /第一行<br>\s*第二行/);
+    assert.ok(!html.includes('第一行 第二行'), '不該併成一個空格');
+  });
+
+  test('換行不影響區塊的切法，所以引用錨點不會腐爛', () => {
+    // #b{n} 指的是第 n 個**頂層區塊**。breaks 只動段落內的軟換行，不動區塊
+    // 結構——這一條要有測試，否則哪天把 breaks 關掉就會讓既有的引用連結
+    // 整批指錯，而且不會報任何錯。
+    const html = renderMarkdown('一\n二\n三\n\n第二段\n也有兩行\n\n- 甲\n- 乙');
+    assert.deepEqual(
+      [...html.matchAll(/data-b="(\d+)"/g)].map((m) => m[1]),
+      ['0', '1', '2'],
+      '三個頂層區塊，序號連續',
+    );
+    assert.equal((html.match(/<br>/g) ?? []).length, 3, '段落內的換行各自成立');
+  });
+});
+
 describe('引用錨點', () => {
   test('每個頂層區塊都掛上 b0、b1、b2……', () => {
     const html = renderMarkdown('# 標題\n\n第一段。\n\n- a\n- b\n\n> 引言\n\n最後一段。');

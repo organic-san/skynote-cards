@@ -11,8 +11,20 @@ export const PUBLIC_DIR = path.join(here, '..', '..', 'public');
 
 export const eta = new Eta({ views: VIEWS_DIR, cache: process.env.NODE_ENV === 'production' });
 
-// html: false → 內文裡的原始 HTML 會被跳脫。這是唯一會渲染使用者內容的地方。
-const md = new MarkdownIt({ html: false, linkify: true, typographer: false });
+/*
+  html: false → 內文裡的原始 HTML 會被跳脫。這是唯一會渲染使用者內容的地方。
+
+  breaks: true → **單一換行就是換行**，不照 CommonMark 併成一個空格。
+
+  這是刻意偏離標準的。CommonMark 那條規則服務的是「原始碼裡硬斷行、輸出時
+  重新排版」的寫作方式，而這裡的內文是打在 textarea 裡的——沒有人在瀏覽器的
+  文字框裡把散文斷在第 80 個字元。在這個輸入情境下，一個換行就是一次刻意的
+  換行，併掉它等於把使用者寫下的結構抹掉。
+
+  匯入的那批尤其明顯：Discord 的訊息大量是一行一個要點的列表，
+  併成一段之後整段就讀不出結構了。
+*/
+const md = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: true });
 
 /**
  * 給每個頂層區塊掛上 b0、b1、b2……
