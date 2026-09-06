@@ -68,10 +68,19 @@ function asArray(v: unknown): string[] {
   return [String(v)];
 }
 
-/** 「逗號或空白分隔」的一行字串切成標籤。空白項在這一步就被丟掉。 */
+/**
+ * 一行字串切成標籤。**只用空白分隔。**
+ *
+ * 逗號被推翻了：兩種分隔符並存時，`世界觀, 構想` 與 `世界觀 構想` 長得不一樣
+ * 卻是同一件事，掃過去分不出標籤的邊界。只留空白之後，欄位裡看到幾個空白
+ * 就是幾個標籤。
+ *
+ * 代價是習慣性打的逗號會變成標籤的一部分，而卡片過了反芻期就改不動了——
+ * 所以那不是靜默吞下去，是一條會報錯的規則（見 rules.ts 的 checkTagChars）。
+ */
 function splitTags(line: string): string[] {
   return line
-    .split(/[,，\s]+/)
+    .split(/\s+/)
     .map((t) => t.trim())
     .filter((t) => t !== '');
 }
@@ -269,6 +278,8 @@ export function registerRoutes(
         specs: FORM_SPEC_TABLE,
         relTable: Object.fromEntries(CARD_TYPES.map((t) => [t, relOptions(t)])),
         provenances: PROVENANCES,
+        // 標籤推薦：直接嵌在頁面裡，不開端點——標籤表很小，沒有網路往返的必要。
+        tags_all: lists.tagCounts(index),
       },
       { title: '新增', fab: false },
     );
@@ -471,7 +482,8 @@ export function registerRoutes(
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
           created_display: stampFull(card.created),
           lock_at: rumination.until,
-          tags_line: card.tags.join(', '),
+          tags_line: card.tags.join(' '),
+          tags_all: lists.tagCounts(index),
           // R7：既有的連結是一份唯讀清單，新增的才是表單列。兩者分開呈現，
           // 因為它們能做的事不一樣——分不開的話「只增不減」就要靠說明去講。
           links: out.map((l) => ({

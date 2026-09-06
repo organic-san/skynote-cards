@@ -80,7 +80,7 @@
   <label class="field<%= it.spec.url ? '' : ' off' %>" id="urlfield">
     <span>網址</span>
     <input type="url" name="url" autocomplete="off" value="<%= it.values.url %>"
-           placeholder="沒有就留白">
+           placeholder="選填">
   </label>
 
   <label class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
@@ -95,7 +95,7 @@
       </label>
       <label><span>原始年份</span>
         <input type="text" name="source_date" autocomplete="off" value="<%= it.values.source_date %>"
-               placeholder="1962">
+               placeholder="原始發布日期">
       </label>
     </div>
   </div>
@@ -153,9 +153,13 @@
     </div>
   </div>
 
-  <label class="field<%= it.spec.single ? ' off' : '' %>" id="tagsfield">
+  <%/* 標籤用空白分隔（不是逗號），推薦面板見 js/tags.js。 */%>
+  <label class="field<%= it.spec.single ? ' off' : '' %>" id="tagsfield"
+         data-tags='<%= JSON.stringify(it.tags_all) %>'>
     <span>標籤</span>
-    <input type="text" name="tags" autocomplete="off" value="<%= it.values.tags %>">
+    <input type="text" name="tags" autocomplete="off" placeholder="用空白分隔"
+           value="<%= it.values.tags %>">
+    <div class="picker tagpicker"></div>
   </label>
 
   <%/* 跟編輯頁同一條規矩：前進的動作靠右。 */%>
@@ -185,5 +189,6 @@
      連結列跟編輯頁共用同一支。 */%>
 <script src="/static/js/grow.js" defer></script>
 <script src="/static/js/links.js" defer></script>
+<script src="/static/js/tags.js" defer></script>
 <script src="/static/js/typefields.js" defer></script>
 <script src="/static/js/sourcepane.js" defer></script>

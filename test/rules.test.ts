@@ -719,7 +719,7 @@ describe('頁面與端點', () => {
         type: 'restatement',
         title: '用表單送出的卡',
         body: '內文',
-        tags: '甲, 乙 丙',
+        tags: '甲 乙 丙',
         link_rel: 'about',
         link_to: target,
       }).toString(),
@@ -730,6 +730,29 @@ describe('頁面與端點', () => {
     const page = await h.app.fastify.inject(loc);
     assert.ok(page.body.includes('用表單送出的卡'));
     for (const t of ['甲', '乙', '丙']) assert.ok(page.body.includes(`>#${t}</a>`), `標籤 ${t} 沒切出來`);
+  });
+
+  test('標籤只用空白分隔，逗號會被擋下來', async () => {
+    // 兩種分隔符並存時，`世界觀, 構想` 與 `世界觀 構想` 長得不一樣卻是同一件事，
+    // 掃過去分不出標籤的邊界。只留空白之後，看到幾個空白就是幾個標籤。
+    //
+    // 代價是習慣性打的逗號會黏在標籤上，而卡片過了反芻期就改不動——
+    // 所以那不是靜默吞下去，是一條會報錯的規則。
+    const h = await fresh();
+    const res = await postCard(h, { type: 'thinking', title: '甲', body: 'x', tags: '乙, 丙' });
+    assert.equal(res.statusCode, 400);
+    assert.match((res.json() as { errors: string[] }).errors.join(), /不要用逗號/);
+
+    // 全形逗號才是中文輸入法實際會打出來的那個，一樣要擋。
+    const full = await postCard(h, { type: 'thinking', title: '甲2', body: 'x', tags: '乙，丙' });
+    assert.equal(full.statusCode, 400);
+
+    // 全形空白是空白（JS 的 \s 吃 U+3000），所以它切得開，不是錯誤。
+    const ok = await postCard(h, { type: 'thinking', title: '乙', body: 'x', tags: '丁　戊' });
+    assert.equal(ok.statusCode, 302);
+    const page = await h.app.fastify.inject(ok.headers.location as string);
+    for (const t of ['丁', '戊']) assert.ok(page.body.includes(`>#${t}</a>`), `${t} 沒切出來`);
+
   });
 
   test('驗證失敗時表單原樣退回並列出錯誤', async () => {
@@ -2179,6 +2202,42 @@ describe('動作的形式是一份', () => {
     // 13px 的文字配小一號的色點。改寫容器上的 --dot 就整組跟著縮，
     // 不必多一條 .dot 的規則。
     assert.match(css, /\.cardindex\s*\{[^}]*--dot:\s*var\(--dot-sm\)/);
+  });
+});
+
+describe('標籤推薦', () => {
+  test('既有標籤依用過幾張卡排序，全部列出，兩張表單都有', async () => {
+    // 這不是標籤正規化（那是事後合併，spec 明確排除）。它不改任何資料，
+    // 只在你打字的當下讓你看見既有的——一個是修正，一個是預防。
+    const h = await fresh();
+    for (const [t, tags] of [
+      ['A', '自我分析 世界觀構想'],
+      ['B', '自我分析'],
+      ['C', '自我分析 遊戲構想'],
+    ] as const) {
+      await createCard(h, { type: 'thinking', title: t, body: 'x', tags });
+    }
+    const id = await createCard(h, { type: 'thinking', title: 'D', body: 'x' });
+
+    for (const url of ['/new?type=thinking', `/c/${id}/edit`]) {
+      const page = (await h.app.fastify.inject(url)).body;
+      const at = page.indexOf('id="tagsfield"');
+      assert.ok(at > -1, `${url} 要有標籤欄`);
+      const field = page.slice(at, page.indexOf('</label>', at));
+      assert.ok(field.includes('tagpicker'), `${url} 要有推薦面板`);
+
+      const raw = /data-tags='([^']*)'/.exec(field)?.[1] ?? '';
+      const list = JSON.parse(raw.replaceAll('&quot;', '"')) as { tag: string; n: number }[];
+      // 全部列出來：截斷會把長尾藏起來，而長尾正是「上次到底打哪個字」最需要看見的。
+      assert.equal(list.length, 3, `${url} 三個標籤都要在`);
+      assert.equal(list[0]?.tag, '自我分析', '用得最多的排最前');
+      assert.equal(list[0]?.n, 3);
+    }
+
+    // 面板高度有上限、用捲的，而不是只列前幾個。
+    const css = readCss();
+    assert.match(css, /\.tagpicker\s*\{[^}]*max-height:\s*var\(--picker-max\)/);
+    assert.match(css, /\.tagpicker\s*\{[^}]*overflow-y:\s*auto/);
   });
 });
 

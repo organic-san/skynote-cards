@@ -21,9 +21,12 @@
     <textarea name="body" rows="14" spellcheck="false" data-grow><%= it.card.body %></textarea>
   </label>
 
-  <label class="field">
+  <%/* 標籤用空白分隔（不是逗號），推薦面板見 js/tags.js。 */%>
+  <label class="field" id="tagsfield" data-tags='<%= JSON.stringify(it.tags_all) %>'>
     <span>標籤</span>
-    <input type="text" name="tags" autocomplete="off" value="<%= it.tags_line %>">
+    <input type="text" name="tags" autocomplete="off" placeholder="用空白分隔"
+           value="<%= it.tags_line %>">
+    <div class="picker tagpicker"></div>
   </label>
 
   <%/* R7：反芻期內連結只增不減。
@@ -78,6 +81,7 @@
      那是同一件事，不該有兩份會慢慢長歪的實作。 */%>
 <script src="/static/js/grow.js" defer></script>
 <script src="/static/js/links.js" defer></script>
+<script src="/static/js/tags.js" defer></script>
 <script src="/static/js/editform.js" defer></script>
 
 <%/* 新增的那幾列長什麼樣。跟建立頁同一份結構，選項由 links.js 畫。 */%>

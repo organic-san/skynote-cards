@@ -49,10 +49,20 @@ export function validateDraft(draft: CardDraft, deps: ValidateDeps): ValidationR
   const title = (draft.title ?? '').trim();
   if (title === '') errors.push('標題不得為空');
 
-  // 標籤：每一項 trim 後非空，去重
+  // 標籤：每一項 trim 後非空、不含逗號，去重
   const tags: string[] = [];
   for (const raw of draft.tags ?? []) {
     const t = typeof raw === 'string' ? raw.trim() : '';
+    if (t !== '' && /[,，]/.test(t)) {
+      // 分隔符只有空白（見 routes 的 splitTags）。習慣性打的逗號會黏成 `世界觀,`，
+      // 而卡片過了反芻期就改不動——所以這裡擋下來，不要靜默存成那樣。
+      // 半形與全形都擋：中文輸入法打出來的是全形，那才是實務上會發生的那個。
+      //
+      // 空白不必擋：`\s` 連全形空白（U+3000）都算，所以兩種空白在 splitTags
+      // 那一步就切開了，不會有標籤含著空白進來。
+      errors.push(`標籤用空白分隔，不要用逗號：${t}`);
+      continue;
+    }
     if (t === '') {
       errors.push('標籤不得為空');
       continue;

@@ -137,8 +137,8 @@
    一起擋掉，於是欄位只能變短不能變高。自動長高有上限，手動拖曳沒有。 */
 .field textarea {
   font-family: var(--font-doc);
-  font-size: var(--fs-3);
-  line-height: var(--lh-3);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
   resize: vertical;
   --grow-max: 60vh;
 }
@@ -402,3 +402,37 @@ main:has(> .split) {
   這個不行。所以它不排進同一條動作列，而是隔一條線放在最下面，
   用警示色說明它是什麼——不是為了嚇人，是為了讓手指不會順勢滑過去。
 */
+
+/* ---------------------------------------------------------- 標籤推薦 */
+
+/*
+  標籤欄的推薦面板。用 .picker 的外殼（浮層的外觀是同一件事），
+  但排法不同：連結的 picker 是一列一項的清單，標籤是一片可以掃視的字。
+
+  **列出全部，不做「只顯示前 N 個」。** 截斷會把長尾藏起來，而長尾正是
+  「我上次到底是打哪個字」最需要被看見的那一批。改用捲動換版面——
+  面板最多佔 --picker-max 高，剩下的用捲的。
+*/
+#tagsfield { position: relative; }
+.tagpicker {
+  display: none;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  max-height: var(--picker-max);
+  overflow-y: auto;
+  padding: var(--sp-2);
+}
+.tagpicker.on { display: flex; }
+.tagpicker button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  width: auto;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-field);
+  font-size: var(--fs-1);
+  color: var(--text-2);
+}
+.tagpicker button:hover { background: var(--hover-bg); color: var(--text); }
+/* 用過幾張卡。它是排序的依據，所以看得到才知道為什麼這樣排。 */
+.tagpicker .pid { color: var(--text-3); }
