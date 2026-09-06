@@ -8,11 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= it.title %> | Skynote</title>
 <link rel="icon" href="/static/favicon.ico" sizes="any">
-<%/* 走 Google Fonts 是因為它把 CJK 切成一百多個 unicode-range 子集，
-     一頁中文只下載用到的那幾片。font-display=swap 加上 tokens.css 裡的退回鏈：
-     連不上時頁面照常可讀，只是換成系統字體。
-     襯體（Noto Serif TC）隨字體二分一起撤掉了，不再下載。 */%>
-     連不上時頁面照常可讀，只是換成系統字體。 */%>
+<%/* 連不上時頁面照常可讀，只是換成系統字體。 */%>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet"
