@@ -979,6 +979,11 @@ describe('介面', () => {
     assert.ok(res.body.includes('typefixed'), '型別鎖定，不給選');
     assert.match(res.body, /name="type" value="thinking"/, '鎖定的是 thinking');
     assert.ok(!res.body.includes('class="typepick"'), '不該有型別選單');
+    assert.match(
+      res.body,
+      /<p class="back"><a class="textbtn" href="\/">← 返回<\/a><\/p>/,
+      '展開成思考頁面要有返回按鈕',
+    );
 
     // 沒有 expand 的那條路照舊：真的建一張卡。
     const made = await h.app.fastify.inject({

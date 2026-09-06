@@ -32,6 +32,10 @@
 
 <section class="<%= it.source ? 'pane pane-form' : '' %>">
 
+<% if (it.action === '展開成思考') { %>
+<p class="back"><a class="textbtn" href="/">← 返回</a></p>
+<% } %>
+
 <% if (it.errors.length) { %>
 <ul class="errors">
   <% it.errors.forEach(function (e) { %><li><%= e %></li><% }) %>
