@@ -176,23 +176,60 @@
    只有空的時候才需要一句話說剛才問了什麼（那句話在 .empty）。 */
 .listhead { margin: 0 0 var(--sp-6); }
 
+/*
+  分頁。
+
+  **最新 ← 4/7 → 最早**：這一列讀起來是一條時間軸，新的在左、舊的在右。
+  箭頭因此有了方向的語意，不必再寫「上一頁／下一頁」——那四個字正是先前
+  在手機上排不下、把「最早」擠到第二行的原因。
+
+  用 .textbtn 的形式（無邊框、hover 底色），跟返回、編輯、展開同一套。
+  **但尺寸由這裡給**：一行字的高度是滑鼠才點得準的大小。這跟 .textbtn
+  刻意不設 font-size 是同一條原則——形式統一，尺寸由所在的地方決定。
+
+  下方那段留白是給右下角那顆 + 的：它 position: fixed，捲到底時會蓋住頁尾。
+  掛在 .pager 上而不是 main 上，所以只有真的有分頁列的頁面付這個代價。
+*/
 .pager {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
+  gap: var(--sp-1);
   margin: var(--sp-7) 0 0;
-  font-size: var(--fs-1);
+  font-size: var(--fs-2);
   color: var(--text-3);
 }
+.pager .textbtn {
+  min-height: var(--tap);
+  padding-inline: var(--sp-3);
+}
+.pagenow { padding: 0 var(--sp-3); font-size: var(--fs-1); }
 
+/*
+  標籤清單。可點的是**整列**，不是那幾個字。
+
+  先前 <a> 只有文字那麼寬、13px 高，而它是這一頁唯一的動作——
+  一頁全是連結卻每個都只有一行字的高度，是這個介面裡最難點的地方。
+  作法跟列表的標題一樣：::after 蓋滿整列，hover 往左右溢出對齊內容邊緣。
+*/
 .taglist { list-style: none; margin: 0; padding: 0; }
 .taglist li {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: var(--sp-2) 0;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  margin-inline: calc(var(--sp-3) * -1);
+  border-radius: var(--radius-field);
   font-size: var(--fs-2);
 }
+.taglist li:hover { background: var(--hover-bg); }
+/* 標籤在這一頁是主角，不該還套行內那個小一級的字級。 */
+.taglist .tag { font-size: inherit; }
+.taglist li:hover .tag { color: var(--text); }
+.taglist .tag::after { content: ""; position: absolute; inset: 0; }
 .taglist .n { font-size: var(--fs-1); color: var(--text-3); }
 
 .searchpage { margin-bottom: var(--sp-6); }

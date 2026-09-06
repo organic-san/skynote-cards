@@ -840,9 +840,33 @@ describe('頁面與端點', () => {
     }
     const p1 = await h.app.fastify.inject('/');
     const p2 = await h.app.fastify.inject('/?page=2');
-    const count = (s: string) => (s.match(/<li class="row">/g) ?? []).length;
+    const count = (s: string) => (s.match(/<li class="row/g) ?? []).length;
     assert.equal(count(p1.body), 50);
     assert.equal(count(p2.body), 5);
+
+    // 分頁列：用不到的那幾顆不畫，一顆按不動的按鈕是雜訊不是資訊。
+    const nav = (s: string) =>
+      s.slice(s.indexOf('class="pager"'), s.indexOf('</nav>', s.indexOf('class="pager"')));
+    const first = nav(p1.body);
+    assert.ok(!first.includes('最新') && !first.includes('上一頁'), '第一頁沒有往回的');
+    assert.ok(first.includes('下一頁') && first.includes('最早'), '第一頁要能往後、也能跳到最早');
+
+    const last = nav(p2.body);
+    assert.ok(last.includes('最新') && last.includes('上一頁'), '最後一頁要能往回');
+    assert.ok(!last.includes('下一頁') && !last.includes('最早'), '最後一頁沒有往後的');
+    assert.match(last, /page=1"[^>]*>最新/, '「最新」指第一頁');
+    // 箭頭沒有文字，方向要自己說——版面上「左邊比較新」那個線索讀不到。
+    assert.match(last, /aria-label="上一頁"/);
+
+    const css = readCss();
+    // 形式跟返回／編輯／展開同一套，但**尺寸由分頁列給**：
+    // 一行字的高度是滑鼠才點得準的大小。
+    assert.match(css, /\.pager \.textbtn\s*\{[^}]*min-height:\s*var\(--tap\)/);
+    // 置中：「下一頁」貼在右緣就會被右下角那顆 + 蓋住（手機上尤其明顯）。
+    assert.match(css, /\.pager\s*\{[^}]*justify-content:\s*center/);
+    // 第二層保險：頁尾要能捲到那顆 + 的上面。這段留白掛在分頁列自己身上，
+    // 不掛在 main 上——沒有分頁列的頁面不該付這個代價。
+    assert.match(css, /\.pager\s*\{[^}]*margin:[^;]*var\(--fab-clear\)/);
   });
 });
 
