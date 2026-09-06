@@ -1108,6 +1108,29 @@ describe('介面', () => {
     assert.match(form, /<option value="translated" selected>/, '應自動補上來源標記');
   });
 
+  test('在卡片頁按下 + 建立的所有新卡，都自動填入原卡片的標籤', async () => {
+    const h = await fresh();
+    const thinkId = await createCard(h, {
+      type: 'thinking',
+      title: '一個思考',
+      body: '思考內文',
+      tags: ['思辨', '架構'],
+    });
+
+    // 從 thinking 的 + 選單建立思考（例如 related 發想）
+    const formThink = (await h.app.fastify.inject(`/new?type=thinking&rel=related&to=${thinkId}`)).body;
+    assert.ok(formThink.includes('value="思辨 架構"'), 'thinking 衍生新卡應自動填入原卡片標籤');
+
+    const fleetId = await createCard(h, {
+      type: 'fleeting',
+      title: '一句碎片話語',
+      tags: ['靈感'],
+    });
+    // 碎片完整化
+    const formFleet = (await h.app.fastify.inject(`/new?type=thinking&rel=updates&to=${fleetId}`)).body;
+    assert.ok(formFleet.includes('value="靈感"'), '碎片完整化應自動填入原卡片標籤');
+  });
+
   test('矩陣不允許的組合退回沒有預填連結的表單，而不是給一張送不出去的表', async () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'original', title: '原文', body: 'x' });
