@@ -79,10 +79,6 @@ export const REL_LABELS_BACK: Record<Rel, string> = {
   updates: '更新出',
 };
 
-// REPLY_TYPES 與 DEFAULT_REL 的決定被推翻，因為建立入口不再是「從一張卡開
-// 一張新卡，型別自己選、關係預設 related」。CARD_ACTIONS 的每一顆按鈕同時
-// 決定了型別與關係，沒有需要猜預設值的時刻。
-
 /** 只有 original 類型可填。 */
 export const PROVENANCES = ['default', 'translated', 'AI-summarized'] as const;
 export type Provenance = (typeof PROVENANCES)[number];
@@ -275,8 +271,3 @@ export const CARD_ACTIONS: Record<CardType, readonly CardAction[]> = {
     { label: '發想', creates: 'thinking', rel: 'related' },
   ],
 };
-
-// 選單分成「新增關聯」與「宣告作廢」兩組、中間畫一條分隔線的決定被推翻，
-// 因為那條線分不出實際的差別：每一顆按鈕產生的都是一張新卡，
-// 差別在關係而不在後果，而關係已經由圖示與名字說了。
-// 順序改由 CARD_ACTIONS 自己排定。

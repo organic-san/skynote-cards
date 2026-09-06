@@ -77,9 +77,7 @@
       panel.appendChild(b);
     }
 
-    // 「＋ 建立 XXX」那一列的決定被推翻：它做的事跟繼續打字一模一樣，
-    // 點下去不會發生任何按鍵做不到的事，所以那是一顆沒有實質功能的按鈕。
-    // 代價是沒有東西對得上時面板就收起來——那本來就是「沒有可選的」的樣子。
+    // 僅推薦既有標籤；無匹配時收合推薦面板。
     list.forEach(function (t) { row(t.tag, t.n, t.tag); });
 
     if (panel.children.length === 0) { panel.classList.remove('on'); return; }

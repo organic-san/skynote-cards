@@ -249,25 +249,11 @@ export function validateLinkOrder(sourceId: string, links: CardLink[]): string[]
   return errors;
 }
 
-// ---------------------------------------------------------------- 已撤回
-
-// W1 警告（推翻或改寫了別的卡卻沒附依據）的決定被推翻，因為 updates 的語義
-// 在 v2 已經改變——它現在是「換一個更好的版本」與「把碎片完整化」，
-// 不再是「推翻」，而 refutes 的目標也被矩陣收窄到 thinking / fleeting，
-// 原本那句「推翻一張原始資料卡」的舉例已經不可能發生。剩下的只有摩擦。
-
 // ---------------------------------------------------------------- 反芻期
 
 /**
  * 反芻期的預設長度，小時（R5）。
- *
- * 不是五分鐘：五分鐘只夠對齊字句。思維本來就會迭代，一個衝動記下的東西需要
- * 一段窗口去補完還沒迭代完的內容——那段時間要用來想「哪些才是真正該被記錄的」。
- * 8 小時跨得過一個工作段落與一次睡眠。
- *
- * 這是行為參數，靠使用經驗調整，所以真正生效的值來自 config 的
- * EDIT_WINDOW_HOURS；這裡只放沒有設定時的預設。它只改變「還能不能改」，
- * 永遠不會回頭改寫已經寫好的東西。
+ * 實際生效值由 config 的 EDIT_WINDOW_HOURS 控制。
  */
 export const DEFAULT_EDIT_WINDOW_HOURS = 8;
 
@@ -325,13 +311,3 @@ export function ruminationOf(
 export function editableSince(windowMs: number, now = Date.now()): string {
   return new Date(now - windowMs).toISOString();
 }
-
-// ---------------------------------------------------------------- 已撤回
-
-// EDIT_WINDOW_MS（寫死的五分鐘）的決定被推翻，因為 R5 把窗口改成行為參數：
-// 長度要靠使用經驗調整，寫死在程式碼裡就調不動。現在來自 config。
-
-// canEdit / isWithinEditWindow / lockAt 三個述詞被 ruminationOf 取代，因為
-// R6 之後它們回答的是同一個問題的三個切面，而三個各自判斷就會有三種答案。
-// canEdit 當初是為這個 phase 預留的接縫，但它從來沒有被呼叫過——
-// 路由與寫入路徑一直直接問 isWithinEditWindow，接縫是死的。

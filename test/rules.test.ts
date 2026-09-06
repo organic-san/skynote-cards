@@ -973,9 +973,7 @@ describe('介面', () => {
     assert.ok(res.body.includes('這件事牽涉到三個層面'), '內文要跟著過去');
     assert.ok(res.body.includes('一個暫定的名字'), '標題也要');
 
-    // 會想展開就是要把話講得更完整，那是 thinking 的工作——而且是唯一的答案：
-    // original 與 restatement 都需要這張表單拿不到的欄位，fleeting 則是
-    // 「不展開」的結果。一個只有一個正確答案的選單不是選擇，是雜訊。
+    // 隨手記展開僅適用 thinking 型別，故鎖定型別，不顯示型別選單。
     assert.ok(res.body.includes('typefixed'), '型別鎖定，不給選');
     assert.match(res.body, /name="type" value="thinking"/, '鎖定的是 thinking');
     assert.ok(!res.body.includes('class="typepick"'), '不該有型別選單');
@@ -1530,7 +1528,7 @@ describe('側欄', () => {
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    // 側欄分三段：首頁、四份工作清單、動作與工具。用只出現一次的記號定位。
+    // 側欄依序包含：站名、首頁、工作清單、動作與工具、卡片索引。用只出現一次的記號定位。
     const order = ['drawerbrand', 'icon-home', 'drawernav', 'icon-plus', 'cardindex'];
     let at = -1;
     for (const cls of order) {
@@ -1559,8 +1557,7 @@ describe('側欄', () => {
     for (const name of ['home', 'plus', 'tag', 'search']) {
       assert.ok(aside.includes(`icon-${name}`), `側欄缺少 ${name} 圖示`);
     }
-    // 「刻意不一致」那個設計被撤回：它已經在分隔線下方的動作與工具區，
-    // 位置本身足以表達它不是去處。
+    // 動作與工具區項目不使用專屬格式。
     assert.ok(!aside.includes('draweraction'), '不該再有專屬格式');
 
     // U9：工作狀態那幾項不掛數量。

@@ -169,7 +169,6 @@
     <div class="picker tagpicker"></div>
   </label>
 
-  <%/* 跟編輯頁同一條規矩：每次都要按的那顆在最便宜的位置。 */%>
   <div class="stepnav">
     <button type="submit" class="primary">送出</button>
   </div>
@@ -178,8 +177,7 @@
 </section>
 </div>
 
-<%/* 選項留空：links.js 一定會重畫（型別與目標都會改變可選的關係），
-     伺服器先畫一份只是讓同一件事有兩個來源。 */%>
+<%/* 連結列模板：選項由 links.js 動態渲染。 */%>
 <template id="linkrowtpl">
   <div class="linkrow">
     <select name="link_rel"></select>
@@ -191,9 +189,6 @@
   </div>
 </template>
 
-<%/* 依職責分檔，跟 css/ 一樣。每一支只做一件事，名字就說了是哪一件：
-     欄位長高、連結列、依型別開關欄位、來源面板（拖曳與引用）。
-     連結列跟編輯頁共用同一支。 */%>
 <script src="/static/js/grow.js" defer></script>
 <script src="/static/js/links.js" defer></script>
 <script src="/static/js/tags.js" defer></script>

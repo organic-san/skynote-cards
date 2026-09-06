@@ -11,12 +11,10 @@
 
 <%~ include('cardlist', { items: it.items, empty: '沒有卡片。' }) %>
 
-<%/* 用不到的那幾顆就不畫——一顆按不動的按鈕是雜訊，不是資訊。
-     版面置中，所以少畫兩顆也不會歪掉。 */%>
+<%/* 分頁列：僅在多頁時顯示，前後翻頁按鈕依當前頁碼顯示。 */%>
 <% if (it.pages > 1) { %>
 <nav class="pager">
-  <%/* 箭頭沒有文字，所以要自己說出方向——螢幕閱讀器讀不到「左邊是比較新的」
-       這個版面上的線索。 */%>
+  <%/* 箭頭以 aria-label 標示方向。 */%>
   <% if (it.page > 1) { %>
   <a class="textbtn" href="<%= it.baseQuery %>page=1">最新</a>
   <a class="textbtn" href="<%= it.baseQuery %>page=<%= it.page - 1 %>" aria-label="上一頁">←</a>

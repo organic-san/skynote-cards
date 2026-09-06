@@ -38,9 +38,7 @@ export function recent(index: CardIndex): CardRowWithTags[] {
 
 // ---------------------------------------------------------------- 工作狀態清單
 
-// 側欄每一項後面的數字被 U9 推翻——那些清單實務上不會歸零，
-// 數字提供不了「還剩多少」的訊號。連帶把每個請求的四次 COUNT(*) 省掉，
-// 那個成本本來會隨卡片數線性成長。
+// 側欄工作狀態清單（U9：不帶數量標籤）。
 
 /** 待思考：收進來但沒有人接手的原始資料。 */
 export function pending(index: CardIndex): CardRowWithTags[] {
@@ -105,7 +103,7 @@ export function tagCounts(index: CardIndex): { tag: string; n: number }[] {
   return index.tagCounts();
 }
 
-/** 空字串不查，避免把整個語料庫掃一遍換回一份空清單。 */
+/** 搜尋卡片內容（關鍵字為空時直接回傳空陣列）。 */
 export function search(index: CardIndex, q: string, limit = 100): CardRowWithTags[] {
   return q === '' ? [] : index.search(q, limit);
 }

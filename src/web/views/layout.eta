@@ -12,6 +12,7 @@
      一頁中文只下載用到的那幾片。font-display=swap 加上 tokens.css 裡的退回鏈：
      連不上時頁面照常可讀，只是換成系統字體。
      襯體（Noto Serif TC）隨字體二分一起撤掉了，不再下載。 */%>
+     連不上時頁面照常可讀，只是換成系統字體。 */%>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet"
@@ -42,6 +43,7 @@
   <%
     /* 一列要嘛前面帶圖示、要嘛後面帶數字，不會兩者都有。
        帶數字的是四份待辦清單，帶圖示的是去處與動作。 */
+    /* 側欄工作清單（U9：不帶數量）。 */
     const lists = it.lists || [];
   %>
   <nav class="drawerwork">
@@ -60,6 +62,7 @@
        先前刻意做成不一致（理由是它是動作、另兩個是去處），那個決定被撤回——
        實測壓力偏重，而且它已經在分隔線下方的動作與工具區，
        位置本身足以表達它不是去處。 */%>
+  <%/* U10：動作與工具區項目的格式一致。 */%>
   <nav class="drawernav">
     <a href="/new?type=original" class="<%= it.nav === 'source' ? 'on' : '' %>">
       <%~ include('icon', { name: 'plus' }) %><span>追加外部資料</span>
@@ -75,6 +78,7 @@
   <%/* U11：卡片索引。它的用途是**建立連結時的名稱參照**，不是導覽——
        所以它屬於下半的工具區，不與上半的工作狀態競爭。
        加一行小標讓它的職責在畫面上可讀，字級小一級，顏色跟其他項目一致。 */%>
+  <%/* U11：卡片索引，供名稱與關聯參照。 */%>
   <div class="cardindex">
     <p class="indexhead">卡片索引</p>
     <ul>
@@ -82,6 +86,7 @@
       <%/* 色點而不是型別名：這一欄很窄，標題本來就在截斷邊緣，
            再塞兩個字進去等於把標題再砍掉兩個字。U1 說顏色不得單獨承擔
            型別資訊——在這裡它沒有單獨承擔，點進去就看得到型別名。 */%>
+      <%/* 側欄空間緊湊，以色點標示型別。 */%>
       <li><a href="/c/<%= c.id %>" class="<%= it.activeId === c.id ? 'on' : '' %>"><span
         class="dot dot-<%= c.type %>"></span><span class="indextitle"><%= c.title %></span></a></li>
       <% }) %>
@@ -110,12 +115,14 @@
 <% } else { %>
 <%/* 其他地方：隨手記。兩個欄位加一個送出鍵，沒有型別選單。
       不填標題就是碎片——那個判斷你在寫的時候本來就會做。 */%>
+<%/* 隨手記浮動區塊：預設為碎片，填寫標題則為思考。 */%>
 <div class="quick" id="fabmenu" hidden>
   <%/* 「展開」跟「隨手記」同一排，右對齊。它不是送出的替代方案，是
        「這一則不是一句話講得完的」——那是在你開始寫之前或寫到一半就會知道的事，
        所以它該在標題那一排看得到，而不是躲在動作列裡跟送出鍵競爭。
 
        用 form= 掛回底下那張表單，所以它人在表單外面，送出的仍是同一份內容。 */%>
+  <%/* 展開按鈕掛回底下的隨手記表單送出（form=quickform）。 */%>
   <p class="quickhead">
     <span>隨手記</span>
     <button type="submit" class="textbtn quickexpand" form="quickform"
@@ -131,6 +138,7 @@
     <%/* U18：把已經做完的判斷顯示出來。這不是多一次決策——
          生死線（不填標題就是碎片）不動，只是讓結果在送出前可見。
          寫在按鈕上而不是按鈕上方：同一件事講兩次就是兩個名字。 */%>
+    <%/* U18：動態顯示將存為碎片或思考。 */%>
     <button type="submit" class="primary" id="quicksubmit">記為<span>碎片</span></button>
   </form>
 </div>
