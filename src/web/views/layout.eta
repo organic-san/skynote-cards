@@ -111,7 +111,18 @@
 <%/* 其他地方：隨手記。兩個欄位加一個送出鍵，沒有型別選單。
       不填標題就是碎片——那個判斷你在寫的時候本來就會做。 */%>
 <div class="quick" id="fabmenu" hidden>
-  <p class="quickhead">隨手記</p>
+  <%/* 「展開」跟「隨手記」同一排，右對齊。它不是送出的替代方案，是
+       「這一則不是一句話講得完的」——那是在你開始寫之前或寫到一半就會知道的事，
+       所以它該在標題那一排看得到，而不是躲在動作列裡跟送出鍵競爭。
+
+       用 form= 掛回底下那張表單，所以它人在表單外面，送出的仍是同一份內容。 */%>
+  <p class="quickhead">
+    <span>隨手記</span>
+    <button type="submit" class="textbtn quickexpand" form="quickform"
+            name="expand" value="1" formnovalidate>
+      <span>展開</span><%~ include('icon', { name: 'expand' }) %>
+    </button>
+  </p>
   <form method="post" action="/quick" id="quickform">
     <%/* 先寫那句話，標題擺後面。你總是先有東西要記，
          「要不要給它一個名字」是寫完之後才做的判斷——欄位的順序照著那個順序。 */%>

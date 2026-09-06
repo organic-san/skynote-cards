@@ -374,6 +374,32 @@ export function registerRoutes(
    */
   app.post('/quick', async (req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
+
+    /*
+      「展開」：這一則不是隨手記得完的，換一張完整的表單繼續寫。
+
+      走的是 POST 而不是帶 query 的連結——寫到一半的內容不該出現在網址列、
+      瀏覽器歷史與伺服器日誌裡，而且也沒有長度上限。
+
+      而它渲染的就是驗證失敗時退回的那張表單，所以這條路徑幾乎沒有新機制。
+
+      型別鎖定 thinking，跟其他入口一樣（見 newFormPage 的 locked）。
+
+      「只預設、不鎖住」的決定被推翻，因為四個選項裡只有一個是對的：
+      `original` 與 `restatement` 都需要這裡拿不到的欄位（網址／出處、
+      一條 about 指回原文），而 `fleeting` 正是「不展開」的結果。
+      一個只有一個正確答案的選單不是選擇，是雜訊。
+    */
+    if (b.expand !== undefined) {
+      return html(
+        reply,
+        newFormPage(
+          { type: 'thinking', title: String(b.title ?? ''), body: String(b.body ?? '') },
+          [],
+        ),
+      );
+    }
+
     const picked = quickDraft(String(b.title ?? ''), String(b.body ?? ''));
 
     const result = createCard(cards, {

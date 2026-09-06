@@ -63,17 +63,17 @@
     </label>
   </details>
 
-  <%/* 動作列的配置：破壞性與離開的靠左，前進的靠右。
+  <%/* 動作列的排序依移動成本：內容欄靠左，游標平常就在左邊，所以每次都要按的
+       「儲存」在最便宜的位置，一輩子按幾次的「刪除」頂到最貴的那一端。
 
-       刪除先前隔一條線自成一段，那條線本身就是保護——距離讓手指不會
-       順勢滑過去。移進同一列之後保護降級成「同一列的兩個極端 ＋ 警示色
-       ＋ 再確認一次」。這是一次實質的降級，記在這裡。 */%>
+       刪除先前隔一條線自成一段，那條線本身就是保護——距離讓手指不會順勢
+       滑過去。移進同一列之後只剩「這一列的另一端 ＋ 警示色 ＋ 再確認」。 */%>
   <div class="stepnav">
+    <button type="submit" class="primary">儲存</button>
+    <a class="ghost" href="/c/<%= it.card.id %>">取消</a>
     <button type="button" class="destructive" id="deletecard" data-id="<%= it.card.id %>">
       刪除
     </button>
-    <a class="ghost" href="/c/<%= it.card.id %>">取消</a>
-    <button type="submit" class="primary">儲存</button>
   </div>
 </form>
 

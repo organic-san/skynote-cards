@@ -64,7 +64,19 @@
 /* 隨手記：兩個欄位加一顆送出鍵。沒有型別、沒有標籤、沒有連結——
    憑空記一句話如果需要一次型別決策，它就輸給 Discord。 */
 .quick { width: min(var(--quick-w), calc(100vw - var(--sp-7))); padding: var(--sp-3); }
-.quickhead { margin: 0 0 var(--sp-2); font-size: var(--fs-1); color: var(--text-3); }
+/* 標題那一排：左邊是這是什麼，右邊是「這一則不只一句話」的出口。 */
+.quickhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+/* 它是一個動作，不是一個標籤——所以比左邊那幾個字深一階，而且帶圖示。 */
+.quickexpand { color: var(--text-2); }
+.quickexpand .icon { width: var(--sp-4); height: var(--sp-4); }
 .quick input, .quick textarea {
   display: block;
   width: 100%;
@@ -79,7 +91,7 @@
 .quick textarea { font-family: var(--font-doc); line-height: var(--lh-2); }
 .willsave { margin: 0 0 var(--sp-2); font-size: var(--fs-1); color: var(--text-3); }
 .willsave span { color: var(--text-2); }
-.quick button { width: 100%; }
+.quick .primary { width: 100%; }
 
 /* ---------------------------------------------------------- 表單 */
 
@@ -287,16 +299,21 @@
 .destructive:hover { border-color: var(--alert); }
 
 /*
-  動作列。**破壞性與離開的靠左，前進的靠右。**
+  動作列。**按最多次的靠左，破壞性的頂到右端。**
 
-  一條規矩管所有的動作列：只有一顆送出鈕的建立頁，那顆也在右邊。
-  刪除靠 margin-right: auto 頂到另一端——那是這一列裡離「儲存」最遠的位置，
-  而距離是它現在唯一的物理保護（先前那條分隔線沒有了）。
+  排序依的是移動成本：內容欄靠左對齊（U19／U20），所以游標平常就在左邊。
+  最便宜的位置給每次都要按的「儲存」，最貴的位置給一輩子按幾次的「刪除」。
+
+  「破壞性靠左、前進靠右」的決定被推翻。那條是從系統對話框借來的慣例，
+  而這個版面不是對話框——它是靠左的內容欄，右端反而是最遠的地方。
+
+  代價記在這裡：右邊同時也是幾乎所有軟體「確定」的位置，所以反射性的
+  那一下會落在刪除上。擋著它的只剩顏色與送出前的再確認。
 */
 .stepnav {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: var(--sp-4);
   margin-top: var(--sp-6);
 }
@@ -310,7 +327,7 @@
   font-size: var(--fs-2);
   padding: var(--sp-2) var(--sp-5);
 }
-.stepnav .destructive { margin-right: auto; }
+.stepnav .destructive { margin-left: auto; }
 
 
 /* ---------------------------------------------------------- 左右／上下分欄 */

@@ -45,8 +45,11 @@
   <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
 
   <% if (it.locked) { %>
-  <%/* 型別是入口決定的。那些入口同時預填了型別與連結，改了型別就會讓
-       預填的關係不合法，所以這裡只陳述事實，不給選擇。 */%>
+  <%/* 型別是入口決定的，所以這裡只陳述事實，不給選擇。
+
+       兩種入口都適用：卡片頁的 ＋ 選單同時預填了型別與連結，改型別會讓
+       預填的關係不合法；追加外部資料與隨手記的展開沒有連結，但它們的型別
+       同樣只有一個正確答案——換一個就得填這張表單拿不到的欄位。 */%>
   <p class="typefixed">
     <span class="dot dot-<%= it.values.type %>"></span>
     <span class="tname"><%= it.typeLabel %></span>
@@ -162,7 +165,7 @@
     <div class="picker tagpicker"></div>
   </label>
 
-  <%/* 跟編輯頁同一條規矩：前進的動作靠右。 */%>
+  <%/* 跟編輯頁同一條規矩：每次都要按的那顆在最便宜的位置。 */%>
   <div class="stepnav">
     <button type="submit" class="primary">送出</button>
   </div>

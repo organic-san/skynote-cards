@@ -59,7 +59,7 @@
   var del = document.getElementById('deletecard');
   if (del) {
     del.addEventListener('click', function () {
-      if (!window.confirm('刪掉這張卡？反芻期內可以刪，之後就不行了。')) return;
+      if (!window.confirm('刪除這張卡片嗎？卡片只有在建立之後的一定時間內可以刪除。')) return;
       fetch('/c/' + del.dataset.id, { method: 'DELETE', headers: { accept: 'application/json' } })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {

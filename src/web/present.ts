@@ -401,10 +401,25 @@ const FORM_SPECS: Record<CardType, FormSpec> = {
 };
 
 /**
+ * 型別由入口決定、又沒有來源卡的時候，標題就說那個入口在做什麼。
+ *
+ * 只列真的有入口的型別：`original` 來自側欄的「追加外部資料」，
+ * `thinking` 來自隨手記的「展開」。`restatement` 一定帶著一條 about
+ * 指回原文，所以它走的是下面那條有來源的路；`fleeting` 根本不用這張表單。
+ * 沒有專屬入口的型別退回通稱——與其編一個名字，不如不編。
+ */
+const ENTRY_TITLE: Partial<Record<CardType, string>> = {
+  original: '追加外部資料',
+  thinking: '展開成思考',
+};
+
+/**
  * U14：表單頂端的一行，說這是什麼動作。
  *
  * 從卡片的 `+` 進來時要說出是從哪一張、做什麼——那是 v2 C.4 對「來源可見」
  * 的要求，但提前到送出**之前**：送出後才知道自己剛才在做什麼已經太遲了。
+ *
+ * 沒有來源時同理，只是能說的少一點：型別鎖住就說那個入口，沒鎖就是通稱。
  */
 export function formTitle(
   type: string,
@@ -412,7 +427,7 @@ export function formTitle(
   source: { title: string; type: string } | null,
 ): string {
   if (!source || rel === '') {
-    return type === 'original' ? '追加外部資料' : '新增卡片';
+    return ENTRY_TITLE[type as CardType] ?? '新增卡片';
   }
   const action = (CARD_ACTIONS[source.type as CardType] ?? []).find(
     (a) => a.rel === rel && a.creates === type,

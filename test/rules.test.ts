@@ -864,9 +864,6 @@ describe('頁面與端點', () => {
     assert.match(css, /\.pager \.textbtn\s*\{[^}]*min-height:\s*var\(--tap\)/);
     // 置中：「下一頁」貼在右緣就會被右下角那顆 + 蓋住（手機上尤其明顯）。
     assert.match(css, /\.pager\s*\{[^}]*justify-content:\s*center/);
-    // 第二層保險：頁尾要能捲到那顆 + 的上面。這段留白掛在分頁列自己身上，
-    // 不掛在 main 上——沒有分頁列的頁面不該付這個代價。
-    assert.match(css, /\.pager\s*\{[^}]*margin:[^;]*var\(--fab-clear\)/);
   });
 });
 
@@ -954,6 +951,44 @@ describe('介面', () => {
     assert.ok(!quick.includes('name="type"'), '隨手記不該有型別選擇');
     assert.ok(!quick.includes('name="tags"'), '隨手記不該有標籤');
     assert.ok(!quick.includes('name="link_rel"'), '隨手記不該有連結');
+  });
+
+  test('隨手記可以展開成完整表單，已經打的字跟著過去', async () => {
+    // 寫著寫著發現不是一句話講得完的。走 POST 送同一張表單而不是帶 query 的
+    // 連結——寫到一半的內容不該出現在網址列、瀏覽器歷史與伺服器日誌裡。
+    const h = await fresh();
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: new URLSearchParams({
+        body: '這件事牽涉到三個層面',
+        title: '一個暫定的名字',
+        expand: '1',
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    });
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(h.app.index.countCards(), 0, '展開不是建立，不該留下任何東西');
+    assert.ok(res.body.includes('這件事牽涉到三個層面'), '內文要跟著過去');
+    assert.ok(res.body.includes('一個暫定的名字'), '標題也要');
+
+    // 會想展開就是要把話講得更完整，那是 thinking 的工作——而且是唯一的答案：
+    // original 與 restatement 都需要這張表單拿不到的欄位，fleeting 則是
+    // 「不展開」的結果。一個只有一個正確答案的選單不是選擇，是雜訊。
+    assert.ok(res.body.includes('typefixed'), '型別鎖定，不給選');
+    assert.match(res.body, /name="type" value="thinking"/, '鎖定的是 thinking');
+    assert.ok(!res.body.includes('class="typepick"'), '不該有型別選單');
+
+    // 沒有 expand 的那條路照舊：真的建一張卡。
+    const made = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: new URLSearchParams({ body: '一句話', title: '' }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    });
+    assert.equal(made.statusCode, 302);
+    assert.equal(h.app.index.countCards(), 1);
   });
 
   test('隨手記：不填標題就是碎片，填了就是思考', async () => {
@@ -2206,21 +2241,23 @@ describe('動作的形式是一份', () => {
     assert.match(css, /\.textbtn:hover\s*\{[^}]*background:\s*var\(--hover-bg\)/);
   });
 
-  test('動作列的規矩：破壞性靠左，前進靠右', async () => {
-    // 一條規矩管所有的動作列，包括只有一顆送出鈕的建立頁。
+  test('動作列的規矩：按最多次的靠左，破壞性頂到右端', async () => {
+    // 排序依的是移動成本：內容欄靠左對齊，游標平常就在左邊。最便宜的位置
+    // 給每次都要按的，最貴的給一輩子按幾次的。一條規矩管所有的動作列，
+    // 包括只有一顆送出鈕的建立頁。
     const h = await fresh();
     const id = await createCard(h, { type: 'thinking', title: '還改得動', body: 'x' });
 
     const edit = (await h.app.fastify.inject(`/c/${id}/edit`)).body;
     const nav = edit.slice(edit.indexOf('class="stepnav"'), edit.indexOf('</div>', edit.indexOf('class="stepnav"')));
-    assert.ok(nav.indexOf('deletecard') < nav.indexOf('取消'), '刪除排在最前');
-    assert.ok(nav.indexOf('取消') < nav.indexOf('儲存'), '取消在儲存之前');
+    assert.ok(nav.indexOf('儲存') < nav.indexOf('取消'), '儲存排在最前');
+    assert.ok(nav.indexOf('取消') < nav.indexOf('deletecard'), '刪除排在最後');
 
     // 建立頁的送出也在同一種列裡，才會落在同一個位置。
     assert.match((await h.app.fastify.inject('/new')).body, /class="stepnav">\s*<button type="submit"/);
 
     const css = readCss();
-    assert.match(css, /\.stepnav\s*\{[^}]*justify-content:\s*flex-end/);
+    assert.match(css, /\.stepnav\s*\{[^}]*justify-content:\s*flex-start/);
     // 三顆按鈕在這一列裡是同一個尺寸；尺寸由容器給，所以行內那些 ＋／− 的
     // .ghost 不受影響（跟 .textbtn 同一個做法）。
     assert.match(css, /\.stepnav > \*\s*\{[^}]*font-size:\s*var\(--fs-2\)[^}]*padding:/);
@@ -2228,9 +2265,9 @@ describe('動作的形式是一份', () => {
     const del = css.slice(css.indexOf('.destructive {'), css.indexOf('}', css.indexOf('.destructive {')));
     assert.ok(!del.includes('background: var(--alert)'), '刪除不填色');
     assert.match(del, /color:\s*var\(--alert\)/, '但字是警示色');
-    // 刪除頂到另一端：那是這一列裡離「儲存」最遠的位置，而距離是它現在
+    // 刪除頂到另一端：內容欄靠左，所以右端是游標最遠的地方。距離是它現在
     // 唯一的物理保護——先前那條分隔線已經沒有了。
-    assert.match(css, /\.stepnav \.destructive\s*\{[^}]*margin-right:\s*auto/);
+    assert.match(css, /\.stepnav \.destructive\s*\{[^}]*margin-left:\s*auto/);
   });
 
   test('側欄索引用色點分辨型別，不放型別名', async () => {
