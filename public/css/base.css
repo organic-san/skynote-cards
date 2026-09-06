@@ -39,7 +39,7 @@ time, .num { font-variant-numeric: tabular-nums; letter-spacing: 0; }
 main {
   max-width: var(--content-w);
   margin: 0;
-  padding: var(--page-top) var(--sp-4) var(--sp-8);
+  padding: var(--sp-8) var(--sp-4) var(--sp-8);
 }
 
 /* U32 focus：2px 描邊、2px offset，不用瀏覽器預設。全站鍵盤可達。 */

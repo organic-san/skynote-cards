@@ -401,7 +401,7 @@ main:has(> .split) {
     height: 100vh;
   }
   .splitbar { cursor: row-resize; width: auto; height: 1px; margin: var(--sp-4) 0; }
-  .pane-source { padding: var(--sp-4) var(--sp-4) 0; }
+  .pane-source { padding: var(--sp-8) var(--sp-4) 0; }
   .pane-form { padding: var(--sp-4) var(--sp-4) 0; }
 }
 }

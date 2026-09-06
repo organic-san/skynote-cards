@@ -12,18 +12,21 @@
 .filters {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-4);
+  gap: var(--sp-1);
   align-items: center;
   margin: 0 0 var(--sp-5);
   font-size: var(--fs-1);
 }
-.filters a {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  color: var(--text-3);
+.filters .textbtn {
+  color: var(--text-2);
 }
-.filters a.on { color: var(--text); }
+.filters .textbtn:first-child {
+  margin-left: calc(var(--sp-2) * -1);
+}
+.filters .textbtn.on {
+  background: var(--selected-bg);
+  color: var(--text);
+}
 .filtertag { color: var(--text-2); }
 .filtercount { margin-left: auto; color: var(--text-3); }
 

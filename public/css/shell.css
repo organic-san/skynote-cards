@@ -20,6 +20,10 @@
   cursor: pointer;
 }
 .menubtn span { display: block; height: 1px; background: var(--text-2); }
+.menubtn[aria-expanded="true"],
+body:has(.drawer.open) .menubtn {
+  display: none;
+}
 
 .scrim {
   position: fixed;
@@ -35,7 +39,7 @@
   bottom: 0;
   left: 0;
   width: var(--drawer-w);
-  padding: var(--sp-5) var(--sp-3) var(--sp-3);
+  padding: var(--sp-5) var(--sp-3) var(--sp-6);
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -43,8 +47,16 @@
   border-right: 1px solid var(--line);
   transform: translateX(-100%);
   transition: transform var(--motion-dur) var(--motion-ease);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 .drawer.open { transform: none; }
+.drawer:hover { scrollbar-color: var(--line) transparent; }
+.drawer::-webkit-scrollbar { width: var(--sp-1); }
+.drawer::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--sp-1); }
+.drawer:hover::-webkit-scrollbar-thumb { background: var(--line); }
 
 .drawerclose {
   position: absolute;
@@ -106,21 +118,11 @@
    空心才是它跟另外三型的分界，虛線是那之上的修飾，縮小時優雅地退掉。 */
 .cardindex {
   --dot: var(--dot-sm);
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
   /* 這一份吃掉側欄剩下的全部高度，所以上面每一組的留白都直接從它身上扣——
      清單要夠長，才有「查得到東西」的價值。 */
   padding-top: var(--sp-3);
   border-top: 1px solid var(--line);
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
 }
-/* U34：非 hover 時隱藏捲軸。 */
-.cardindex:hover { scrollbar-color: var(--line) transparent; }
-.cardindex::-webkit-scrollbar { width: var(--sp-1); }
-.cardindex::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--sp-1); }
-.cardindex:hover::-webkit-scrollbar-thumb { background: var(--line); }
 
 .indexhead {
   margin: 0 0 var(--sp-1);
@@ -161,6 +163,7 @@
   main {
     max-width: calc(var(--content-w) + var(--content-gap) * 2);
     margin-inline: auto;
+    padding-top: var(--page-top);
     padding-inline: var(--content-gap);
   }
 }
