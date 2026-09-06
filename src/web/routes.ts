@@ -310,9 +310,25 @@ export function registerRoutes(
     const body =
       target && rel === 'updates' && target.type === 'fleeting' ? fleetingText(target) : '';
 
+    // 節錄：從外部資料節錄時，自動帶入母卡的網址、作者、原始年份、標籤、來源標記。
+    const values: Record<string, string> = {
+      type,
+      body,
+      rel: rel ?? '',
+      ...(target && rel === 'part-of' && target.type === 'original'
+        ? {
+            url: target.url ?? '',
+            source_author: target.source_author ?? '',
+            source_date: target.source_date ?? '',
+            tags: target.tags.join(' '),
+            provenance: target.provenance ?? '',
+          }
+        : {}),
+    };
+
     return html(
       reply,
-      newFormPage({ type, body, rel: rel ?? '' }, links, {
+      newFormPage(values, links, {
         replyTo: target?.id,
         source: target,
       }),
@@ -334,9 +350,11 @@ export function registerRoutes(
             type: draft.type,
             title: draft.title,
             body: draft.body,
-            tags: draft.tags.join(', '),
+            tags: draft.tags.join(' '),
             url: draft.url ?? '',
             provenance: draft.provenance ?? '',
+            source_author: draft.source_author ?? '',
+            source_date: draft.source_date ?? '',
           },
           draft.links.map((l) => {
             const t = index.getCard(l.to);

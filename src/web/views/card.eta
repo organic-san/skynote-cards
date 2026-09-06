@@ -45,8 +45,10 @@
     </a>
     <% } else if (it.embed) { %>
     <div class="embed embed-<%= it.embed.kind %>">
-      <iframe src="<%= it.embed.src %>" loading="lazy" referrerpolicy="no-referrer"
-              allow="fullscreen; picture-in-picture" title="<%= it.card.title %>"></iframe>
+      <iframe src="<%= it.embed.src %>" loading="lazy"
+              referrerpolicy="<%= it.embed.kind === 'youtube' ? 'strict-origin-when-cross-origin' : 'no-referrer' %>"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen title="<%= it.card.title %>"></iframe>
     </div>
     <% } %>
     <p class="sourcelink"><a href="<%= it.url_href %>" rel="noreferrer noopener"><%= it.card.url %></a></p>

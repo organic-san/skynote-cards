@@ -107,7 +107,7 @@
     </div>
   </div>
 
-  <details class="optional<%= it.spec.source ? '' : ' off' %>" id="provfield">
+  <details class="optional<%= it.spec.source ? '' : ' off' %>" id="provfield"<%= it.values.provenance && it.values.provenance !== 'default' ? ' open' : '' %>>
     <summary>來源標記</summary>
     <label class="field">
       <span>provenance</span>

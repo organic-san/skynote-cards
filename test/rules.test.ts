@@ -1087,6 +1087,27 @@ describe('介面', () => {
     assert.ok(form.includes('一句隨口的話。'), '那段文字要填進新卡的內文');
   });
 
+  test('從外部資料節錄時，自動補上網址、作者、原始年份、標籤、來源標記', async () => {
+    const h = await fresh();
+    const id = await createCard(h, {
+      type: 'original',
+      title: '原始長文文獻',
+      body: '第一段內容。\n\n第二段內容。',
+      url: 'https://example.com/essay',
+      source_author: '作者名',
+      source_date: '1984',
+      tags: ['哲學', '科學'],
+      provenance: 'translated',
+    });
+
+    const form = (await h.app.fastify.inject(`/new?type=original&rel=part-of&to=${id}`)).body;
+    assert.ok(form.includes('value="https://example.com/essay"'), '應自動補上網址');
+    assert.ok(form.includes('value="作者名"'), '應自動補上作者');
+    assert.ok(form.includes('value="1984"'), '應自動補上原始年份');
+    assert.ok(form.includes('value="哲學 科學"'), '應自動補上標籤');
+    assert.match(form, /<option value="translated" selected>/, '應自動補上來源標記');
+  });
+
   test('矩陣不允許的組合退回沒有預填連結的表單，而不是給一張送不出去的表', async () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'original', title: '原文', body: 'x' });
@@ -1507,6 +1528,7 @@ describe('外部 url 的內嵌', () => {
     const page = (await h.app.fastify.inject(`/c/${yt}`)).body;
     assert.ok(page.includes('youtube-nocookie.com/embed/dQw4w9WgXcQ'));
     assert.ok(page.includes('<iframe'));
+    assert.ok(page.includes('referrerpolicy="strict-origin-when-cross-origin"'));
     assert.ok(!page.includes('platform.twitter.com'), '不該載入任何第三方腳本');
 
     const plain = await createCard(h, {
