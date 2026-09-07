@@ -29,6 +29,11 @@
     <span class="sep">·</span>
     <span class="settling">尚可編輯 <time datetime="<%= it.rumination.until %>" data-remain><%= it.rumination.text %></time></span>
     <% } %>
+    <%/* 複製鈕置於時間與 meta 行末（.cardmeta），每筆資料皆有。交出去的是 data-md
+         上的原始 Markdown，不是畫面上這份 HTML——見 routes 的 body_md 與 js/copy.js。 */%>
+    <button type="button" class="copybtn" id="copybtn" aria-label="複製內文">
+      <%~ include('icon', { name: 'copy' }) %><%~ include('icon', { name: 'check' }) %><span class="copysaid">已複製</span>
+    </button>
   </p>
 
   <% if (it.card.tags.length) { %>
@@ -55,14 +60,7 @@
   </div>
   <% } %>
 
-  <%/* 複製鈕貼在內文的右上角，靜置淡化。它交出去的是 data-md 上的原始
-       Markdown，不是畫面上這份 HTML——見 routes 的 body_md 與 js/copy.js。 */%>
-  <div class="bodywrap">
-    <button type="button" class="copybtn" id="copybtn" aria-label="複製內文">
-      <%~ include('icon', { name: 'copy' }) %><%~ include('icon', { name: 'check' }) %><span class="copysaid">已複製</span>
-    </button>
-    <div class="body" data-md="<%= it.body_md %>"><%~ it.body_html %></div>
-  </div>
+  <div class="body" data-md="<%= it.body_md %>"><%~ it.body_html %></div>
 
   <% if (it.editable) { %>
   <p class="actions"><a class="textbtn" href="/c/<%= it.card.id %>/edit">編輯</a></p>

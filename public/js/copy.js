@@ -9,7 +9,7 @@
 
 (function () {
   var btn = document.getElementById('copybtn');
-  var body = document.querySelector('.bodywrap .body');
+  var body = document.querySelector('.body[data-md]') || document.querySelector('.body');
   if (!btn || !body) return;
 
   var md = body.dataset.md || '';

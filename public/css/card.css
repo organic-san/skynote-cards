@@ -23,38 +23,31 @@
 /*
   內文的複製鈕。
 
-  貼在內文右上角、靜置淡化：它是「讀完想把這段帶走」的動作，
-  所以位置要跟著內文而不是跟著頁面動作列（那裡是編輯與刪除，語氣完全不同）。
-
-  **淡化而不是藏起來**。hover 才出現的按鈕在觸控裝置上等於不存在，
-  而且「有沒有這個功能」會變成一件要用滑鼠去問的事。
-  底色跟頁面同色，蓋在第一行文字上仍然讀得出來。
+  置於時間與 meta 行末（.cardmeta），每張卡片皆有固定錨點，避免覆蓋在第一行內文上造成閱讀與選取衝突。
+  交出去的是 data-md 上的原始 Markdown（見 routes.ts 的 body_md 與 js/copy.js）。
 */
-.bodywrap { position: relative; }
 .copybtn {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 1;
-  display: flex;
+  margin-left: auto;
+  align-self: center;
+  display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
   padding: var(--sp-1) var(--sp-2);
   border: 0;
   border-radius: var(--radius-field);
-  background: var(--surface-page);
+  background: none;
   color: var(--text-3);
   font: inherit;
   font-size: var(--fs-1);
-  opacity: .4;
+  opacity: .5;
   cursor: pointer;
 }
-.copybtn:hover, .copybtn:focus-visible { opacity: 1; color: var(--text-2); }
+.copybtn:hover, .copybtn:focus-visible { opacity: 1; color: var(--text-2); background: var(--hover-bg); }
 .copybtn .icon { width: var(--sp-4); height: var(--sp-4); }
 .copybtn .icon-check, .copybtn .copysaid { display: none; }
-.copybtn.done { opacity: 1; }
+.copybtn.done { opacity: 1; color: var(--text); }
 .copybtn.done .icon-copy { display: none; }
-.copybtn.done .icon-check, .copybtn.done .copysaid { display: block; }
+.copybtn.done .icon-check, .copybtn.done .copysaid { display: inline; }
 
 /* 沒有 JS 就沒有剪貼簿，按鈕不該出現。 */
 html:not(.js) .copybtn { display: none; }
