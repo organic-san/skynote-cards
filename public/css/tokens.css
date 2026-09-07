@@ -173,5 +173,9 @@
   --hover-bleed: var(--sp-4);
   --hover-bg: rgba(26, 26, 26, .035);
   --selected-bg: rgba(26, 26, 26, .06);
+
+  /* 搜尋關鍵字高亮：溫潤鮮明的暖黃螢光標記，搭配深色字提高掃描辨識度 */
+  --highlight-bg: #FFE58F;
+  --highlight-text: var(--text);
 }
 }

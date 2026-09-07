@@ -239,12 +239,15 @@
 .lockmark { display: flex; margin-right: auto; color: var(--text-3); }
 .lockmark .icon { width: var(--sp-3); height: var(--sp-3); }
 
-/* 命中的字詞。底色用選取色而不是螢光黃：這一列的其他部分是灰階，
-   一塊高飽和的顏色會把整頁的視覺重心搶過去，而它只是「這裡有你要的字」。 */
+/* 命中的關鍵字：清晰醒目的暖黃螢光筆標註，搭配深色字重，在次要灰階摘要中一眼可辨 */
 .rowtext mark {
-  background: var(--selected-bg);
-  color: inherit;
+  background: var(--highlight-bg);
+  color: var(--highlight-text);
+  font-weight: 600;
+  padding: 1px 2px;
   border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .searchpage { margin-bottom: var(--sp-6); }
