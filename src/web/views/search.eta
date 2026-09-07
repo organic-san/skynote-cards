@@ -2,5 +2,16 @@
   <input type="search" name="q" value="<%= it.q %>" placeholder="搜尋標題與內文" autofocus autocomplete="off">
 </form>
 <% if (it.searched) { %>
+<%/* 型別篩選。跟首頁同一組 chip：同樣的動作要長得一樣，
+     否則使用者得在兩個地方各學一次「怎麼縮小範圍」。
+     複雜語法（AND/OR、日期範圍）不在這一版，這裡只有這一個維度。 */%>
+<div class="filters">
+  <a href="<%= it.baseQuery %>" class="textbtn <%= !it.type ? 'on' : '' %>">全部</a>
+  <% it.types.forEach(function (t) { %>
+  <a href="<%= it.baseQuery %>&type=<%= t.value %>" class="textbtn <%= it.type === t.value ? 'on' : '' %>">
+    <span class="dot dot-<%= t.value %>"></span><%= t.label %></a>
+  <% }) %>
+  <span class="filtercount"><%= it.items.length %></span>
+</div>
 <%~ include('cardlist', { items: it.items, empty: '沒有卡片的標題或內文包含這段文字。' }) %>
 <% } %>

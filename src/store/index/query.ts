@@ -162,9 +162,46 @@ export function linkTree(
   return expand(rootId, 0);
 }
 
-export function tagCounts(idx: IndexDb): { tag: string; n: number }[] {
-  return idx.s('SELECT tag, COUNT(*) AS n FROM tags GROUP BY tag ORDER BY n DESC, tag ASC')
-    .all() as { tag: string; n: number }[];
+export interface TagCount {
+  tag: string;
+  /** 用在幾張卡上。 */
+  n: number;
+  /** 最後一次被用的卡片建立時間（UTC ISO）。 */
+  last_used: string;
+}
+
+export const TAG_SORTS = ['count', 'recent', 'name'] as const;
+export type TagSort = (typeof TAG_SORTS)[number];
+
+/**
+ * 三種排法對應三個問題，所以它們是並列的選項而不是一個預設加兩個例外：
+ * 「哪些標籤是我的主幹」（count）、「我最近在寫什麼」（recent）、
+ * 「那個字開頭是什麼來著」（name）。
+ *
+ * `name` 對中文是碼位序，不是筆畫也不是注音——介面上因此叫「名稱」而不是
+ * 「字典序」，後者會承諾一個這裡給不出來的東西。
+ */
+const TAG_ORDER: Record<TagSort, string> = {
+  count: 'n DESC, tag ASC',
+  recent: 'last_used DESC, tag ASC',
+  name: 'tag ASC',
+};
+
+/**
+ * 標籤的用量。
+ *
+ * `last_used` 需要 JOIN 回 cards——tags 表只有 card_id，沒有時間。
+ * 這裡不做成一張物化的統計表：標籤表的量級是幾百列，一次 GROUP BY 就夠，
+ * 而物化就要在每一次寫入與刪除時維護它，多一個會跟事實分岔的東西。
+ */
+export function tagCounts(idx: IndexDb, sort: TagSort = 'count'): TagCount[] {
+  return idx.s(
+      `SELECT t.tag AS tag, COUNT(*) AS n, MAX(c.created) AS last_used
+         FROM tags t JOIN cards c ON c.id = t.card_id
+        GROUP BY t.tag
+        ORDER BY ${TAG_ORDER[sort]}`,
+    )
+    .all() as TagCount[];
 }
 
 // -------------------------------------------------------------- 工作狀態清單
@@ -266,16 +303,44 @@ export function aboutTarget(idx: IndexDb, id: string): { id: string; title: stri
   return row ?? null;
 }
 
-export function search(idx: IndexDb, q: string, limit = 50): CardRowWithTags[] {
+export interface SearchRow extends CardRowWithTags {
+  /** 命中的那一小段，命中的字詞被哨符包著（見 schema.ts 的 HIT_OPEN）。 */
+  frag: string;
+}
+
+/** 片段抓幾個 token。逐字切開之後一個中文字就是一個 token，32 大約是兩行。 */
+const SNIPPET_TOKENS = 32;
+
+/**
+ * 全文檢索。
+ *
+ * `snippet` 的第一個參數只吃**表名**，給 alias 會說「no such column」，
+ * 所以這句刻意不替 cards_fts 取別名。欄位號給 -1 讓 FTS5 自己挑命中最多的
+ * 那一欄：碎片的內容在 title（A.5 的欄位反轉），其餘型別在 body，
+ * 這樣兩種都不必在這裡分岔。
+ *
+ * `char(2)` / `char(3)` 就是 schema.ts 的 HIT_OPEN / HIT_CLOSE。
+ */
+export function search(
+  idx: IndexDb,
+  q: string,
+  opts: { limit?: number; type?: string } = {},
+): SearchRow[] {
   const match = ftsQuery(q);
   if (!match) return [];
-  let rows: CardRow[];
+  const limit = opts.limit ?? 50;
+  const typed = opts.type !== undefined && opts.type !== '';
+  let rows: (CardRow & { frag: string })[];
   try {
     rows = idx.s(
-        `SELECT c.* FROM cards_fts f JOIN cards c ON c.id = f.id
-          WHERE cards_fts MATCH ? ORDER BY rank LIMIT ?`,
+        `SELECT c.*, snippet(cards_fts, -1, char(2), char(3), '…', ${SNIPPET_TOKENS}) AS frag
+           FROM cards_fts JOIN cards c ON c.id = cards_fts.id
+          WHERE cards_fts MATCH ?${typed ? ' AND c.type = ?' : ''}
+          ORDER BY rank LIMIT ?`,
       )
-      .all(match, limit) as CardRow[];
+      .all(...(typed ? [match, opts.type, limit] : [match, limit])) as (CardRow & {
+      frag: string;
+    })[];
   } catch {
     return [];
   }

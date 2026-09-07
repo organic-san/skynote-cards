@@ -78,6 +78,14 @@ export interface PageOptions {
   recent?: { id: string; title: string }[];
   /** 目前正在看的卡片，用來把側欄裡對應的那一列標起來。 */
   activeId?: string;
+  /**
+   * 首頁 `?tag=` 篩選生效時的那個標籤。
+   *
+   * 它會一路走到右下的隨手記：在一堆同標籤的卡片裡看到什麼想記下來，
+   * 那一則幾乎必然屬於同一堆。要使用者記完再回頭補標籤，
+   * 是把一個已經知道的答案再問一次。
+   */
+  tag?: string;
 }
 
 export function renderPage(view: string, data: Record<string, unknown>, opts: PageOptions): string {

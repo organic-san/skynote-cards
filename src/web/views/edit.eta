@@ -2,7 +2,11 @@
 
 <ul class="errors" id="errors" hidden></ul>
 
-<form class="newform" id="editcard" data-id="<%= it.card.id %>">
+<%/* 這一頁的欄位一律是伺服器從卡片填進來的，所以草稿不靜默覆蓋。
+     清除也跟建立頁不同：送出走 fetch PUT，沒有導向可以掛 ?d=，
+     由 editform.js 在請求成功之後自己清（見 js/draft.js）。 */%>
+<form class="newform" id="editcard" data-id="<%= it.card.id %>"
+      data-draft-scope="<%= it.draftScope %>" data-draft-prefilled>
   <p class="cardmeta">
     <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
     <time datetime="<%= it.created_display.iso %>"><%= it.created_display.text %></time>
@@ -18,7 +22,7 @@
 
   <label class="field">
     <span>內文</span>
-    <textarea name="body" rows="14" spellcheck="false" data-grow><%= it.card.body %></textarea>
+    <textarea name="body" rows="14" spellcheck="false"><%= it.card.body %></textarea>
   </label>
 
   <%/* 標籤用空白分隔（不是逗號），推薦面板見 js/tags.js。 */%>
@@ -34,6 +38,7 @@
   <% if (it.can_link) { %>
   <div class="field" id="linksfield"
        data-rels='<%= JSON.stringify(it.rel_table) %>'
+       data-default-rels='<%= JSON.stringify(it.default_rels) %>'
        data-card-type="<%= it.card.type %>">
     <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>
@@ -73,14 +78,16 @@
 
 <%/* 連結列跟建立頁共用同一支——收窄關係、搜尋目標、加一列，
      那是同一件事，不該有兩份會慢慢長歪的實作。 */%>
-<script src="/static/js/grow.js" defer></script>
 <script src="/static/js/links.js" defer></script>
 <script src="/static/js/tags.js" defer></script>
 <script src="/static/js/editform.js" defer></script>
 
 <%/* 新增的那幾列長什麼樣。跟建立頁同一份結構，選項由 links.js 畫。 */%>
 <template id="linkrowtpl">
-  <div class="linkrow">
+  <%/* data-blank：這是使用者手動加的空白列，rel 從 DEFAULT_REL 起頭
+       （見 present.ts 與 links.js）。伺服器印出來的那幾列沒有這個記號，
+       它們的關係是入口決定的，已經有明確的意圖。 */%>
+  <div class="linkrow" data-blank>
     <select name="link_rel"></select>
     <input type="text" class="linkto" autocomplete="off" placeholder="輸入標題搜尋"
            data-target-type="">

@@ -1,8 +1,28 @@
+<%/* 排序切換。三種排法對應三個問題（見 query.ts 的 TAG_ORDER），
+     所以是三個並列的選項，不是一個預設加兩個進階設定。
+     視覺語彙沿用首頁的篩選列（.filters），因為做的是同一件事：
+     換一個角度看同一堆東西。 */%>
+<div class="filters">
+  <% it.sorts.forEach(function (s) { %>
+  <a href="/tags<%= s.value === 'count' ? '' : '?sort=' + s.value %>"
+     class="textbtn <%= it.sort === s.value ? 'on' : '' %>"><%= s.label %></a>
+  <% }) %>
+  <span class="filtercount"><%= it.tags.length %></span>
+</div>
+
 <ul class="taglist">
 <% if (it.tags.length === 0) { %>
 <p class="empty">還沒有標籤。</p>
 <% } %>
 <% it.tags.forEach(function (t) { %>
-  <li><a class="tag" href="/?tag=<%= encodeURIComponent(t.tag) %>">#<%= t.tag %></a><span class="n"><%= t.n %></span></li>
+  <%/* 鎖定的照樣列出來，只是標成次要——這一頁問的是「語料庫裡有哪些標籤」，
+       而出處標記確實是其中一個，藏起來會讓「點進去看有哪些卡」這條路
+       從介面上消失，而那正是它最有用的時候。
+       鎖的只是推薦選單，不是這裡（見 store/tags.ts）。 */%>
+  <li class="<%= t.locked ? 'locked' : '' %>">
+    <a class="tag" href="/?tag=<%= encodeURIComponent(t.tag) %>">#<%= t.tag %></a>
+    <% if (t.locked) { %><span class="lockmark" title="不出現在表單的標籤推薦裡"><%~ include('icon', { name: 'lock' }) %></span><% } %>
+    <span class="n"><%= t.n %></span>
+  </li>
 <% }) %>
 </ul>

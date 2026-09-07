@@ -64,7 +64,8 @@
 
       caret = (before + pad + text).length;
       if (document.activeElement === body) body.setSelectionRange(caret, caret);
-      // 內容是程式改的，所以要自己通知——欄位長高在 grow.js，它聽的是 input。
+      // 內容是程式改的，所以要自己通知一次 input。欄位不再隨內容長高（見 form.css），
+      // 但草稿暫存聽的是這個事件——引用進來的段落也該被存下來。
       body.dispatchEvent(new Event('input'));
     }
   }

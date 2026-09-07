@@ -84,6 +84,46 @@ export function segmentCjk(text: string): string {
   return text.replace(CJK_EACH, (c) => ` ${c} `);
 }
 
+/*
+  ---------------------------------------------------------------- 搜尋片段
+
+  FTS5 的 snippet() 要用一對字串把命中的字詞包起來。這裡用兩個不可見的
+  控制字元，而不是直接給 <mark>：片段還要經過 HTML 轉義才能進頁面，
+  先放標籤會被轉義成純文字，先轉義又分不出哪些角括號是標籤、哪些是內文。
+  控制字元在轉義那一步原樣存活，最後一步再換成標籤（見 present.ts 的 highlight）。
+*/
+export const HIT_OPEN = '\u0002';
+export const HIT_CLOSE = '\u0003';
+const HIT_MARKS = HIT_OPEN + HIT_CLOSE;
+
+/**
+ * 把 segmentCjk 插進去的空白拿掉。**它是 segmentCjk 的精確反函數。**
+ *
+ * 索引裡的中日文是逐字切開的（見上方），所以 snippet() 回來的片段長這樣：
+ * 「 西  蒙  提  出 」。原樣印出去就是一行被拆散的字。
+ *
+ * 不能寫成「兩側是中日文就把空白拿掉」，那條規則在三個地方會出錯：
+ *
+ * - `cat 概念` 的原文本來就有一個空白，兩側各插一個之後變兩個，
+ *   整段拿掉就黏成 `cat概念`；
+ * - `概念，用來` 的全形逗號**不在** CJK_RANGE 裡（那個區段從 U+3040 起，
+ *   不含標點），所以「兩側都是中日文」對它不成立，空隙會留下來；
+ * - 兩個相鄰的英文命中 `⟨the⟩ ⟨cat⟩`，中間的空白左右各是一個哨符，
+ *   把哨符算進「中日文」就會吃掉它，印出 `thecat`。
+ *
+ * 所以改成照著 segmentCjk 做過的事逆推：它把每個中日文字 C 換成 ` C `，
+ * 於是**每個中日文字的左邊多一個空白、右邊多一個空白**，其餘一律沒動。
+ * 這裡就精確地各還一個回去，剩下的空白必然是原文自己的。
+ * 哨符夾在中間不影響判斷（它們貼著命中的字詞，不是空白的一部分），
+ * 但也不構成拿掉空白的理由——這一點正是上面第三個例子要求的。
+ */
+const AFTER_CJK = new RegExp('([' + CJK_RANGE + '])([' + HIT_MARKS + ']*) ', 'g');
+const BEFORE_CJK = new RegExp(' ([' + HIT_MARKS + ']*)([' + CJK_RANGE + '])', 'g');
+
+export function desegment(s: string): string {
+  return s.replace(AFTER_CJK, '$1$2').replace(BEFORE_CJK, '$1$2').trim();
+}
+
 /**
  * ID 存成 TEXT，但字串排序不等於數值排序：ID 位數會隨時間增加
  * （2026 年內就會從 17 位變成 18 位），純字串排序會在跨位數時整個錯掉。

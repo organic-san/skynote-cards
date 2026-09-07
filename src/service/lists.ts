@@ -1,4 +1,11 @@
-import type { CardIndex, CardRow, CardRowWithTags } from '../store/index/index.ts';
+import type {
+  CardIndex,
+  CardRow,
+  CardRowWithTags,
+  SearchRow,
+  TagCount,
+  TagSort,
+} from '../store/index/index.ts';
 import { editableSince } from '../domain/rules.ts';
 
 /**
@@ -76,9 +83,14 @@ export interface ListRow extends CardRowWithTags {
   inbound: number;
   restatements: number;
   about: { id: string; title: string } | null;
+  /** 只有搜尋結果有：命中的那一小段。其餘清單維持 excerpt。 */
+  frag?: string;
 }
 
-export function decorate(index: CardIndex, rows: CardRowWithTags[]): ListRow[] {
+export function decorate(
+  index: CardIndex,
+  rows: (CardRowWithTags & { frag?: string })[],
+): ListRow[] {
   return rows.map((r) => {
     if (r.type === 'original') {
       const b = index.inboundBreakdown(r.id);
@@ -99,13 +111,57 @@ export function decorate(index: CardIndex, rows: CardRowWithTags[]): ListRow[] {
   });
 }
 
-export function tagCounts(index: CardIndex): { tag: string; n: number }[] {
-  return index.tagCounts();
+/** 標籤與它的用量，外加「有沒有被鎖出推薦選單」。 */
+export interface TagStat extends TagCount {
+  locked: boolean;
+}
+
+/**
+ * 標籤索引頁要的那一份：全部列出來，鎖定的也在，只是標成次要。
+ *
+ * 鎖定的標籤在這裡**不過濾掉**——那一頁問的是「語料庫裡有哪些標籤」，
+ * 而 `匯入` 確實是其中一個。把它藏起來會讓「點進去看有哪些卡」這條路
+ * 從介面上消失，而那正是出處標記最有用的時候。
+ *
+ * 鎖定清單由呼叫端帶進來（它在語料庫目錄裡，而這一層不讀 config，
+ * 跟 settling 的 editWindowMs 同一條理由）。
+ */
+export function tagCounts(
+  index: CardIndex,
+  opts: { sort?: TagSort; locked?: ReadonlySet<string> } = {},
+): TagStat[] {
+  const locked = opts.locked;
+  return index
+    .tagCounts(opts.sort ?? 'count')
+    .map((r) => ({ ...r, locked: locked ? locked.has(r.tag) : false }));
+}
+
+/**
+ * 表單標籤欄的推薦選單。
+ *
+ * 跟索引頁是兩個不同的問題，所以是兩支函式而不是一個帶旗標的：
+ * 這裡問的是「我現在打這張卡，可能想用哪個標籤」——按最近使用排序，
+ * 因為主題是一陣一陣的；鎖定的整個不出現，因為出處標記永遠不是答案。
+ *
+ * 只交出 tag 與 n：選單上就這兩樣看得到的東西，其餘欄位跟著每一次
+ * 表單渲染送到瀏覽器是白付的流量。
+ */
+export function tagSuggestions(
+  index: CardIndex,
+  locked: ReadonlySet<string>,
+): { tag: string; n: number }[] {
+  return tagCounts(index, { sort: 'recent', locked })
+    .filter((t) => !t.locked)
+    .map((t) => ({ tag: t.tag, n: t.n }));
 }
 
 /** 搜尋卡片內容（關鍵字為空時直接回傳空陣列）。 */
-export function search(index: CardIndex, q: string, limit = 100): CardRowWithTags[] {
-  return q === '' ? [] : index.search(q, limit);
+export function search(
+  index: CardIndex,
+  q: string,
+  opts: { type?: string; limit?: number } = {},
+): SearchRow[] {
+  return q === '' ? [] : index.search(q, { limit: opts.limit ?? 100, type: opts.type });
 }
 
 /** 建立表單的連結選擇器。 */

@@ -45,8 +45,13 @@
 <h1 class="formtitle"><%= it.action %></h1>
 
 <form method="post" action="/new" class="newform" id="newform"
-      data-specs='<%= JSON.stringify(it.specs) %>'>
+      data-specs='<%= JSON.stringify(it.specs) %>'
+      data-draft-scope="<%= it.draftScope %>"
+      <% if (it.draftClear) { %>data-draft-clear="<%= it.draftClear %>"<% } %>
+      <%/* 伺服器填過東西進來的表單不靜默還原草稿，改成問一次（見 js/draft.js）。 */%>
+      <%= it.draftPrefilled ? 'data-draft-prefilled' : '' %>>
   <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
+  <input type="hidden" name="draft_scope" value="<%= it.draftScope %>">
 
   <% if (it.locked) { %>
   <%/* 型別是入口決定的，所以這裡只陳述事實，不給選擇。
@@ -73,7 +78,7 @@
   <%/* 碎片只有一個大文字框，不區分標題與內文。那段話會存進 title，
        但介面上不呈現這個區分（見 domain/card.ts 的 fleetingText）。 */%>
   <label class="field<%= it.spec.single ? '' : ' off' %>" id="singlefield">
-    <textarea name="quick_body" rows="10" spellcheck="false" placeholder="寫下那句話" data-grow
+    <textarea name="quick_body" rows="10" spellcheck="false" placeholder="寫下那句話"
               <%= it.spec.single ? 'required' : 'disabled' %>><%= it.spec.single ? it.values.title : '' %></textarea>
   </label>
 
@@ -92,7 +97,7 @@
 
   <label class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
     <span>內文</span>
-    <textarea name="body" rows="14" spellcheck="false" data-grow><%= it.values.body %></textarea>
+    <textarea name="body" rows="14" spellcheck="false"><%= it.values.body %></textarea>
   </label>
 
   <div class="field secondary<%= it.spec.source ? '' : ' off' %>" id="sourcefields">
@@ -125,6 +130,7 @@
        兩支檔案因此不互相呼叫，也不必知道對方存在。 */%>
   <div class="field<%= it.spec.links ? '' : ' off' %>" id="linksfield"
        data-rels='<%= JSON.stringify(it.relTable) %>'
+       data-default-rels='<%= JSON.stringify(it.default_rels) %>'
        data-card-type="<%= it.values.type %>">
     <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>
@@ -135,13 +141,18 @@
       <%/* U15：目標一律顯示標題，ID 不外露。整套設計的目的就是使用者
            永遠不必碰 ID——把 18 位數當欄位主值是主次相反。
            U16：從卡片 `+` 預填的那條是唯讀列，只有 rel 可改，沒有減號。 */%>
-      <div class="linkrow<%= l.fixed ? ' fixed' : '' %>">
+      <div class="linkrow<%= l.fixed ? ' fixed' : '' %> rel-<%= l.rel %>">
         <select name="link_rel">
           <% opts.forEach(function (r) { %>
           <option value="<%= r.value %>" <%= l.rel === r.value ? 'selected' : '' %>><%= r.label %></option>
           <% }) %>
         </select>
         <% if (l.fixed) { %>
+        <%/* 這一列的關係是可以改的（U16），所以圖示不能只印當下那一個——
+             改了選單，圖示就會在說一件不再成立的事，那比沒有圖示更糟。
+             把這一型可用的全部印出來，由 .linkrow 上的 rel-* class 決定顯示哪一個
+             （links.js 換 class，見 form.css）。沒有 JS 時伺服器印的那個 class 就是對的。 */%>
+        <span class="relicon" aria-hidden="true"><% it.rels.forEach(function (r) { %><%~ include('icon', { name: r.value }) %><% }) %></span>
         <%/* 標題自成一格，所以截斷交給 CSS；完整的字留在 title 屬性裡。 */%>
         <span class="linktarget" title="<%= l.title || l.to %>"><%= l.title || l.to %></span>
         <input type="hidden" name="link_to" value="<%= l.to %>">
@@ -179,7 +190,10 @@
 
 <%/* 連結列模板：選項由 links.js 動態渲染。 */%>
 <template id="linkrowtpl">
-  <div class="linkrow">
+  <%/* data-blank：這是使用者手動加的空白列，rel 從 DEFAULT_REL 起頭
+       （見 present.ts 與 links.js）。伺服器印出來的那幾列沒有這個記號，
+       它們的關係是入口決定的，已經有明確的意圖。 */%>
+  <div class="linkrow" data-blank>
     <select name="link_rel"></select>
     <input type="text" class="linkto" autocomplete="off" placeholder="輸入標題搜尋"
            data-target-type="">
@@ -189,7 +203,6 @@
   </div>
 </template>
 
-<script src="/static/js/grow.js" defer></script>
 <script src="/static/js/links.js" defer></script>
 <script src="/static/js/tags.js" defer></script>
 <script src="/static/js/typefields.js" defer></script>

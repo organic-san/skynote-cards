@@ -12,14 +12,20 @@
         if (n.branch) { %><span class="rail rail-<%= n.branch %>"></span><% } %></span>
     <%/* U13 每列：色點 + rel + 型別：標題 + 日期時刻。
          關係詞在標題前面，方向編在詞裡（節錄自／節錄出）。 */%>
+    <%/* 七種關係各有一個圖示。**永遠與關係詞並列**，不單獨出現——
+         一個還沒學過的圖示自己站著就是一個謎題，兩個一起才錨得住。
+         圖示不隨上下游翻轉（維持 7 種外觀）：方向已經由軌道的位置
+         與關係詞本身（節錄自／節錄出）講過兩次了。 */%>
     <% if (n.missing) { %>
     <span class="nodebody">
+      <%~ include('icon', { name: n.rel }) %>
       <span class="noderel"><%= n.relLabel %></span>
       <span class="nodemissing">找不到 <%= n.id %></span>
     </span>
     <% } else { %>
     <span class="nodebody">
       <span class="dot dot-<%= n.type %>"></span>
+      <%~ include('icon', { name: n.rel }) %>
       <span class="noderel"><%= n.relLabel %></span>
       <a class="nodetitle" href="/c/<%= n.id %>"><span class="tname"><%= n.typeLabel %>：</span><%= n.title %></a>
       <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>

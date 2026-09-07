@@ -95,6 +95,24 @@
 
 /* ---------------------------------------------------------- 表單 */
 
+/*
+  未送出的草稿提示列。
+
+  只出現在伺服器已經填過東西的表單上（見 js/draft.js）——它是一個提問，
+  不是一則通知，所以兩個選項都是實際的按鈕。用 .errors 那種左側色條會把它
+  說成「出事了」，而它只是「你上次寫到一半」，所以壓成一行淡的說明。
+*/
+.draftnote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+.draftnote .textbtn { color: var(--text-2); }
+
 /* U14：動作標題。這行同時滿足來源可見，而且在送出**前**就看得到。 */
 .formtitle {
   margin: 0 0 var(--sp-6);
@@ -142,17 +160,22 @@
   background: var(--surface-raised);
   color: inherit;
 }
-/* 貼一篇長文進來時，欄位若無限長高，底下的標籤與連結會被推到幾千像素之外，
-   整份表單就沒辦法調整了。到頂之後改成內部捲動。
+/* 欄位隨內容長高（autogrow）的決定被推翻，因為打字時欄位長高會把標題與標籤
+   往下推，寫到一半想確認那兩欄就得捲回去找——而那是寫作過程中一直在做的事。
+   連帶消掉的是每次按鍵重設 style.height 造成的捲動跳動：現在沒有任何程式碼
+   寫這個欄位的高度，跳動就沒有來源。public/js/grow.js 因此整支移除。
 
-   上限寫成自訂屬性給 new.js 讀，**不是** max-height——max-height 會連手動拖曳
-   一起擋掉，於是欄位只能變短不能變高。自動長高有上限，手動拖曳沒有。 */
+   高度由 rows 決定（碎片 10 行、內文 14 行），要更大就自己拖——
+   resize: vertical 給的是使用者自己的控制權，不用 max-height 擋，
+   那會連手動拖曳一起擋掉。內容超出就在框內捲。 */
 .field textarea {
   font-family: var(--font-doc);
   font-size: var(--fs-2);
   line-height: var(--lh-2);
   resize: vertical;
-  --grow-max: 60vh;
+  overflow-y: auto;
+  /* 打字時捲動錨定會跟游標可見那條規則互相拉扯。 */
+  overflow-anchor: none;
 }
 
 /* original 依主次分兩段：主群組（標題／網址／內文）與次群組，中間留一段。 */
@@ -197,6 +220,23 @@
 }
 .linkrow select { width: auto; flex: 0 0 auto; font-size: var(--fs-1); }
 .linkrow .linkto { flex: 1 1 var(--min-control); }
+
+/*
+  固定連結列的關係圖示（§3）。
+
+  這一列的 rel 可以改，所以模板把這一型可用的圖示全印出來，這裡挑一個顯示。
+  用 CSS 挑而不是讓 links.js 換圖，是為了不必把 SVG 的路徑再抄一份到前端——
+  抄一份就是兩份會慢慢長歪的資產。
+*/
+.relicon { flex: 0 0 auto; display: flex; }
+.relicon .icon { display: none; width: var(--sp-4); height: var(--sp-4); color: var(--text-3); }
+.rel-part-of     > .relicon .icon-part-of,
+.rel-about       > .relicon .icon-about,
+.rel-related     > .relicon .icon-related,
+.rel-supports    > .relicon .icon-supports,
+.rel-contradicts > .relicon .icon-contradicts,
+.rel-refutes     > .relicon .icon-refutes,
+.rel-updates     > .relicon .icon-updates { display: block; }
 
 /* U15：目標顯示標題，ID 不外露。U16：預填的那條是唯讀列，沒有輸入框也沒有減號。 */
 /* 標題自成一格，寬度由版面決定，所以截斷交給 CSS。完整的字在 title 屬性裡。 */
@@ -378,7 +418,9 @@ main:has(> .split) {
 .pane-form .field.secondary { margin-top: var(--sp-6); }
 .pane-form .formtitle { margin-bottom: var(--sp-5); }
 .pane-form .typefixed { margin-bottom: var(--sp-5); }
-.pane-form textarea { --grow-max: 40vh; }
+/* 分欄時垂直空間有限，rows 給的高度會把送出鍵推到捲動之外。
+   給的是 height 不是 max-height——手動拖曳仍然要能把它拉大。 */
+.pane-form textarea { height: 40vh; }
 
 .splitbar {
   cursor: col-resize;

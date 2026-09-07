@@ -1,4 +1,4 @@
-import type { ThreadNode } from '../store/index/index.ts';
+import { HIT_CLOSE, HIT_OPEN, desegment, type ThreadNode } from '../store/index/index.ts';
 import type { Rumination } from '../domain/rules.ts';
 import type { ListRow } from '../service/lists.ts';
 import {
@@ -35,6 +35,14 @@ export interface Item {
   date: Stamp;
   /** 內文開頭。null 代表這一型不顯示內文。 */
   excerpt: string | null;
+  /**
+   * 搜尋結果才有：命中的那一小段，命中的字詞已經包成 `<mark>`。
+   *
+   * **這是已經轉義過的 HTML**，模板要用 `<%~` 印。它取代 excerpt 而不是
+   * 補在旁邊——搜尋頁上「這張卡為什麼被找出來」比「這張卡開頭寫什麼」
+   * 有用得多，兩個都印就是要讀者自己去分辨哪一段才是答案。
+   */
+  frag: string | null;
   /**
    * U5 的 meta 行，型別名之後的那幾段。已經按 `·` 的順序排好，
    * 模板只負責用分隔符串起來——哪一型顯示什麼在 ITEM_SHAPES 分岔一次。
@@ -122,10 +130,40 @@ const ITEM_SHAPES: Record<CardType, Shape> = {
   fleeting: (row) => ({ excerpt: excerpt(row.title), meta: [] }),
 };
 
+/** HTML 轉義。這裡只處理片段，所以不引整套模板引擎的那一份。 */
+const ESCAPE: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/**
+ * 把 FTS5 的片段變成可以直接印的 HTML。**順序是有意義的，四步不能換位置：**
+ *
+ * 1. 片段進來時命中的字詞被哨符包著（見 schema.ts 的 HIT_OPEN）；
+ * 2. 先還原分詞——索引裡的中日文是逐字切開的，不還原就是一行被拆散的字。
+ *    哨符不阻斷還原，這是它們挑成控制字元而不是標籤的原因之一；
+ * 3. 再轉義。內文是使用者寫的，可能含角括號；
+ * 4. 最後才把哨符換成標籤。轉義那一步對控制字元不動手，所以它們活到這裡。
+ *
+ * 反過來做（先換標籤再轉義）會把 `<mark>` 一起轉義成看得見的字；
+ * 先轉義再還原分詞也可以，但轉義會製造 `&amp;` 這種含分號的序列，
+ * 讓分詞判斷多一種要繞開的東西。
+ */
+export function highlight(frag: string): string {
+  return desegment(frag)
+    .replace(/[&<>"']/g, (c) => ESCAPE[c] as string)
+    .replaceAll(HIT_OPEN, '<mark>')
+    .replaceAll(HIT_CLOSE, '</mark>');
+}
+
 export function toItem(row: ListRow): Item {
   const shape = ITEM_SHAPES[row.type as CardType] ?? ITEM_SHAPES.thinking;
   return {
     id: row.id,
+    frag: row.frag === undefined ? null : highlight(row.frag),
     type: row.type,
     typeLabel: TYPE_LABELS[row.type as CardType] ?? row.type,
     heading: headingOf(row),
@@ -461,6 +499,26 @@ export function actionsFor(type: string, id: string) {
     rel: a.rel,
   }));
 }
+
+/**
+ * 手動加的空白連結列，關係從哪一條起頭。
+ *
+ * `thinking` 從 `related` 起頭而不是 `about`。按下 ＋ 加一列的意思通常是
+ * 「先把它連上，還沒想好是什麼關係」——這時候預設一條有承諾的關係，
+ * 等於替使用者做了一個他還沒做的判斷，而卡片過了反芻期就改不動了。
+ * 弱語義事後可以被更強的關係取代，反過來不行，所以預設值落在弱的那一端。
+ *
+ * 另外兩型維持原樣：`restatement` 的 about 與 `original` 的 part-of
+ * 是那一型幾乎唯一會做的事，沒有「還沒想好」的空間。`fleeting` 不能有連結（R2）。
+ *
+ * **只作用於手動加的空白列。** FAB 帶出來的固定列不走這裡——
+ * 那條的關係是入口決定的，意圖已經很明確。
+ */
+export const DEFAULT_REL: Partial<Record<CardType, Rel>> = {
+  original: 'part-of',
+  restatement: 'about',
+  thinking: 'related',
+};
 
 export interface RelOption {
   value: string;

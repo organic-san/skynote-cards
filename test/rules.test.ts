@@ -22,7 +22,8 @@ import { eta } from '../src/web/render.ts';
 const renderIcon = (name: string): string => eta.render('icon', { name });
 import { validateDraft, validateLinkOrder } from '../src/domain/rules.ts';
 import { embedFor } from '../src/web/embed.ts';
-import { ftsQuery, segmentCjk } from '../src/store/index/index.ts';
+import { desegment, ftsQuery, segmentCjk } from '../src/store/index/index.ts';
+import { parseLocked } from '../src/store/tags.ts';
 import { execFileSync } from 'node:child_process';
 import { createCard, gitInit, makeWorkspace, postCard, start, type Harness } from './helpers.ts';
 
@@ -1064,7 +1065,7 @@ describe('介面', () => {
       '關係也應預先填好',
     );
     // U16：從卡片 + 預填的那條是唯讀列——只有 rel 可改，目標顯示標題，沒有減號。
-    const row = form.body.slice(form.body.indexOf('class="linkrow fixed"'));
+    const row = form.body.slice(form.body.indexOf('class="linkrow fixed'));
     const rowEnd = row.slice(0, row.indexOf('</div>'));
     assert.ok(!rowEnd.includes('rmlink'), '預填的連結不該能刪');
     assert.ok(rowEnd.includes('linktarget'), 'U15：目標顯示標題，ID 不外露');
@@ -2398,10 +2399,10 @@ describe('中文全文檢索', () => {
 
     // 這些詞全都不在 token 開頭，改逐字切分之前一個都找不到。
     for (const q of ['分解', '可分解系統', '互動', '近可分解', '系統內部']) {
-      assert.equal(h.app.index.search(q, 50).length, 1, `搜「${q}」應該找得到`);
+      assert.equal(h.app.index.search(q, { limit: 50 }).length, 1, `搜「${q}」應該找得到`);
     }
-    assert.equal(h.app.index.search('天氣', 50).length, 1, '不該把不相干的也撈進來');
-    assert.equal(h.app.index.search('不存在的詞', 50).length, 0);
+    assert.equal(h.app.index.search('天氣', { limit: 50 }).length, 1, '不該把不相干的也撈進來');
+    assert.equal(h.app.index.search('不存在的詞', { limit: 50 }).length, 0);
   });
 });
 
@@ -2557,5 +2558,432 @@ describe('分欄的斷點', () => {
   test('拖曳出來的比例，直放與橫放分開記', () => {
     assert.match(js, /append-cards:split:/);
     assert.match(js, /wide\.matches \? 'col' : 'row'/);
+  });
+});
+
+// ---------------------------------------------------------------- v2.2
+
+describe('內文欄不隨打字改變大小', () => {
+  const css = fs.readFileSync(path.join('public', 'css', 'form.css'), 'utf8');
+
+  test('autogrow 整支移除，沒有任何程式碼在寫欄位高度', () => {
+    // 跳動的成因是每次按鍵重設 style.height。沒有那段程式碼，就沒有那個成因。
+    assert.ok(!fs.existsSync(path.join('public', 'js', 'grow.js')), 'grow.js 不該還在');
+    for (const view of ['new.eta', 'edit.eta']) {
+      const src = fs.readFileSync(path.join('src', 'web', 'views', view), 'utf8');
+      assert.ok(!src.includes('grow.js'), `${view} 不該還載入 grow.js`);
+      assert.ok(!src.includes('data-grow'), `${view} 不該還留著 data-grow`);
+    }
+  });
+
+  test('高度交給 rows，放大交給使用者拖曳', () => {
+    assert.match(css, /\.field textarea \{[^}]*resize: vertical/s, '欄位要能手動拖高');
+    assert.match(css, /\.field textarea \{[^}]*overflow-y: auto/s, '內容超出就在框內捲');
+    // max-height 會連手動拖曳一起擋掉——自動長高沒有了，但拖曳不能跟著沒有。
+    assert.ok(!/\.field textarea \{[^}]*max-height/s.test(css), '不得用 max-height 箝制');
+    assert.match(css, /\.pane-form textarea \{ height: 40vh; \}/, '分欄時空間有限，給的是 height');
+  });
+
+  test('關掉捲動錨定', () => {
+    assert.match(css, /\.field textarea \{[^}]*overflow-anchor: none/s);
+  });
+});
+
+describe('草稿暫存', () => {
+  const js = fs.readFileSync(path.join('public', 'js', 'draft.js'), 'utf8');
+
+  test('槽名由伺服器印在表單上，各種入口各自一格', async () => {
+    const h = await fresh();
+    const src = await createCard(h, { type: 'original', title: '母卡', body: 'x' });
+
+    const scope = async (url: string) =>
+      /data-draft-scope="([^"]*)"/.exec((await h.app.fastify.inject(url)).body)?.[1];
+
+    assert.equal(await scope('/new'), 'new', '裸 /new');
+    assert.equal(await scope('/new?type=original'), 'new:original', '側欄追加外部資料');
+    assert.equal(
+      await scope(`/new?type=thinking&rel=about&to=${src}`),
+      `new:thinking:about:${src}`,
+      '卡片頁 FAB 衍生',
+    );
+    assert.equal(await scope('/'), 'quick', '隨手記');
+    assert.equal(
+      await scope('/?tag=' + encodeURIComponent('世界觀')),
+      'quick:tag:世界觀',
+      '篩選中的隨手記',
+    );
+
+    const edit = (await h.app.fastify.inject(`/c/${src}/edit`)).body;
+    assert.ok(edit.includes(`data-draft-scope="edit:${src}"`), '編輯頁');
+  });
+
+  test('伺服器有預填就不靜默還原，沒預填才靜默', async () => {
+    const h = await fresh();
+    const src = await createCard(h, {
+      type: 'original',
+      title: '母卡',
+      body: 'x',
+      tags: ['世界觀'],
+    });
+
+    const bare = (await h.app.fastify.inject('/new')).body;
+    assert.ok(!bare.includes('data-draft-prefilled'), '裸表單什麼都沒填，直接還原');
+
+    const derived = (await h.app.fastify.inject(`/new?type=thinking&rel=about&to=${src}`)).body;
+    assert.ok(
+      derived.includes('data-draft-prefilled'),
+      '衍生表單帶了繼承的標籤與連結，靜默覆蓋等於把那個動作吃掉',
+    );
+  });
+
+  test('建立成功才清除：302 掛 ?d=，驗證失敗那條路不會經過它', async () => {
+    const h = await fresh();
+    const ok = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/new',
+      payload: { type: 'thinking', title: '寫成了', body: 'x', draft_scope: 'new:thinking:expand' },
+    });
+    assert.equal(ok.statusCode, 302);
+    assert.match(String(ok.headers.location), /[?&]d=new%3Athinking%3Aexpand/);
+
+    const bad = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/new',
+      // 表單那條路才會重新渲染頁面；送 JSON 拿回來的是 JSON。
+      payload: new URLSearchParams({
+        type: 'thinking',
+        title: '',
+        body: 'x',
+        draft_scope: 'new:thinking:expand',
+      }).toString(),
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    });
+    assert.equal(bad.statusCode, 400);
+    assert.ok(
+      bad.body.includes('data-draft-scope="new:thinking:expand"'),
+      '退回的表單要是同一格，否則改完再送會存到新的一格',
+    );
+  });
+
+  test('沒帶槽名的請求，導向不多掛一個 ?d=', async () => {
+    const h = await fresh();
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/new',
+      payload: { type: 'thinking', title: '從 API 來的', body: 'x' },
+    });
+    assert.ok(!String(res.headers.location).includes('d='), 'API 與測試從來沒存過草稿');
+  });
+
+  test('連結列不進草稿——目標可能在草稿存活期間被刪掉（R9）', () => {
+    assert.match(js, /!el\.closest\('#linksfield'\)/);
+  });
+
+  test('過期與總量都有上限', () => {
+    assert.match(js, /MAX_AGE = 14 \* 24 \* 60 \* 60 \* 1000/);
+    assert.match(js, /MAX_KEEP = 20/);
+  });
+
+  test('編輯頁走 fetch，所以由前端自己清', () => {
+    const edit = fs.readFileSync(path.join('public', 'js', 'editform.js'), 'utf8');
+    assert.match(edit, /window\.skynoteDraft\.clear\(form\.dataset\.draftScope\)/);
+    assert.match(js, /window\.skynoteDraft = \{/);
+  });
+});
+
+describe('七種關係的圖示', () => {
+  test('關聯區塊每一列都有，而且永遠跟關係詞並列', async () => {
+    const h = await fresh();
+    const src = await createCard(h, { type: 'thinking', title: '被支撐的', body: 'x' });
+    await createCard(h, {
+      type: 'thinking',
+      title: '支撐它的',
+      body: 'y',
+      links: [{ rel: 'supports', to: src }],
+    });
+    const page = (await h.app.fastify.inject(`/c/${src}`)).body;
+    assert.ok(page.includes('icon-supports'), '圖示在');
+    assert.ok(page.includes('支撐出'), '關係詞也在——圖示不單獨出現');
+  });
+
+  test('固定連結列印出整組圖示，由 rel-* class 挑一個', async () => {
+    const h = await fresh();
+    const src = await createCard(h, { type: 'original', title: '母卡', body: 'x' });
+    const form = (await h.app.fastify.inject(`/new?type=thinking&rel=about&to=${src}`)).body;
+    assert.ok(form.includes('class="relicon"'), '圖示槽在');
+    // 這一列的 rel 可以改（U16），只印當下那一個會在改完之後說一件不成立的事。
+    assert.ok(form.includes('icon-about') && form.includes('icon-related'), '整組都印出來');
+    assert.ok(
+      form.includes('class="linkrow fixed rel-about"'),
+      '伺服器就印好 rel-*，沒有 JS 也挑得對',
+    );
+  });
+
+  test('links.js 換 rel 時不洗掉 fixed', () => {
+    const js = fs.readFileSync(path.join('public', 'js', 'links.js'), 'utf8');
+    assert.ok(!js.includes("className = 'linkrow rel-"), '整個 className 洗掉會把 fixed 帶走');
+    assert.match(js, /function setRelClass/);
+  });
+});
+
+describe('內文複製', () => {
+  test('交出去的是原始 Markdown，不是渲染後的 HTML', async () => {
+    const h = await fresh();
+    const id = await createCard(h, {
+      type: 'thinking',
+      title: '有記號的',
+      body: '**粗體**與 [連結](https://example.com)',
+    });
+    const page = (await h.app.fastify.inject(`/c/${id}`)).body;
+    const md = /data-md="([^"]*)"/.exec(page)?.[1] ?? '';
+    assert.ok(md.includes('**粗體**'), 'Markdown 記號要原樣留著');
+    assert.ok(!md.includes('&lt;p'), '不該是渲染後的 HTML');
+    assert.ok(page.includes('id="copybtn"'));
+  });
+
+  test('碎片複製的是它那段話（A.5 的欄位反轉）', async () => {
+    const h = await fresh();
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: { body: '一句碎片話語' },
+      headers: { accept: 'application/json' },
+    });
+    const id = (res.json() as { id: string }).id;
+    const page = (await h.app.fastify.inject(`/c/${id}`)).body;
+    assert.match(page, /data-md="一句碎片話語"/);
+  });
+});
+
+describe('手動空白連結列的預設關係', () => {
+  test('thinking 落在弱語義的 related，其餘維持原樣', async () => {
+    const h = await fresh();
+    const table = /data-default-rels='([^']*)'/.exec(
+      (await h.app.fastify.inject('/new')).body,
+    )?.[1];
+    const parsed = JSON.parse((table ?? '').replaceAll('&quot;', '"')) as Record<string, string>;
+    assert.deepEqual(parsed, {
+      original: 'part-of',
+      restatement: 'about',
+      thinking: 'related',
+    });
+    assert.ok(!('fleeting' in parsed), 'R2：碎片不得有連結');
+  });
+
+  test('只作用在手動加的那一列', () => {
+    const js = fs.readFileSync(path.join('public', 'js', 'links.js'), 'utf8');
+    // 伺服器印出來的列沒有 data-blank，它們的關係是入口決定的。
+    assert.match(js, /row\.dataset\.blank !== undefined/);
+    for (const view of ['new.eta', 'edit.eta']) {
+      const src = fs.readFileSync(path.join('src', 'web', 'views', view), 'utf8');
+      const tpl = src.slice(src.indexOf('<template id="linkrowtpl">'));
+      assert.ok(tpl.includes('data-blank'), `${view} 的 template 要標 data-blank`);
+    }
+  });
+});
+
+describe('隨手記繼承當前的標籤篩選', () => {
+  test('說出記的是哪一堆，送出時帶上，記完回到同一份篩選', async () => {
+    const h = await fresh();
+    const page = (await h.app.fastify.inject('/?tag=' + encodeURIComponent('世界觀'))).body;
+    assert.ok(page.includes('隨手記 · #世界觀'));
+    assert.ok(page.includes('<input type="hidden" name="tags" value="世界觀">'));
+
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: { body: '在那一堆底下記的', tags: '世界觀' },
+    });
+    assert.equal(res.statusCode, 302);
+    assert.match(
+      String(res.headers.location),
+      /^\/\?tag=/,
+      '連著記三則是典型用法，回到未篩選的首頁等於每次都要重點一次那個標籤',
+    );
+
+    const back = (await h.app.fastify.inject(String(res.headers.location))).body;
+    assert.ok(back.includes('在那一堆底下記的'), '那則碎片確實落在這個標籤底下');
+  });
+
+  test('沒有篩選時照舊回首頁，不多掛參數', async () => {
+    const h = await fresh();
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: { body: '沒有標籤' },
+    });
+    assert.equal(res.headers.location, '/');
+  });
+
+  test('展開之後標籤填好但不鎖定', async () => {
+    const h = await fresh();
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: {
+        body: '要展開的',
+        title: '標題',
+        expand: '1',
+        tags: '世界觀',
+        draft_scope: 'quick:tag:世界觀',
+      },
+    });
+    assert.ok(res.body.includes('name="tags"') && res.body.includes('value="世界觀"'));
+    assert.ok(!res.body.includes('name="tags" readonly'), '篩選只是你此刻在看哪一堆，不是承諾');
+    assert.ok(
+      res.body.includes('data-draft-clear="quick:tag:世界觀"'),
+      '隨手記那一格已經沒有用了',
+    );
+  });
+});
+
+describe('標籤的推薦、鎖定與排序', () => {
+  test('鎖定只擋推薦選單，不擋索引頁、不擋輸入、不擋既有卡片', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'thinking', title: 'A', body: 'x', tags: ['世界觀', '匯入'] });
+
+    const before =
+      /data-tags='([^']*)'/.exec((await h.app.fastify.inject('/new')).body)?.[1] ?? '';
+    assert.ok(before.includes('匯入'), '沒有 tags.yml 時什麼都不擋');
+
+    fs.writeFileSync(path.join(h.corpus, 'tags.yml'), 'locked:\n  - 匯入\n', 'utf8');
+
+    const after = /data-tags='([^']*)'/.exec((await h.app.fastify.inject('/new')).body)?.[1] ?? '';
+    assert.ok(!after.includes('匯入'), '鎖定的不進推薦選單');
+    assert.ok(after.includes('世界觀'), '其餘不受影響');
+
+    const tags = (await h.app.fastify.inject('/tags')).body;
+    assert.ok(tags.includes('#匯入'), '索引頁照樣列出來');
+    assert.ok(tags.includes('lockmark'), '只是標成鎖定');
+
+    // 手動輸入完全不受限制。
+    const id = await createCard(h, { type: 'thinking', title: 'B', body: 'x', tags: ['匯入'] });
+    assert.deepEqual(h.app.index.getCard(id)?.tags, ['匯入']);
+  });
+
+  test('tags.yml 的逐行解析認得註解、引號與區塊結束', () => {
+    assert.deepEqual(
+      [...parseLocked('# 頭\nlocked:\n  - 匯入   # 出處\n  - "待整理"\nother:\n  - 不算\n')],
+      ['匯入', '待整理'],
+    );
+    assert.deepEqual([...parseLocked('locked:\n')], [], '空的 locked 就是空集合');
+    assert.deepEqual([...parseLocked('nothing: here\n')], []);
+  });
+
+  test('推薦按最近使用排序，索引頁預設按數量', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'thinking', title: 'A', body: 'x', tags: ['多數'] });
+    await createCard(h, { type: 'thinking', title: 'B', body: 'x', tags: ['多數'] });
+    await createCard(h, { type: 'thinking', title: 'C', body: 'x', tags: ['最近'] });
+
+    const suggest =
+      /data-tags='([^']*)'/.exec((await h.app.fastify.inject('/new')).body)?.[1] ?? '';
+    assert.ok(
+      suggest.indexOf('最近') < suggest.indexOf('多數'),
+      '寫卡的當下，主題是一陣一陣的——最近用過的才是候選',
+    );
+
+    const order = (body: string) => [...body.matchAll(/#([^<]+)</g)].map((m) => m[1]);
+    assert.deepEqual(order((await h.app.fastify.inject('/tags')).body), ['多數', '最近']);
+    assert.deepEqual(order((await h.app.fastify.inject('/tags?sort=recent')).body), [
+      '最近',
+      '多數',
+    ]);
+    assert.deepEqual(order((await h.app.fastify.inject('/tags?sort=name')).body), ['多數', '最近']);
+    assert.deepEqual(
+      order((await h.app.fastify.inject('/tags?sort=亂填')).body),
+      ['多數', '最近'],
+      '亂填的排序退回預設，不是空清單',
+    );
+  });
+});
+
+describe('搜尋結果的片段與型別篩選', () => {
+  test('desegment 是 segmentCjk 的精確反函數', () => {
+    for (const x of [
+      '近可分解系統',
+      '概念，用來解釋。',
+      'cat 概念 dog',
+      '英文 mixed 中文 text',
+      '第一行\n第二行',
+      'no cjk at all',
+      '《書名》與「引號」',
+      'a  b   c',
+    ]) {
+      assert.equal(desegment(segmentCjk(x)), x, JSON.stringify(x));
+    }
+  });
+
+  test('中日文命中包成一段 mark，字沒有被拆散', async () => {
+    const h = await fresh();
+    await createCard(h, {
+      type: 'thinking',
+      title: '近可分解系統的討論',
+      body: '西蒙提出近可分解系統，用來解釋層級。',
+    });
+    const page = (await h.app.fastify.inject('/search?q=' + encodeURIComponent('近可分解'))).body;
+    const frag = /<p class="rowtext">([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '';
+    assert.ok(frag.includes('<mark>近可分解</mark>'), `片段：${frag}`);
+    // 全形標點不在 CJK_RANGE 裡（那一段從 U+3040 起），照「兩側都是中日文」
+    // 那條規則判斷就會在標點兩側各留一個空隙。
+    assert.ok(!/\s[，。、]|[，。、]\s/.test(frag), `標點兩側留了空隙：${frag}`);
+    assert.ok(!/[\u0002\u0003]/.test(page), '哨符不得漏到頁面上');
+  });
+
+  test('相鄰的英文命中之間，空白要留著', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'thinking', title: 'cats', body: 'the cat sat on the mat' });
+    const page = (await h.app.fastify.inject('/search?q=' + encodeURIComponent('the cat'))).body;
+    assert.match(
+      page,
+      /<mark>the<\/mark> <mark>cat<\/mark>/,
+      '把哨符當成中日文的一員就會吃掉這個空白，印出 thecat',
+    );
+  });
+
+  test('片段會轉義，內文裡的角括號進不了 HTML', async () => {
+    const h = await fresh();
+    await createCard(h, {
+      type: 'thinking',
+      title: '危險',
+      body: '一段 <script>alert(1)</script> 文字',
+    });
+    const page = (await h.app.fastify.inject('/search?q=' + encodeURIComponent('alert'))).body;
+    assert.ok(!page.includes('<script>alert(1)'), '不得原樣輸出');
+    assert.ok(page.includes('&lt;script&gt;'), '要轉義成看得見的字');
+  });
+
+  test('碎片命中的是 title，片段仍走內文的位置', async () => {
+    const h = await fresh();
+    await h.app.fastify.inject({ method: 'POST', url: '/quick', payload: { body: '一句碎片話語' } });
+    const page = (await h.app.fastify.inject('/search?q=' + encodeURIComponent('碎片'))).body;
+    assert.ok(page.includes('rowbody'), '沒有標題時，內文自己就是那條連結');
+    assert.ok(page.includes('<mark>碎片</mark>'));
+  });
+
+  test('型別篩選複用首頁的 chip', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'original', title: '資料裡的關鍵字', body: 'x' });
+    await createCard(h, { type: 'thinking', title: '思考裡的關鍵字', body: 'x' });
+
+    const all = (await h.app.fastify.inject('/search?q=' + encodeURIComponent('關鍵字'))).body;
+    assert.ok(all.includes('資料裡的關鍵字') && all.includes('思考裡的關鍵字'));
+
+    const only = (
+      await h.app.fastify.inject('/search?q=' + encodeURIComponent('關鍵字') + '&type=thinking')
+    ).body;
+    // 側欄的卡片索引也會列出每一張卡的標題，所以範圍要收到結果清單裡。
+    const rows = only.slice(only.indexOf('<ul class="rows">'));
+    assert.ok(!rows.includes('資料裡的關鍵字'), 'original 被篩掉');
+    assert.ok(rows.includes('思考裡的關鍵字'));
+    assert.ok(only.includes('class="filters"'), '跟首頁同一組 chip');
+  });
+
+  test('首頁維持 excerpt，不受片段影響', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'thinking', title: '一張卡', body: '內文開頭那幾個字' });
+    const feed = (await h.app.fastify.inject('/')).body;
+    assert.ok(feed.includes('內文開頭那幾個字'));
+    assert.ok(!feed.includes('<mark>'), '沒有查詢就沒有命中');
   });
 });

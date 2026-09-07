@@ -16,11 +16,28 @@ import { rebuildInto } from './rebuild.ts';
  * 在重建時換手。查詢與寫入的內容都在 query / write / rebuild 裡。
  */
 
-export type { CardRow, CardRowWithTags, LinkRow, ThreadNode } from './query.ts';
+export type {
+  CardRow,
+  CardRowWithTags,
+  LinkRow,
+  SearchRow,
+  TagCount,
+  TagSort,
+  ThreadNode,
+} from './query.ts';
+export { TAG_SORTS } from './query.ts';
 export type { BadLink, ReindexReport, RuleWarning } from './rebuild.ts';
-export { ftsQuery, segmentCjk, type IndexDb } from './schema.ts';
+export { HIT_CLOSE, HIT_OPEN, desegment, ftsQuery, segmentCjk, type IndexDb } from './schema.ts';
 
-import type { CardRow, CardRowWithTags, LinkRow, ThreadNode } from './query.ts';
+import type {
+  CardRow,
+  CardRowWithTags,
+  LinkRow,
+  SearchRow,
+  TagCount,
+  TagSort,
+  ThreadNode,
+} from './query.ts';
 import type { ReindexReport } from './rebuild.ts';
 
 export class CardIndex implements IndexDb {
@@ -121,8 +138,8 @@ export class CardIndex implements IndexDb {
     return q.linkTree(this, rootId, direction, maxDepth);
   }
 
-  tagCounts(): { tag: string; n: number }[] {
-    return q.tagCounts(this);
+  tagCounts(sort: TagSort = 'count'): TagCount[] {
+    return q.tagCounts(this, sort);
   }
 
   // ---- 工作狀態清單
@@ -151,8 +168,8 @@ export class CardIndex implements IndexDb {
     return q.aboutTarget(this, id);
   }
 
-  search(query: string, limit = 50): CardRowWithTags[] {
-    return q.search(this, query, limit);
+  search(query: string, opts: { limit?: number; type?: string } = {}): SearchRow[] {
+    return q.search(this, query, opts);
   }
 
   pickerSearch(query: string, limit = 10): CardRow[] {

@@ -20,7 +20,18 @@
   var addlink = document.getElementById('addlink');
 
   var RELS = JSON.parse(region.dataset.rels || '{}');
+  // 手動加的空白列從哪一條關係起頭（見 present.ts 的 DEFAULT_REL）。
+  var DEFAULTS = JSON.parse(region.dataset.defaultRels || '{}');
   var currentType = function () { return region.dataset.cardType || ''; };
+
+  // 只換 rel-* 那一個 token。整個 className 洗掉會把 fixed 一起帶走，
+  // 而那個 class 說的是「這一列不是使用者加的」——跟關係是兩件事。
+  function setRelClass(row, rel) {
+    Array.prototype.slice.call(row.classList).forEach(function (c) {
+      if (c.indexOf('rel-') === 0) row.classList.remove(c);
+    });
+    row.classList.add('rel-' + rel);
+  }
 
   // ---------------------------------------------------------------- 關係的收窄
 
@@ -44,6 +55,11 @@
     if (options.length === 0) return;
 
     var keep = sel.value;
+    // 手動加的空白列還沒有值。給它這一型的預設值當起點：
+    // thinking 是 related（關係尚未定型），因為手動加一列的意思往往就是
+    // 「先連上，還沒想好是什麼關係」——預設一條有承諾的關係，等於替使用者
+    // 做了一個他還沒做的判斷，而卡片過了反芻期就改不動了。
+    if (keep === '' && row.dataset.blank !== undefined) keep = DEFAULTS[currentType()] || '';
     sel.textContent = '';
     options.forEach(function (o) {
       var opt = document.createElement('option');
@@ -54,7 +70,7 @@
     // 換了型別或換了參照對象之後，原本那條關係可能不再合法，
     // 落回第一個仍然合法的——表單任何時候都停在規則之內。
     sel.value = options.some(function (o) { return o.value === keep; }) ? keep : options[0].value;
-    row.className = 'linkrow rel-' + sel.value;
+    setRelClass(row, sel.value);
   }
 
   function paintAll() {
@@ -70,7 +86,7 @@
 
   region.addEventListener('change', function (ev) {
     if (ev.target.name === 'link_rel') {
-      ev.target.closest('.linkrow').className = 'linkrow rel-' + ev.target.value;
+      setRelClass(ev.target.closest('.linkrow'), ev.target.value);
     }
   });
 

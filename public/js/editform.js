@@ -48,8 +48,10 @@
     })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
-        if (res.ok) window.location.href = '/c/' + id;
-        else fail(res.j.errors || ['沒有存成功']);
+        if (!res.ok) { fail(res.j.errors || ['沒有存成功']); return; }
+        // 存進去了，草稿就沒有意義了。這一頁沒有導向可以掛 ?d=，所以自己清。
+        if (window.skynoteDraft) window.skynoteDraft.clear(form.dataset.draftScope);
+        window.location.href = '/c/' + id;
       })
       .catch(function () { fail(['沒有存成功']); });
   });

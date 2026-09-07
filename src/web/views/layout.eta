@@ -112,6 +112,11 @@
 <%/* 其他地方：隨手記。兩個欄位加一個送出鍵，沒有型別選單。
       不填標題就是碎片——那個判斷你在寫的時候本來就會做。 */%>
 <%/* 隨手記浮動區塊：預設為碎片，填寫標題則為思考。 */%>
+<%
+  /* ?tag= 篩選生效時，隨手記記的就是那一堆底下的東西。槽名也跟著分開：
+     切換標籤等於換一張表單，兩份草稿不該互相覆蓋。 */
+  const quickScope = it.tag ? 'quick:tag:' + it.tag : 'quick';
+%>
 <div class="quick" id="fabmenu" hidden>
   <%/* 「展開」跟「隨手記」同一排，右對齊。它不是送出的替代方案，是
        「這一則不是一句話講得完的」——那是在你開始寫之前或寫到一半就會知道的事，
@@ -120,13 +125,19 @@
        用 form= 掛回底下那張表單，所以它人在表單外面，送出的仍是同一份內容。 */%>
   <%/* 展開按鈕掛回底下的隨手記表單送出（form=quickform）。 */%>
   <p class="quickhead">
-    <span>隨手記</span>
+    <%/* 篩選生效時說出記的是哪一堆。標籤在「展開」之後可以自由改動，
+         不鎖定——篩選只是你此刻在看哪一堆，不是對這張新卡的承諾。 */%>
+    <span>隨手記<% if (it.tag) { %> · #<%= it.tag %><% } %></span>
     <button type="submit" class="textbtn quickexpand" form="quickform"
             name="expand" value="1" formnovalidate>
       <span>展開</span><%~ include('icon', { name: 'expand' }) %>
     </button>
   </p>
-  <form method="post" action="/quick" id="quickform">
+  <form method="post" action="/quick" id="quickform" data-draft-scope="<%= quickScope %>">
+    <%/* 槽名跟著送出去，伺服器原樣掛回導向的 ?d=——建立成功才清除，
+         驗證失敗那條路不會經過導向，草稿因此自動留著。 */%>
+    <input type="hidden" name="draft_scope" value="<%= quickScope %>">
+    <% if (it.tag) { %><input type="hidden" name="tags" value="<%= it.tag %>"><% } %>
     <%/* 先寫那句話，標題擺後面。你總是先有東西要記，
          「要不要給它一個名字」是寫完之後才做的判斷——欄位的順序照著那個順序。 */%>
     <textarea name="body" rows="5" spellcheck="false" placeholder="現在想到什麼" autofocus></textarea>
@@ -142,5 +153,8 @@
 <% } %>
 
 <script src="/static/js/app.js" defer></script>
+<%/* 草稿暫存掛在最後：它要對已經由 typefields.js 開關過的欄位取快照，
+     順序錯了會把關掉的欄位一起存進去。 */%>
+<script src="/static/js/draft.js" defer></script>
 </body>
 </html>

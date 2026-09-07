@@ -233,6 +233,20 @@
 .taglist .tag::after { content: ""; position: absolute; inset: 0; }
 .taglist .n { font-size: var(--fs-1); color: var(--text-3); }
 
+/* 鎖定的標籤：降一階，不移走。鎖的只是表單的推薦選單，
+   它在語料庫裡仍然是一個正常的標籤，點進去照樣看得到那些卡。 */
+.taglist li.locked .tag { color: var(--text-3); }
+.lockmark { display: flex; margin-right: auto; color: var(--text-3); }
+.lockmark .icon { width: var(--sp-3); height: var(--sp-3); }
+
+/* 命中的字詞。底色用選取色而不是螢光黃：這一列的其他部分是灰階，
+   一塊高飽和的顏色會把整頁的視覺重心搶過去，而它只是「這裡有你要的字」。 */
+.rowtext mark {
+  background: var(--selected-bg);
+  color: inherit;
+  border-radius: 2px;
+}
+
 .searchpage { margin-bottom: var(--sp-6); }
 .searchpage input {
   width: 100%;
