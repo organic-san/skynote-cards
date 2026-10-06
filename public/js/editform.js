@@ -35,16 +35,18 @@
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();
     var d = new FormData(form);
+    var payload = { tags: d.get('tags'), url: d.get('url'), add_links: newLinks() };
+    // 碎片的表單只有一個大文字框。它對回哪個欄位由伺服器決定，這裡不自己知道。
+    if (d.has('quick_body')) {
+      payload.quick_body = d.get('quick_body');
+    } else {
+      payload.title = d.get('title');
+      payload.body = d.get('body');
+    }
     fetch('/c/' + id, {
       method: 'PUT',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        title: d.get('title'),
-        body: d.get('body'),
-        tags: d.get('tags'),
-        url: d.get('url'),
-        add_links: newLinks(),
-      }),
+      body: JSON.stringify(payload),
     })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {

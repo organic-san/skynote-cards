@@ -15,6 +15,14 @@
     <span class="lock num" id="lock" data-until="<%= it.lock_at %>"></span>
   </p>
 
+  <% if (it.single) { %>
+  <%/* 碎片只有一個大文字框，跟建立表單一致（見 new.eta 的 #singlefield）。
+       那段話存在 title 裡，但照欄位印進單行的標題欄，換行會被瀏覽器丟掉，
+       一存檔就壓成一行。欄位名也沿用 quick_body，反轉由伺服器做。 */%>
+  <label class="field">
+    <textarea name="quick_body" rows="10" spellcheck="false" required><%= it.single_text %></textarea>
+  </label>
+  <% } else { %>
   <label class="field">
     <span>標題</span>
     <input type="text" name="title" required autocomplete="off" value="<%= it.card.title %>">
@@ -24,6 +32,7 @@
     <span>內文</span>
     <textarea name="body" rows="14" spellcheck="false"><%= it.card.body %></textarea>
   </label>
+  <% } %>
 
   <%/* 標籤用空白分隔（不是逗號），推薦面板見 js/tags.js。 */%>
   <label class="field" id="tagsfield" data-tags='<%= JSON.stringify(it.tags_all) %>'>

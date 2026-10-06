@@ -661,6 +661,9 @@ export function registerRoutes(
           })),
           // R8：碎片不得有連結，所以整個區塊不出現（跟建立表單同一張表）。
           can_link: formSpec(card.type).links,
+          // 碎片只給一個大文字框，那段話從 fleetingText 拿（A.5 的欄位反轉）。
+          single: formSpec(card.type).single,
+          single_text: fleetingText(card),
           // links.js 讀的是一張「型別 → 可用關係」的表。這一頁型別是固定的，
           // 所以表裡只有一格。
           rel_table: { [card.type]: relOptions(card.type) },
@@ -676,8 +679,14 @@ export function registerRoutes(
     if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
 
     const b = (req.body ?? {}) as Record<string, unknown>;
+    // 碎片的編輯表單只送 quick_body，跟建立時同一條守門（見 normalizeDraft）：
+    // 只有那張表單會送它，別的型別帶了也不認，否則 title 會被整段洗掉。
+    const single =
+      b.quick_body !== undefined && index.typeOf(id) === 'fleeting'
+        ? fleetingDraft(String(b.quick_body))
+        : null;
     const result = updateCard(cards, id, {
-      title: b.title == null ? undefined : String(b.title),
+      title: single ? single.title : b.title == null ? undefined : String(b.title),
       tags:
         b.tags === undefined
           ? undefined
@@ -685,7 +694,7 @@ export function registerRoutes(
             ? b.tags.map((t) => String(t))
             : splitTags(String(b.tags)),
       url: b.url === undefined ? undefined : String(b.url ?? ''),
-      body: b.body === undefined ? undefined : String(b.body),
+      body: single ? single.body : b.body === undefined ? undefined : String(b.body),
       // R7：只有「要新增的」，沒有「完整的 links」——刪除在這條路徑上
       // 沒有表示法，見 service 的 UpdatePatch。
       addLinks: Array.isArray(b.add_links)

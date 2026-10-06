@@ -2063,6 +2063,37 @@ describe('碎片沒有標題', () => {
     assert.ok(!pane.includes('<h1'), '來源面板也不該把碎片印成標題');
     assert.ok(pane.includes('值得再想的一句'), '那段話要在面板的內文裡');
   });
+
+  test('編輯頁只有一個文字框，換行存得回去', async () => {
+    // 那段話照欄位印進單行的標題欄，換行會被瀏覽器丟掉，一存檔就壓成一行。
+    const h = await fresh();
+    const id = await createCard(h, { type: 'fleeting', title: '第一行\n第二行', body: '' });
+    const page = main(await h.app.fastify.inject(`/c/${id}/edit`));
+
+    assert.ok(!page.includes('name="title"'), '碎片的編輯頁沒有標題欄');
+    assert.match(page, /<textarea name="quick_body"[^>]*>第一行\n第二行<\/textarea>/);
+
+    const put = (target: string, payload: Record<string, unknown>) =>
+      h.app.fastify.inject({
+        method: 'PUT',
+        url: `/c/${target}`,
+        payload,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    assert.equal((await put(id, { quick_body: '第一行\n第二行\n第三行' })).statusCode, 200);
+    const saved = readCard(h.corpus, id);
+    assert.equal(saved.type, 'fleeting');
+    assert.equal(fleetingText(saved), '第一行\n第二行\n第三行');
+    assert.equal(saved.body, '');
+
+    // 別的型別帶了 quick_body 也不認，否則標題會被整段洗掉。
+    const t = await createCard(h, { type: 'thinking', title: '有名字的', body: '內文' });
+    assert.equal((await put(t, { quick_body: '不該生效' })).statusCode, 200);
+    const untouched = readCard(h.corpus, t);
+    assert.equal(untouched.title, '有名字的');
+    assert.equal(untouched.body.trim(), '內文');
+  });
 });
 
 describe('標題沒有長度上限', () => {
