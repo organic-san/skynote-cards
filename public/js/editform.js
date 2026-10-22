@@ -1,6 +1,6 @@
 // 編輯表單：送出、新增連結、刪除，以及反芻期的倒數。
 //
-// 這一頁的三件事都繞著同一個事實轉——這張卡還在反芻期內。
+// 這一頁的三件事都繞著同一個事實轉——這張卡還改得動（反芻期內；產出是被引用之前）。
 // 送出走 PUT，連結只送「要新增的那幾條」（R7：只增不減，所以請求裡
 // 根本沒有刪除的表示法），刪除走 DELETE（R9）。
 
@@ -35,7 +35,8 @@
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();
     var d = new FormData(form);
-    var payload = { tags: d.get('tags'), url: d.get('url'), add_links: newLinks() };
+    // rev：載入時這張卡的內容。別處改過就回 409，這一頁不會無聲蓋掉那次修改。
+    var payload = { tags: d.get('tags'), url: d.get('url'), add_links: newLinks(), rev: form.dataset.rev };
     // 碎片的表單只有一個大文字框。它對回哪個欄位由伺服器決定，這裡不自己知道。
     if (d.has('quick_body')) {
       payload.quick_body = d.get('quick_body');
@@ -50,6 +51,8 @@
     })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
+        // 409 也走這裡：字還在表單與草稿裡，重新載入時草稿會自動還原（見 draft.js），
+        // 要留哪一份由使用者看過兩邊之後決定。
         if (!res.ok) { fail(res.j.errors || ['沒有存成功']); return; }
         // 存進去了，草稿就沒有意義了。這一頁沒有導向可以掛 ?d=，所以自己清。
         if (window.skynoteDraft) window.skynoteDraft.clear(form.dataset.draftScope);
@@ -63,7 +66,7 @@
   var del = document.getElementById('deletecard');
   if (del) {
     del.addEventListener('click', function () {
-      if (!window.confirm('刪除這張卡片嗎？卡片只有在建立之後的一定時間內可以刪除。')) return;
+      if (!window.confirm('刪除這張卡片嗎？')) return;
       fetch('/c/' + del.dataset.id, { method: 'DELETE', headers: { accept: 'application/json' } })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {

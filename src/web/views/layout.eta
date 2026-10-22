@@ -54,40 +54,59 @@
     <% }) %>
   </nav>
 
-  <%/* U10：「追加外部資料」與旁邊兩項同格式。
+  <%/* U10：「追加外部資料」與旁邊幾項同格式。
        先前刻意做成不一致（理由是它是動作、另兩個是去處），那個決定被撤回——
        實測壓力偏重，而且它已經在分隔線下方的動作與工具區，
-       位置本身足以表達它不是去處。 */%>
-  <%/* U10：動作與工具區項目的格式一致。 */%>
+       位置本身足以表達它不是去處。
+       產出沒有側欄入口：沒有來處的產出從隨手記「展開」建立（v3 §4.3）。 */%>
   <nav class="drawernav">
     <a href="/new?type=original" class="<%= it.nav === 'source' ? 'on' : '' %>">
       <%~ include('icon', { name: 'plus' }) %><span>追加外部資料</span>
     </a>
-    <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">
-      <%~ include('icon', { name: 'tag' }) %><span>標籤</span>
-    </a>
     <a href="/search" class="<%= it.nav === 'search' ? 'on' : '' %>">
       <%~ include('icon', { name: 'search' }) %><span>搜尋</span>
     </a>
+    <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">
+      <%~ include('icon', { name: 'tag' }) %><span>標籤</span>
+    </a>
+    <%/* v3 §7：取回語料庫的最新版本。它有副作用，所以是一顆 POST 的按鈕，
+         不是連結；外觀跟旁邊的去處一樣。 */%>
+    <form method="post" action="/update">
+      <button type="submit" class="<%= it.nav === 'update' ? 'on' : '' %>">
+        <%~ include('icon', { name: 'refresh' }) %><span>更新</span>
+      </button>
+    </form>
   </nav>
 
-  <%/* U11：卡片索引。它的用途是**建立連結時的名稱參照**，不是導覽——
-       所以它屬於下半的工具區，不與上半的工作狀態競爭。
-       加一行小標讓它的職責在畫面上可讀，字級小一級，顏色跟其他項目一致。 */%>
-  <%/* U11：卡片索引，供名稱與關聯參照。 */%>
-  <div class="cardindex">
-    <p class="indexhead">卡片索引</p>
+  <%/* v3 §5：側欄下半跟著頁面換。
+       文章一覽（首頁、搜尋、各份清單）列最近的標籤：在一覽裡找方向時，主題是入口。
+       卡片頁與編輯介面（編輯頁、建立表單）列最近的卡片：寫連結要指向誰，
+       看一眼名字就知道。兩份都只列名稱、不列數量——這一欄要安靜。 */%>
+  <% const recent = it.recent || []; const sidetags = it.sidetags || []; %>
+  <% if (recent.length) { %>
+  <div class="sidecards">
+    <p class="indexhead">最近的卡片</p>
     <ul>
-      <% const recent = it.recent || []; recent.forEach(function (c) { %>
-      <%/* 色點而不是型別名：這一欄很窄，標題本來就在截斷邊緣，
-           再塞兩個字進去等於把標題再砍掉兩個字。U1 說顏色不得單獨承擔
-           型別資訊——在這裡它沒有單獨承擔，點進去就看得到型別名。 */%>
-      <%/* 側欄空間緊湊，以色點標示型別。 */%>
+      <% recent.forEach(function (c) { %>
+      <%/* 色點而不是型別名：這一欄很窄，標題本來就在截斷邊緣，再塞兩個字進去
+           等於把標題再砍掉兩個字。U1 說顏色不得單獨承擔型別資訊——
+           在這裡它沒有單獨承擔，點進去就看得到型別名。 */%>
       <li><a href="/c/<%= c.id %>" class="<%= it.activeId === c.id ? 'on' : '' %>"><span
         class="dot dot-<%= c.type %>"></span><span class="indextitle"><%= c.title %></span></a></li>
       <% }) %>
     </ul>
   </div>
+  <% } else if (sidetags.length) { %>
+  <div class="sidetags">
+    <p class="indexhead">最近的標籤</p>
+    <ul>
+      <% sidetags.forEach(function (t) { %>
+      <li><a href="/?tag=<%= encodeURIComponent(t) %>" class="<%= it.tag === t ? 'on' : '' %>"><span
+        class="indextitle">#<%= t %></span></a></li>
+      <% }) %>
+    </ul>
+  </div>
+  <% } %>
 </aside>
 
 <main>
@@ -109,9 +128,9 @@
   <% }) %>
 </div>
 <% } else { %>
-<%/* 其他地方：隨手記。兩個欄位加一個送出鍵，沒有型別選單。
-      不填標題就是碎片——那個判斷你在寫的時候本來就會做。 */%>
-<%/* 隨手記浮動區塊：預設為碎片，填寫標題則為思考。 */%>
+<%/* 其他地方：隨手記。一個文字框加一個送出鍵，只寫碎片（v3 §4.3）。
+      要記成思考或產出就按「展開」，在完整表單上選：思考需要標籤（R11），
+      標籤欄在那裡。 */%>
 <%
   /* ?tag= 篩選生效時，隨手記記的就是那一堆底下的東西。槽名也跟著分開：
      切換標籤等於換一張表單，兩份草稿不該互相覆蓋。 */
@@ -138,15 +157,9 @@
          驗證失敗那條路不會經過導向，草稿因此自動留著。 */%>
     <input type="hidden" name="draft_scope" value="<%= quickScope %>">
     <% if (it.tag) { %><input type="hidden" name="tags" value="<%= it.tag %>"><% } %>
-    <%/* 先寫那句話，標題擺後面。你總是先有東西要記，
-         「要不要給它一個名字」是寫完之後才做的判斷——欄位的順序照著那個順序。 */%>
     <textarea name="body" rows="5" spellcheck="false" placeholder="現在想到什麼" autofocus></textarea>
-    <input type="text" name="title" autocomplete="off" placeholder="標題（可不填）">
-    <%/* U18：把已經做完的判斷顯示出來。這不是多一次決策——
-         生死線（不填標題就是碎片）不動，只是讓結果在送出前可見。
-         寫在按鈕上而不是按鈕上方：同一件事講兩次就是兩個名字。 */%>
-    <%/* U18：動態顯示將存為碎片或思考。 */%>
-    <button type="submit" class="primary" id="quicksubmit">記為<span>碎片</span></button>
+    <%/* U18（「將存為什麼」）撤回：只會存成碎片，沒有要顯示的判斷。 */%>
+    <button type="submit" class="primary" id="quicksubmit">記為碎片</button>
   </form>
 </div>
 <% } %>

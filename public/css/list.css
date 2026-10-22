@@ -259,4 +259,29 @@
   border-radius: var(--radius-field);
   background: var(--surface-raised);
 }
+
+/* 側欄「更新」的結果頁（v3 §7）。一句結論在上，git 與重建報告的細節在下。 */
+.updatesummary { margin: 0 0 var(--sp-6); }
+.updatepart { margin: 0 0 var(--sp-6); font-size: var(--fs-1); color: var(--text-2); }
+.updatehead { margin: var(--sp-4) 0 var(--sp-1); color: var(--text-3); }
+.updatehead:first-child { margin-top: 0; }
+.updateline { margin: 0; font-variant-numeric: tabular-nums; }
+.updatelog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.updatelog li { padding: 2px 0; }
+/* git 的原話。它是失敗的說明，所以用錯誤訊息那條線（見 base.css 的 .errors）。 */
+.updatedetail {
+  margin: 0 0 var(--sp-6);
+  padding: var(--sp-2) var(--sp-4);
+  border-left: 2px solid var(--alert);
+  font-size: var(--fs-1);
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 }

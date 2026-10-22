@@ -12,7 +12,6 @@
   var body = document.querySelector('.body[data-md]') || document.querySelector('.body');
   if (!btn || !body) return;
 
-  var md = body.dataset.md || '';
   var back = null;
 
   function said() {
@@ -41,6 +40,8 @@
   }
 
   btn.addEventListener('click', function () {
+    // 按下去的當下才讀：勾選之後 data-md 會被換成新的原文（見 js/tasks.js）。
+    var md = body.dataset.md || '';
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(md).then(said, function () {
         if (legacy(md)) said();

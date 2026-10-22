@@ -38,7 +38,7 @@ export function feed(
   return { rows, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 
-/** 每一頁的側欄都帶著這一份。 */
+/** 卡片頁與編輯介面的側欄帶著這一份（v3 §5）。 */
 export function recent(index: CardIndex): CardRowWithTags[] {
   return index.listCards({ limit: RECENT_LIMIT, offset: 0 }).rows;
 }
@@ -99,7 +99,8 @@ export function decorate(
     if (r.type === 'restatement') {
       return { ...r, inbound: 0, restatements: 0, about: index.aboutTarget(r.id) };
     }
-    if (r.type === 'thinking') {
+    // 產出跟思考一樣報兩個方向的連結數：被引用幾次，就是它被拿去用了幾次。
+    if (r.type === 'thinking' || r.type === 'output') {
       return {
         ...r,
         inbound: index.inboundBreakdown(r.id).total,

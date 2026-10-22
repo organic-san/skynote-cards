@@ -83,11 +83,20 @@ export interface NewCardPayload {
   links?: { rel: string; to: string }[];
 }
 
+/**
+ * R11：thinking 至少要有一個標籤。多數測試在意的不是標籤，所以沒帶的時候
+ * 補這一個；要測標籤本身的測試會自己帶（帶空陣列就是真的沒有標籤）。
+ */
+export const DEFAULT_THINKING_TAG = '測試';
+
 export async function postCard(h: Harness, payload: NewCardPayload) {
   const res = await h.app.fastify.inject({
     method: 'POST',
     url: '/new',
-    payload,
+    payload:
+      payload.type === 'thinking' && payload.tags === undefined
+        ? { ...payload, tags: [DEFAULT_THINKING_TAG] }
+        : payload,
     headers: { 'content-type': 'application/json', accept: 'application/json' },
   });
   return res;

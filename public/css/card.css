@@ -21,14 +21,20 @@
 .tags { margin: 0 0 var(--sp-5); display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
 /*
-  內文的複製鈕。
+  內文的複製鈕與下載鈕（v3 §6.1）。
 
   置於時間與 meta 行末（.cardmeta），每張卡片皆有固定錨點，避免覆蓋在第一行內文上造成閱讀與選取衝突。
-  交出去的是 data-md 上的原始 Markdown（見 routes.ts 的 body_md 與 js/copy.js）。
+  交出去的是 data-md 上的原始 Markdown（見 routes.ts 的 body_md、js/copy.js 與 js/download.js）。
+  兩顆一起推到行末，所以 margin-left: auto 給外面那一層，不給按鈕——
+  給按鈕的話兩顆會把剩下的寬度平分，中間空出一大段。
 */
-.copybtn {
+.cardtools {
   margin-left: auto;
   align-self: center;
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+.toolbtn {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
@@ -42,15 +48,15 @@
   opacity: .5;
   cursor: pointer;
 }
-.copybtn:hover, .copybtn:focus-visible { opacity: 1; color: var(--text-2); background: var(--hover-bg); }
-.copybtn .icon { width: var(--sp-4); height: var(--sp-4); }
+.toolbtn:hover, .toolbtn:focus-visible { opacity: 1; color: var(--text-2); background: var(--hover-bg); }
+.toolbtn .icon { width: var(--sp-4); height: var(--sp-4); }
 .copybtn .icon-check, .copybtn .copysaid { display: none; }
 .copybtn.done { opacity: 1; color: var(--text); }
 .copybtn.done .icon-copy { display: none; }
 .copybtn.done .icon-check, .copybtn.done .copysaid { display: inline; }
 
-/* 沒有 JS 就沒有剪貼簿，按鈕不該出現。 */
-html:not(.js) .copybtn { display: none; }
+/* 沒有 JS 就沒有剪貼簿、也產生不了檔案，按鈕不該出現。 */
+html:not(.js) .toolbtn { display: none; }
 
 .body {
   font-family: var(--font-doc);
@@ -74,6 +80,19 @@ html:not(.js) .copybtn { display: none; }
 .body pre { overflow-x: auto; }
 .body a { text-decoration: underline; text-underline-offset: 2px; }
 .body :target { background: var(--hover-bg); }
+
+/*
+  待辦勾選（v3 §2）。核取方塊取代清單記號的位置：項目照樣縮排，
+  方塊往左退進原本畫圓點的那一格。顏色走文字的灰階——U27 說畫面上的彩色
+  只有型別色，瀏覽器預設的藍色核取方塊會是第五種顏色。
+*/
+.body li.task { list-style: none; }
+.taskbox {
+  margin: 0 var(--sp-2) 0 calc(var(--sp-5) * -1);
+  vertical-align: middle;
+  accent-color: var(--text-2);
+}
+.taskbox:enabled { cursor: pointer; }
 
 /* ---------------------------------------------------------- 關聯區塊 */
 

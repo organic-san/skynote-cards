@@ -12,8 +12,10 @@ import { lockedTags } from '../store/tags.ts';
 import { GitBackup } from '../store/backup.ts';
 import { isValidIdFormat } from '../domain/id.ts';
 import { embedFor } from './embed.ts';
-import { renderMarkdown, renderPage, safeHref, type PageOptions } from './render.ts';
+import { renderMarkdown, renderPage, safeHref, taskMarks, type PageOptions } from './render.ts';
 import {
+  EXPAND_TITLE,
+  EXPAND_TYPES,
   FORM_SPEC_TABLE,
   actionsFor,
   formTitle,
@@ -28,6 +30,7 @@ import {
   stampFull,
   stampShort,
   toItem,
+  updateView,
 } from './present.ts';
 import {
   CARD_TYPES,
@@ -39,16 +42,19 @@ import {
   type CardDraft,
   type CardType,
 } from '../domain/types.ts';
-import { fleetingDraft, fleetingText, quickDraft } from '../domain/card.ts';
+import { cardText, fleetingDraft, fleetingText } from '../domain/card.ts';
 import { LOCKED_MESSAGE } from '../domain/rules.ts';
 import {
+  contentRev,
   createCard,
   deleteCard,
   ruminationFor,
+  toggleTask,
   updateCard,
   type CardServiceDeps,
 } from '../service/cards.ts';
 import * as lists from '../service/lists.ts';
+import { updateCorpus } from '../service/update.ts';
 
 /** HTTP 這一層：解析請求、呼叫下面、選一份模板。業務判斷不放在這裡。 */
 
@@ -204,10 +210,13 @@ export function registerRoutes(
     reply.code(code).type('text/html; charset=utf-8').send(body);
 
   /**
-   * 每一頁的側欄都帶著工作狀態的四份清單與最近的卡片，所以統一從這裡出去。
-   * 清單的名字與去處在這裡定義一次，模板只負責 forEach。
+   * 每一頁的側欄都帶著工作狀態的四份清單，下半再依頁面列最近的標籤或卡片，
+   * 所以統一從這裡出去。清單的名字與去處在這裡定義一次，模板只負責 forEach。
    */
   const shell = (view: string, data: Record<string, unknown>, opts: PageOptions) => {
+    // v3 §5：在一覽裡找方向的時候，主題（標籤）是入口；讀卡、寫卡的時候，
+    // 要連到哪一張才是問題——看一眼名字就知道，不必每次都打字搜尋。
+    const sideCards = opts.side === 'cards';
     return renderPage(view, data, {
       ...opts,
       // U9：不掛數量。這些清單實務上不會歸零，數字提供不了「還剩多少」的訊號，
@@ -221,7 +230,13 @@ export function registerRoutes(
         { nav: 'fleeting', href: '/fleeting', name: '雜筆' },
         { nav: 'settling', href: '/settling', name: '沉澱' },
       ],
-      recent: lists.recent(index).map((r) => ({ id: r.id, title: r.title, type: r.type })),
+      // 標籤跟表單的推薦是同一份：最近使用排前面、不列鎖定的。
+      sidetags: sideCards
+        ? undefined
+        : lists.tagSuggestions(index, lockedTags(config.corpusPath)).map((t) => t.tag),
+      recent: sideCards
+        ? lists.recent(index).map((r) => ({ id: r.id, title: r.title, type: r.type }))
+        : undefined,
     });
   };
 
@@ -282,6 +297,12 @@ export function registerRoutes(
       draftScope?: string;
       /** 順便清掉的另一格（隨手記按「展開」時，那一格已經沒有用了）。 */
       draftClear?: string;
+      /**
+       * 隨手記「展開」來的（v3 §4.3）：型別在思考與產出之間選，不鎖。
+       * 表單帶著 entry=expand 送出，驗證失敗退回時這個選擇照樣留著——
+       * 思考因為沒有標籤被擋下來時，改成產出正是一條合理的出路。
+       */
+      expand?: boolean;
     } = {},
   ) => {
     const merged = {
@@ -331,21 +352,23 @@ export function registerRoutes(
               title: opts.source.title,
               tags: opts.source.tags,
               date: stampShort(opts.source.created),
-              body_html: renderMarkdown(
-                opts.source.type === 'fleeting'
-                  ? fleetingText(opts.source)
-                  : opts.source.body,
-              ),
+              body_html: renderMarkdown(cardText(opts.source)),
               provenance: opts.source.provenance === 'default' ? null : opts.source.provenance,
             }
           : null,
         // U14：說出這是什麼動作，而且在送出**前**就看得到。
-        action: formTitle(values.type ?? '', values.rel ?? '', opts.source ?? null),
-        types: CARD_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })),
+        action: opts.expand
+          ? EXPAND_TITLE
+          : formTitle(values.type ?? '', values.rel ?? '', opts.source ?? null),
+        expand: opts.expand ?? false,
+        types: (opts.expand ? EXPAND_TYPES : CARD_TYPES).map((t) => ({
+          value: t,
+          label: TYPE_LABELS[t],
+        })),
         // 型別由入口決定時就鎖住：那些入口同時預填了型別與那條連結，
         // 改了型別，預填的關係多半就不再合法，表單會變成一張送不出去的表，
-        // 而畫面上看不出為什麼。只有裸的 /new 才需要選。
-        locked: (values.type ?? '') !== '',
+        // 而畫面上看不出為什麼。要選的只有裸的 /new 與隨手記的展開。
+        locked: !opts.expand && (values.type ?? '') !== '',
         typeLabel: TYPE_LABELS[(values.type ?? '') as CardType] ?? '',
         // 每一列各自依自己的目標收窄；沒有目標的用整組。
         rels: relOptions(values.type ?? ''),
@@ -358,7 +381,8 @@ export function registerRoutes(
         // 標籤推薦：直接嵌在頁面裡，不開端點——標籤表很小，沒有網路往返的必要。
         tags_all: lists.tagSuggestions(index, lockedTags(config.corpusPath)),
       },
-      { title: '新增', fab: false },
+      // 寫卡的時候側欄列最近的卡片：連結要指向誰，看一眼名字就知道（v3 §5）。
+      { title: '新增', fab: false, side: 'cards' },
     );
   };
 
@@ -431,6 +455,8 @@ export function registerRoutes(
     */
     const draftScope = safeScope((req.body as Record<string, unknown> | undefined)?.draft_scope);
     const source = isValidIdFormat(replyTo) ? index.getCard(replyTo) : null;
+    // 隨手記展開來的表單退回時，型別照樣是二選一（見 newFormPage 的 expand）。
+    const expand = (req.body as Record<string, unknown> | undefined)?.entry === 'expand';
 
     const reject = (errors: string[]) => {
       if (wantsJson(req)) return reply.code(400).send({ ok: false, errors });
@@ -451,7 +477,7 @@ export function registerRoutes(
             const t = index.getCard(l.to);
             return { ...l, title: t?.title ?? null, targetType: t?.type ?? null };
           }),
-          { errors, source, replyTo: source?.id, draftScope: draftScope || 'new' },
+          { errors, source, replyTo: source?.id, draftScope: draftScope || 'new', expand },
         ),
         400,
       );
@@ -476,10 +502,12 @@ export function registerRoutes(
   /**
    * 右下浮動按鈕：隨手記。
    *
-   * 兩個欄位加一個送出鍵，沒有型別選單、沒有標籤、沒有連結。
-   * 型別由標題決定（見 quickDraft）。這條路徑刻意跟 /new 分開——
-   * 把外面的東西收進來，和把腦袋裡的東西倒出來，是截然不同的兩種動機，
-   * 共用一顆按鈕會讓兩邊都變鈍。
+   * 一個文字框加一個送出鍵，**只寫碎片**（v3 §4.3）。沒有型別選單、沒有標籤欄、
+   * 沒有連結。要記成思考或產出就按「展開」進完整表單——R11 要的標籤欄在那裡，
+   * 所以 R11 不必在這裡另外處理，入口的意圖也只有一個。
+   *
+   * 這條路徑刻意跟 /new 分開：把外面的東西收進來，和把腦袋裡的東西倒出來，
+   * 是截然不同的兩種動機，共用一顆按鈕會讓兩邊都變鈍。
    */
   app.post('/quick', async (req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
@@ -494,29 +522,26 @@ export function registerRoutes(
     const draftScope = safeScope(b.draft_scope);
 
     /*
-      隨手記展開為完整表單（鎖定 thinking 型別）。
-      走 POST 傳遞已輸入內容，避免草稿出現在網址或日誌中。
+      隨手記展開為完整表單，打到一半的字帶進內文。型別在思考與產出之間選，
+      預設思考（EXPAND_TYPES）。走 POST 傳遞已輸入內容，避免草稿出現在網址或日誌中。
+
+      草稿槽沿用 new:thinking:expand 這個名字：它認的是「展開」這個入口，
+      不是型別——改名只會讓既有的草稿找不到。
     */
     if (b.expand !== undefined) {
       return html(
         reply,
         newFormPage(
-          {
-            type: 'thinking',
-            title: String(b.title ?? ''),
-            body: String(b.body ?? ''),
-            tags: tags.join(' '),
-          },
+          { type: 'thinking', body: String(b.body ?? ''), tags: tags.join(' ') },
           [],
-          { draftScope: 'new:thinking:expand', draftClear: draftScope },
+          { draftScope: 'new:thinking:expand', draftClear: draftScope, expand: true },
         ),
       );
     }
 
-    const picked = quickDraft(String(b.title ?? ''), String(b.body ?? ''));
-
     const result = createCard(cards, {
-      ...picked,
+      type: 'fleeting',
+      ...fleetingDraft(String(b.body ?? '')),
       tags,
       url: null,
       provenance: null,
@@ -570,10 +595,7 @@ export function registerRoutes(
       看不出來，但原文照印就會漏出去。這裡只治呈現，底層那個不一致
       在 domain/service 層，不屬於本版範圍。
     */
-    const body_md = (card.type === 'fleeting' ? fleetingText(card) : card.body).replace(
-      /\s+$/,
-      '',
-    );
+    const body_md = cardText(card).replace(/\s+$/, '');
 
     const upstream = flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out');
     const downstream = flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in');
@@ -604,9 +626,12 @@ export function registerRoutes(
             data-md 上，代價是內文在頁面裡出現兩次。以卡片的實際量級
             （幾 KB）換一個「複製出來跟你當初打的一模一樣」，划得來。
 
-            碎片走 fleetingText：它那段話存在 title 裡（A.5 的欄位反轉）。
+            碎片走 cardText：它那段話存在 title 裡（A.5 的欄位反轉）。
           */
           body_md,
+          // 勾選（R14）帶回來比對用：頁面載入之後別處改過，序號可能已經指到別的項目。
+          // 索引與檔案算得出同一個值（見 service 的 contentRev）。
+          rev: contentRev(card),
           upstream,
           downstream,
           has_toggles,
@@ -618,12 +643,41 @@ export function registerRoutes(
           from: from ? { id: from.id, title: from.title } : null,
           editable: rumination.open,
         },
-        { title: card.title, fab: { actions: actionsFor(card.type, id) }, activeId: id },
+        { title: card.title, fab: { actions: actionsFor(card.type, id) }, side: 'cards', activeId: id },
       ),
     );
   });
 
-  // ---- 五分鐘時窗內的修改
+  /**
+   * R14：切換一個勾選標記。不算修改，所以不問反芻期也不問定案。
+   *
+   * 第 k 個標記在原文裡的哪裡，由這裡用解析器算（render.ts 的 taskMarks）——
+   * 跟畫出核取方塊的是同一份解析，序號因此對得上。service 不能碰 render，
+   * 所以交下去的是位置。原文讀檔案而不是索引：寫回去的是檔案。
+   */
+  app.post('/c/:id/tasks/:k', async (req, reply) => {
+    const { id, k } = req.params as { id: string; k: string };
+    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
+
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const n = Number(k);
+    if (!Number.isInteger(n) || n < 0 || typeof b.checked !== 'boolean' || typeof b.rev !== 'string') {
+      return reply.code(400).send({ ok: false, errors: ['請求格式不對'] });
+    }
+
+    const at = taskMarks(cardText(readCard(config.corpusPath, id)))[n] ?? -1;
+    const result = toggleTask(cards, id, { at, checked: b.checked, rev: b.rev });
+    if (!result.ok) {
+      return reply.code(result.reason === 'conflict' ? 409 : 400).send({
+        ok: false,
+        errors: result.errors,
+      });
+    }
+    // 新的原文一起交回去：複製與下載讀的是頁面上那一份，不更新就會交出勾選前的版本。
+    return reply.send({ ok: true, rev: result.rev, md: cardText(result.card).replace(/\s+$/, '') });
+  });
+
+  // ---- 反芻期內的修改（產出沒有反芻期，被引用之前都可以，R15）
 
   app.get('/c/:id/edit', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -646,7 +700,11 @@ export function registerRoutes(
           card,
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
           created_display: stampFull(card.created),
-          lock_at: rumination.until,
+          // 沒有期限（R15）就沒有倒數，改成一行說明。
+          lock_at: rumination.until ?? '',
+          no_window: rumination.until === null,
+          // 送出時帶回來：兩台裝置都開著這一頁時，舊的那頁一存就會蓋掉另一頁的修改。
+          rev: contentRev(card),
           // 編輯頁一律是伺服器預填的，所以草稿不靜默覆蓋（見 draft.js）。
           draftScope: `edit:${card.id}`,
           tags_line: card.tags.join(' '),
@@ -669,7 +727,7 @@ export function registerRoutes(
           rel_table: { [card.type]: relOptions(card.type) },
           default_rels: DEFAULT_REL,
         },
-        { title: 'edit', fab: false },
+        { title: 'edit', fab: false, side: 'cards', activeId: card.id },
       ),
     );
   });
@@ -700,13 +758,12 @@ export function registerRoutes(
       addLinks: Array.isArray(b.add_links)
         ? (b.add_links as { rel?: string; to?: string }[])
         : undefined,
+      rev: typeof b.rev === 'string' ? b.rev : undefined,
     });
 
     if (!result.ok) {
-      return reply.code(result.reason === 'locked' ? 403 : 400).send({
-        ok: false,
-        errors: result.errors,
-      });
+      const code = { locked: 403, conflict: 409, invalid: 400 }[result.reason];
+      return reply.code(code).send({ ok: false, errors: result.errors });
     }
     return reply.send({ ok: true, id, revised: result.card.revised });
   });
@@ -732,9 +789,10 @@ export function registerRoutes(
 
   app.get('/tags', async (req, reply) => {
     const raw = (req.query as Record<string, string | undefined>).sort;
+    // v3 §6.2：預設是最近使用——這一頁最常拿來看「最近在想什麼」。
     const sort = (TAG_SORTS as readonly string[]).includes(raw ?? '')
       ? (raw as TagSort)
-      : 'count';
+      : 'recent';
     return html(
       reply,
       shell(
@@ -743,9 +801,10 @@ export function registerRoutes(
           tags: lists.tagCounts(index, { sort, locked: lockedTags(config.corpusPath) }),
           sort,
           // 三種排法對應三個問題，順序由「最常問的排前面」決定，不按字母。
+          // 第一個就是預設，所以它的連結不帶 ?sort=（見 tags.eta）。
           sorts: [
-            { value: 'count', label: '數量' },
             { value: 'recent', label: '最近' },
+            { value: 'count', label: '數量' },
             { value: 'name', label: '名稱' },
           ],
         },
@@ -844,6 +903,17 @@ export function registerRoutes(
   });
 
   // ---- 維運
+
+  /**
+   * v3 §7：側欄的「更新」。取回語料庫的最新版本，再重建索引。
+   *
+   * 是 POST 不是連結：它有副作用（commit、pull、push、重建），GET 不該有。
+   * 會等 git 做完才回應，結果直接畫在這一頁——使用者按下去就是在等這個答案。
+   */
+  app.post('/update', async (_req, reply) => {
+    const outcome = await updateCorpus(git, index);
+    return html(reply, shell('update', updateView(outcome), { title: '更新', nav: 'update' }));
+  });
 
   app.post('/_reindex', async (_req, reply) => reply.send(index.rebuild()));
 

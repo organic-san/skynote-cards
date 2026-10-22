@@ -1,6 +1,7 @@
 import { HIT_CLOSE, HIT_OPEN, desegment, type ThreadNode } from '../store/index/index.ts';
 import type { Rumination } from '../domain/rules.ts';
 import type { ListRow } from '../service/lists.ts';
+import type { UpdateOutcome } from '../service/update.ts';
 import {
   CARD_ACTIONS,
   REL_LABELS,
@@ -119,6 +120,11 @@ const ITEM_SHAPES: Record<CardType, Shape> = {
   }),
   /** 思考：標題加內文前兩行，以及兩個方向的連結數。 */
   thinking: (row) => ({
+    excerpt: excerpt(row.body),
+    meta: [`出向 ${row.link_count} · 入向 ${row.inbound}`],
+  }),
+  /** 產出：跟思考同一個形狀。入向就是它被拿去用了幾次。 */
+  output: (row) => ({
     excerpt: excerpt(row.body),
     meta: [`出向 ${row.link_count} · 入向 ${row.inbound}`],
   }),
@@ -348,10 +354,12 @@ export interface Stamp {
  * 已定案的卡片什麼都不顯示。那是絕大多數卡片的狀態，標出來等於在每一張卡上
  * 重複一句沒有訊息量的話；有訊息量的是「這張還改得動，還剩多久」。
  * U12 原本給的「已定案」那個狀態因此被拿掉。
+ *
+ * 沒有期限的（R15，產出）也不顯示：它被引用之前一直改得動，沒有「還剩多久」可說。
  */
 export interface RuminationView {
   open: boolean;
-  /** 窗口結束的 UTC ISO。已定案時是空字串。 */
+  /** 窗口結束的 UTC ISO。已定案、或沒有期限時是空字串。 */
   until: string;
   /** 伺服器算的保底文字。 */
   text: string;
@@ -361,6 +369,7 @@ export function ruminationView(r: Rumination, now = Date.now()): RuminationView 
   // 定案不標出來：那是絕大多數卡片的狀態，標了等於在每一張卡上重複一句
   // 沒有訊息量的話。有話要說的是還改得動的那少數。
   if (!r.open) return { open: false, until: '', text: '' };
+  if (r.until === null) return { open: true, until: '', text: '' };
   return { open: true, until: r.until, text: remainText(Date.parse(r.until) - now) };
 }
 
@@ -435,21 +444,31 @@ const FORM_SPECS: Record<CardType, FormSpec> = {
   original: { single: false, url: true, source: true, links: true },
   restatement: { single: false, url: false, source: false, links: true },
   thinking: { single: false, url: false, source: false, links: true },
+  output: { single: false, url: false, source: false, links: true },
   fleeting: { single: true, url: false, source: false, links: false },
 };
 
 /**
  * 型別由入口決定、又沒有來源卡的時候，標題就說那個入口在做什麼。
  *
- * 只列真的有入口的型別：`original` 來自側欄的「追加外部資料」，
- * `thinking` 來自隨手記的「展開」。`restatement` 一定帶著一條 about
- * 指回原文，所以它走的是下面那條有來源的路；`fleeting` 根本不用這張表單。
- * 沒有專屬入口的型別退回通稱——與其編一個名字，不如不編。
+ * 只列真的有入口的型別：`original` 來自側欄的「追加外部資料」。
+ * 隨手記的「展開」有自己的標題（EXPAND_TITLE），因為那裡的型別是二選一。
+ * `restatement` 一定帶著一條 about 指回原文，所以它走的是下面那條有來源的路；
+ * `fleeting` 根本不用這張表單。沒有專屬入口的型別退回通稱——與其編一個名字，不如不編。
  */
 const ENTRY_TITLE: Partial<Record<CardType, string>> = {
   original: '追加外部資料',
-  thinking: '展開成思考',
 };
+
+/**
+ * 隨手記「展開」之後的完整表單（v3 §4.3）：思考或產出，二選一，預設思考。
+ *
+ * 兩型的欄位一樣，差別只在錯的時候怎麼修——「這是主張還是成品」是寫到需要展開
+ * 的時候才判斷得出來的事，所以在完整表單上選，不在浮動小框裡問。
+ * 沒有來處的產出也從這裡建立，側欄不另設入口。
+ */
+export const EXPAND_TYPES: readonly CardType[] = ['thinking', 'output'];
+export const EXPAND_TITLE = '展開成思考或產出';
 
 /**
  * U14：表單頂端的一行，說這是什麼動作。
@@ -510,6 +529,7 @@ export function actionsFor(type: string, id: string) {
  *
  * 另外兩型維持原樣：`restatement` 的 about 與 `original` 的 part-of
  * 是那一型幾乎唯一會做的事，沒有「還沒想好」的空間。`fleeting` 不能有連結（R2）。
+ * `output` 手動加的那一列幾乎都是取材，也就是 `related`。
  *
  * **只作用於手動加的空白列。** FAB 帶出來的固定列不走這裡——
  * 那條的關係是入口決定的，意圖已經很明確。
@@ -518,6 +538,7 @@ export const DEFAULT_REL: Partial<Record<CardType, Rel>> = {
   original: 'part-of',
   restatement: 'about',
   thinking: 'related',
+  output: 'related',
 };
 
 export interface RelOption {
@@ -545,4 +566,71 @@ export function relOptions(type: string, targetType?: string | null): RelOption[
       label: REL_LABELS[s.rel],
       targets: [...s.targets],
     }));
+}
+
+// ---------------------------------------------------------------- 更新（v3 §7）
+
+/** type 而不是 interface：模板資料要的是 Record<string, unknown>，interface 沒有索引簽章。 */
+export type UpdateView = {
+  /** 一句話說這次發生了什麼。 */
+  summary: string;
+  /** 取回的 commit，`git log --oneline` 的每一行。 */
+  commits: string[];
+  /** 衝突的檔案。 */
+  conflicts: string[];
+  /** git 的原話。失敗時才有，照原樣印。 */
+  detail: string | null;
+  reindex: {
+    line: string;
+    failures: { file: string; error: string }[];
+    bad_links: { source_id: string; target_id: string; reason: string }[];
+    warnings: { card_id: string; message: string }[];
+  } | null;
+};
+
+export function updateView(outcome: UpdateOutcome): UpdateView {
+  const { pull, reindex } = outcome;
+  const view: UpdateView = { summary: '', commits: [], conflicts: [], detail: null, reindex: null };
+
+  switch (pull.kind) {
+    case 'no-git':
+      view.summary = '語料庫不是 git repository，沒有東西可以取回。索引已重建。';
+      break;
+    case 'no-remote':
+      view.summary = '沒有設定 remote，沒有東西可以取回。索引已重建。';
+      break;
+    case 'pulled':
+      view.commits = pull.commits;
+      view.summary =
+        pull.commits.length === 0
+          ? '已是最新。索引已重建。'
+          : `取回了 ${pull.commits.length} 個 commit。索引已重建。`;
+      // 取回成功但本機的 commit 推不上去：不是這次的失敗，但值得說一聲。
+      if (pull.pushPending) view.summary += '本機的 commit 還沒推上去，五分鐘後會再試。';
+      break;
+    case 'conflict':
+      view.conflicts = pull.files;
+      view.detail = pull.message;
+      view.summary =
+        '取回時有衝突，已經放棄這次取回，語料庫維持原狀。在別處的 clone 解決衝突之後再更新一次。';
+      break;
+    case 'failed':
+      view.detail = pull.message;
+      view.summary = '沒有取回成功，語料庫維持原狀。';
+      break;
+  }
+
+  if (reindex) {
+    view.reindex = {
+      line:
+        `${reindex.indexed} / ${reindex.files} 張卡片進了索引` +
+        `，讀不出來 ${reindex.failures.length}` +
+        `，壞連結 ${reindex.bad_links.length}` +
+        `，規則警告 ${reindex.warnings.length}`,
+      failures: reindex.failures,
+      bad_links: reindex.bad_links,
+      warnings: reindex.warnings,
+    };
+  }
+  return view;
 }

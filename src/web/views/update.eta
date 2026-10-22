@@ -1,0 +1,57 @@
+<%/* v3 §7：側欄「更新」按下去之後的結果。git 與重建報告各說一段，
+     有什麼畫什麼——沒有取回 commit、沒有警告的那一段就不出現。 */%>
+<h1 class="listhead">更新</h1>
+<p class="updatesummary"><%= it.summary %></p>
+
+<% if (it.commits.length) { %>
+<section class="updatepart">
+  <p class="updatehead">取回的 commit</p>
+  <ul class="updatelog">
+    <% it.commits.forEach(function (c) { %><li><%= c %></li><% }) %>
+  </ul>
+</section>
+<% } %>
+
+<% if (it.conflicts.length) { %>
+<section class="updatepart">
+  <p class="updatehead">衝突的檔案</p>
+  <ul class="updatelog">
+    <% it.conflicts.forEach(function (f) { %><li><%= f %></li><% }) %>
+  </ul>
+</section>
+<% } %>
+
+<% if (it.detail) { %>
+<%/* git 的原話照樣印：失敗的原因只有它說得準。 */%>
+<pre class="updatedetail"><%= it.detail %></pre>
+<% } %>
+
+<% if (it.reindex) { %>
+<section class="updatepart">
+  <p class="updatehead">索引</p>
+  <p class="updateline"><%= it.reindex.line %></p>
+  <% if (it.reindex.failures.length) { %>
+  <p class="updatehead">讀不出來的檔案</p>
+  <ul class="updatelog">
+    <% it.reindex.failures.forEach(function (f) { %><li><%= f.file %>：<%= f.error %></li><% }) %>
+  </ul>
+  <% } %>
+  <% if (it.reindex.bad_links.length) { %>
+  <p class="updatehead">壞連結</p>
+  <ul class="updatelog">
+    <% it.reindex.bad_links.forEach(function (l) { %>
+    <li><a href="/c/<%= l.source_id %>"><%= l.source_id %></a> → <%= l.target_id %>：<%= l.reason === 'missing' ? '目標不存在' : '目標比它新' %></li>
+    <% }) %>
+  </ul>
+  <% } %>
+  <% if (it.reindex.warnings.length) { %>
+  <%/* R4：照今天的規則不會被建立出來的卡。它們好端端地在，只是列出來讓你知道。 */%>
+  <p class="updatehead">規則警告</p>
+  <ul class="updatelog">
+    <% it.reindex.warnings.forEach(function (w) { %>
+    <li><a href="/c/<%= w.card_id %>"><%= w.card_id %></a>：<%= w.message %></li>
+    <% }) %>
+  </ul>
+  <% } %>
+</section>
+<% } %>

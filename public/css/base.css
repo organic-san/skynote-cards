@@ -144,6 +144,7 @@ h1.long {
 .dot-original { background: var(--type-original); }
 .dot-restatement { background: var(--type-restatement); }
 .dot-thinking { background: var(--type-thinking); }
+.dot-output { background: var(--type-output); }
 
 /* 碎片空心：原本虛線徽章那個「尚未定案」語義的延續，是唯一的形狀例外。
    空心在視覺上比實心輕，環的邊寬補回重量（U6）。

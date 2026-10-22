@@ -32,7 +32,7 @@
 
 <section class="<%= it.source ? 'pane pane-form' : '' %>">
 
-<% if (it.action === '展開成思考') { %>
+<% if (it.expand) { %>
 <p class="back"><a class="textbtn" href="/">← 返回</a></p>
 <% } %>
 
@@ -52,13 +52,16 @@
       <%= it.draftPrefilled ? 'data-draft-prefilled' : '' %>>
   <input type="hidden" name="reply_to" value="<%= it.replyTo %>">
   <input type="hidden" name="draft_scope" value="<%= it.draftScope %>">
+  <%/* 隨手記展開來的：退回時型別照樣是二選一（v3 §4.3）。 */%>
+  <% if (it.expand) { %><input type="hidden" name="entry" value="expand"><% } %>
 
   <% if (it.locked) { %>
   <%/* 型別是入口決定的，所以這裡只陳述事實，不給選擇。
 
        兩種入口都適用：卡片頁的 ＋ 選單同時預填了型別與連結，改型別會讓
-       預填的關係不合法；追加外部資料與隨手記的展開沒有連結，但它們的型別
-       同樣只有一個正確答案——換一個就得填這張表單拿不到的欄位。 */%>
+       預填的關係不合法；追加外部資料沒有連結，但它的型別同樣只有一個正確
+       答案——換一個就得填這張表單拿不到的欄位。
+       隨手記的展開是例外：思考與產出的欄位一樣，所以那裡給二選一（下面那一組）。 */%>
   <p class="typefixed">
     <span class="dot dot-<%= it.values.type %>"></span>
     <span class="tname"><%= it.typeLabel %></span>
@@ -69,7 +72,8 @@
     <% it.types.forEach(function (t) { %>
     <label class="typebtn">
       <input type="radio" name="type" value="<%= t.value %>" required <%= it.values.type === t.value ? 'checked' : '' %>>
-      <span><%= t.label %></span>
+      <%/* U7：名字前面放同一顆色點，跟首頁的篩選列同一個語彙。 */%>
+      <span><span class="dot dot-<%= t.value %>"></span><%= t.label %></span>
     </label>
     <% }) %>
   </div>

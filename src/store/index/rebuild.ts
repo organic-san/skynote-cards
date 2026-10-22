@@ -7,6 +7,7 @@ import {
   checkFleetingHasNoLinks,
   checkRelMatrix,
   checkRestatementHasSource,
+  checkThinkingHasTag,
 } from '../../domain/rules.ts';
 import { cardsDir, listCardIds } from '../files.ts';
 import { openDb, segmentCjk } from './schema.ts';
@@ -161,6 +162,8 @@ export function rebuildInto(tmpPath: string, corpusPath: string): ReindexReport 
       ...checkFleetingHasNoLinks(c.type, c.links.length),
       ...checkRestatementHasSource(c.type, c.links, typeOf),
       ...checkRelMatrix(c.type, c.links, typeOf),
+      // R11 之前寫的無標籤思考會留在這份清單上。規則不追溯，它們不必被修好。
+      ...checkThinkingHasTag(c.type, c.tags),
     ];
     for (const message of messages) report.warnings.push({ card_id: c.id, message });
   }

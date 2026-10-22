@@ -6,13 +6,19 @@
  *   original     不是我寫的      抄錯了      → 重存一份
  *   restatement  對原文負責      我誤讀了    → 重讀原文，發新的重述 updates
  *   thinking     對世界負責      命題為假    → 換一個主張，發新的 thinking updates
+ *   output       對成品負責      沒做成想要的樣子 → 改稿；被引用之後發新版本 updates
  *   fleeting     尚未決定        ——          → 完整化成 thinking，或就讓它留著
  *
  * `fleeting` 存在的理由：一句隨口的話需要一個不必負責的地方。
  * 塞進 restatement 會讓「我誤讀了」和「我想錯了」共用一格，
  * 而這兩種錯的修法完全不同。
+ *
+ * `output` 從 thinking 分出來是同一個理由：思考問「這是真的嗎」，產出問
+ * 「這是我要的樣子嗎」。成品不提出命題，混在思考裡會讓兩種錯共用一格。
+ *
+ * 順序就是介面上列出來的順序（篩選列、型別選單）：碎片排最後，它是唯一的空心點。
  */
-export const CARD_TYPES = ['original', 'restatement', 'thinking', 'fleeting'] as const;
+export const CARD_TYPES = ['original', 'restatement', 'thinking', 'output', 'fleeting'] as const;
 export type CardType = (typeof CARD_TYPES)[number];
 
 /**
@@ -26,6 +32,7 @@ export const TYPE_LABELS: Record<CardType, string> = {
   original: '資料',
   restatement: '重述',
   thinking: '思考',
+  output: '產出',
   fleeting: '碎片',
 };
 
@@ -159,8 +166,9 @@ export interface RelSpec {
  * 差別只剩一句說明文字，而「這是依據」還是「還不知道關係」正是建立當下
  * 最難做的判斷。
  *
- * `related` 只開放給 `thinking`：它是唯一沒有語義的 rel，若每一型都能用，
- * 會變成萬用逃生口而讓整個詞彙表失去作用。
+ * `related` 只開放給 `thinking` 與 `output`：它是唯一沒有語義的 rel，若每一型
+ * 都能用，會變成萬用逃生口而讓整個詞彙表失去作用。`output` 是例外而不是破口——
+ * 產出與它的取材對象之間本來就沒有更精確的關係可選，用 `related` 不是在逃避哪一條。
  *
  * 這張表預期會隨使用調整。調整對既有卡片是免費的——規則不追溯，
  * 違反現行規則的舊卡片只會出現在重建報告的警告清單上（R4）。
@@ -179,8 +187,8 @@ export const REL_MATRIX: Record<CardType, readonly RelSpec[]> = {
     { rel: 'updates', targets: ['restatement'] },
   ],
   thinking: [
-    // about       這則思考在講什麼
-    { rel: 'about', targets: ['original', 'restatement'] },
+    // about       這則思考在講什麼（也可以是一份產出，例如寫完之後的檢討）
+    { rel: 'about', targets: ['original', 'restatement', 'output'] },
     // supports    這是我的依據
     { rel: 'supports', targets: ['original', 'restatement', 'thinking'] },
     // contradicts 兩者不相容，尚未裁決
@@ -190,6 +198,13 @@ export const REL_MATRIX: Record<CardType, readonly RelSpec[]> = {
     // updates     取代舊主張，或完整化碎片
     { rel: 'updates', targets: ['thinking', 'fleeting'] },
     // related     關係尚未定型
+    { rel: 'related', targets: CARD_TYPES },
+  ],
+  // 成品不提出命題，所以 supports / refutes / contradicts 對它沒有意義。
+  output: [
+    // updates  新版本取代舊版本
+    { rel: 'updates', targets: ['output'] },
+    // related  取材：這份產出從哪些材料與想法長出來
     { rel: 'related', targets: CARD_TYPES },
   ],
   // R2：碎片不得有任何連結。一旦開始建立關聯，做的就是 thinking 的工作。
@@ -239,6 +254,8 @@ export interface CardAction {
  * - `fleeting` 沒有 supports 的按鈕（矩陣排除了它），
  *   `restatement` 沒有「反駁」——重述錯的方式是誤讀，那是 updates 的責任，
  *   「推翻一則重述」是類別錯誤。
+ * - 「建立產出」只長在思考與碎片上：想法做成成品是產出最常見的來處。
+ *   沒有來處的產出從隨手記的「展開」建立，那裡可以選思考或產出。
  *
  * **順序是有意義的**，由使用者排定，不要按 rel 或字母重排。
  *
@@ -264,10 +281,16 @@ export const CARD_ACTIONS: Record<CardType, readonly CardAction[]> = {
     { label: '進一步論述', creates: 'thinking', rel: 'supports' },
     { label: '反駁', creates: 'thinking', rel: 'refutes' },
     { label: '更新', creates: 'thinking', rel: 'updates' },
+    { label: '建立產出', creates: 'output', rel: 'related' },
+  ],
+  output: [
+    { label: '發想', creates: 'thinking', rel: 'about' },
+    { label: '更新', creates: 'output', rel: 'updates' },
   ],
   fleeting: [
     { label: '完整化', creates: 'thinking', rel: 'updates' },
     { label: '反駁', creates: 'thinking', rel: 'refutes' },
     { label: '發想', creates: 'thinking', rel: 'related' },
+    { label: '建立產出', creates: 'output', rel: 'related' },
   ],
 };

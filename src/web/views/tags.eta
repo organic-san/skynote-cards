@@ -1,10 +1,10 @@
 <%/* 排序切換。三種排法對應三個問題（見 query.ts 的 TAG_ORDER），
      所以是三個並列的選項，不是一個預設加兩個進階設定。
      視覺語彙沿用首頁的篩選列（.filters），因為做的是同一件事：
-     換一個角度看同一堆東西。 */%>
+     換一個角度看同一堆東西。預設是「最近」（v3 §6.2），它的連結不帶 ?sort=。 */%>
 <div class="filters">
   <% it.sorts.forEach(function (s) { %>
-  <a href="/tags<%= s.value === 'count' ? '' : '?sort=' + s.value %>"
+  <a href="/tags<%= s.value === 'recent' ? '' : '?sort=' + s.value %>"
      class="textbtn <%= it.sort === s.value ? 'on' : '' %>"><%= s.label %></a>
   <% }) %>
   <span class="filtercount"><%= it.tags.length %></span>

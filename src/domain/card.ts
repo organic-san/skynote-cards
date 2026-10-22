@@ -164,24 +164,28 @@ export function fleetingText(card: Pick<Card, 'title'>): string {
 /**
  * 反過來：使用者在單一文字框裡寫的一段話 → 一張 fleeting 的欄位。
  * 介面上不呈現 title/body 的區分，所以這個對應只在這裡出現一次。
+ *
+ * 隨手記只會走到這裡（v3 §4.3）：它移除了標題欄，只寫碎片。
+ * 要記成思考就展開成完整表單——R11 要的標籤欄在那裡。
  */
 export function fleetingDraft(text: string): { title: string; body: string } {
   return { title: text.trim(), body: '' };
 }
 
 /**
- * 隨手記：兩個欄位決定一切。
+ * 卡片「那段文字」：碎片是 title，其餘是 body。
  *
- * **不填標題就是碎片。** 這是這個系統唯一的生死線：憑空記一句話如果需要
- * 一次型別決策，它就輸給 Discord。而「要不要給它一個名字」本來就是你在寫
- * 的時候自然會做的判斷，不是額外的決策——所以型別從那個判斷推出來，
- * 不另外問。
+ * 勾選、複製、下載、渲染要的都是這一段，而它在哪個欄位只有這裡知道——
+ * 理由見上面 fleetingText 的說明。型別收字串，因為索引裡的列也會問。
  */
-export function quickDraft(
-  title: string,
-  body: string,
-): { type: 'fleeting' | 'thinking'; title: string; body: string } {
-  const named = title.trim();
-  if (named === '') return { type: 'fleeting', ...fleetingDraft(body) };
-  return { type: 'thinking', title: named, body };
+export function cardText(card: { type: string; title: string; body: string }): string {
+  return card.type === 'fleeting' ? fleetingText(card) : card.body;
+}
+
+/** 反過來：把那段文字放回它該在的欄位。 */
+export function withCardText<T extends { type: string; title: string; body: string }>(
+  card: T,
+  text: string,
+): T {
+  return card.type === 'fleeting' ? { ...card, title: text } : { ...card, body: text };
 }

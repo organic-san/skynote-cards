@@ -175,10 +175,13 @@ describe('第四型與來源欄位', () => {
     const links: Record<string, { rel: string; to: string }[]> = {
       restatement: [{ rel: 'about', to: '100' }], // R1
       thinking: [],
+      output: [],
       fleeting: [], // R2
     };
     for (const [type, ls] of Object.entries(links)) {
-      const r = validateDraft({ ...draft, type, links: ls }, deps);
+      // R11：思考要有標籤，否則驗不到來源欄位那一段。
+      const tags = type === 'thinking' ? ['t'] : [];
+      const r = validateDraft({ ...draft, type, tags, links: ls }, deps);
       assert.deepEqual(r.errors, [], `${type} 本身應該是合法的`);
       assert.equal(r.value?.source_author, null, `${type} 不該帶 source_author`);
       assert.equal(r.value?.source_date, null, `${type} 不該帶 source_date`);
@@ -247,7 +250,7 @@ describe('驗證規則', () => {
 
   test('provenance 是 original 專屬，其他類型送了也只是被丟掉', () => {
     const other = validateDraft(
-      { type: 'thinking', title: 't', body: '', tags: [], url: null, provenance: 'translated', links: [] },
+      { type: 'thinking', title: 't', body: '', tags: ['t'], url: null, provenance: 'translated', links: [] },
       deps,
     );
     assert.deepEqual(other.errors, [], '不該因為夾帶 provenance 就整筆退回');
@@ -436,7 +439,7 @@ function readCss(): string {
   );
 }
 
-/** 側欄的「最近卡片」也列標題，所以清單的斷言只看主內容區。 */
+/** 側欄也列著東西（最近的標籤或卡片），所以清單的斷言只看主內容區。 */
 function main(res: { body: string }): string {
   return res.body.slice(res.body.indexOf('<main>'), res.body.indexOf('</main>'));
 }
@@ -679,15 +682,22 @@ describe('每一型的列表項', () => {
 });
 
 describe('頁面與端點', () => {
-  test('建立表單有四個類型、以中文標籤呈現，來源標記維持收合', async () => {
+  test('建立表單列出每一型、以中文標籤呈現，名字前面有色點，來源標記維持收合', async () => {
     const h = await fresh();
     const res = await h.app.fastify.inject('/new');
     assert.equal(res.statusCode, 200);
-    for (const t of ['original', 'restatement', 'thinking', 'fleeting']) {
+    for (const [t, label] of [
+      ['original', '資料'],
+      ['restatement', '重述'],
+      ['thinking', '思考'],
+      ['output', '產出'],
+      ['fleeting', '碎片'],
+    ]) {
       assert.ok(res.body.includes(`value="${t}"`), `缺少類型 ${t}`);
-    }
-    for (const label of ['資料', '重述', '思考', '碎片']) {
-      assert.ok(res.body.includes(`<span>${label}</span>`), `缺少型別標籤 ${label}`);
+      assert.ok(
+        res.body.includes(`<span><span class="dot dot-${t}"></span>${label}</span>`),
+        `缺少型別標籤 ${label}`,
+      );
     }
     assert.ok(res.body.includes('<details'), 'provenance 維持收合');
     assert.ok(res.body.includes('/static/js/typefields.js'));
@@ -942,16 +952,20 @@ describe('介面', () => {
     assert.ok(!res.body.includes('# 小標'), 'markdown 記號不該漏出來');
   });
 
-  test('時間軸右下是隨手記，兩個欄位加一顆送出鍵', async () => {
+  test('時間軸右下是隨手記，一個文字框加一顆送出鍵', async () => {
     const h = await fresh();
     const res = await h.app.fastify.inject('/');
     assert.ok(res.body.includes('action="/quick"'), '右下應該是隨手記');
-    assert.ok(res.body.includes('name="title"') && res.body.includes('name="body"'));
-    // 沒有型別選單、沒有標籤、沒有連結——那是這條路徑存在的理由。
+    // 沒有型別選單、沒有標題、沒有標籤、沒有連結——那是這條路徑存在的理由。
+    // 標題欄是 v3 §4.3 拿掉的：隨手記只寫碎片，思考一律展開成完整表單。
     const quick = res.body.slice(res.body.indexOf('class="quick"'));
+    assert.ok(quick.includes('name="body"'));
+    assert.ok(!quick.includes('name="title"'), '隨手記不該有標題欄');
     assert.ok(!quick.includes('name="type"'), '隨手記不該有型別選擇');
     assert.ok(!quick.includes('name="tags"'), '隨手記不該有標籤');
     assert.ok(!quick.includes('name="link_rel"'), '隨手記不該有連結');
+    // U18 撤回：只會存成碎片，送出鈕不必再跟著標題換字。
+    assert.match(quick, /id="quicksubmit">記為碎片<\/button>/);
   });
 
   test('隨手記可以展開成完整表單，已經打的字跟著過去', async () => {
@@ -963,7 +977,6 @@ describe('介面', () => {
       url: '/quick',
       payload: new URLSearchParams({
         body: '這件事牽涉到三個層面',
-        title: '一個暫定的名字',
         expand: '1',
       }).toString(),
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -971,17 +984,23 @@ describe('介面', () => {
 
     assert.equal(res.statusCode, 200);
     assert.equal(h.app.index.countCards(), 0, '展開不是建立，不該留下任何東西');
-    assert.ok(res.body.includes('這件事牽涉到三個層面'), '內文要跟著過去');
-    assert.ok(res.body.includes('一個暫定的名字'), '標題也要');
+    assert.match(
+      res.body,
+      /<textarea name="body"[^>]*>這件事牽涉到三個層面<\/textarea>/,
+      '打到一半的字進內文',
+    );
+    assert.match(res.body, /name="title" autocomplete="off" value=""/, '標題留給完整表單去填');
 
-    // 隨手記展開僅適用 thinking 型別，故鎖定型別，不顯示型別選單。
-    assert.ok(res.body.includes('typefixed'), '型別鎖定，不給選');
-    assert.match(res.body, /name="type" value="thinking"/, '鎖定的是 thinking');
-    assert.ok(!res.body.includes('class="typepick"'), '不該有型別選單');
+    // 思考與產出的欄位一樣，所以展開之後二選一（v3 §4.3），預設思考。
+    assert.ok(!res.body.includes('typefixed'), '不鎖型別');
+    const pick = res.body.slice(res.body.indexOf('class="typepick"'), res.body.indexOf('</div>', res.body.indexOf('class="typepick"')));
+    assert.deepEqual([...pick.matchAll(/name="type" value="(\w+)"/g)].map((m) => m[1]), ['thinking', 'output']);
+    assert.match(pick, /value="thinking" required checked/, '預設是思考');
+    assert.ok(res.body.includes('<h1 class="formtitle">展開成思考或產出</h1>'));
     assert.match(
       res.body,
       /<p class="back"><a class="textbtn" href="\/">← 返回<\/a><\/p>/,
-      '展開成思考頁面要有返回按鈕',
+      '展開之後的頁面要有返回按鈕',
     );
 
     // 沒有 expand 的那條路照舊：真的建一張卡。
@@ -995,7 +1014,7 @@ describe('介面', () => {
     assert.equal(h.app.index.countCards(), 1);
   });
 
-  test('隨手記：不填標題就是碎片，填了就是思考', async () => {
+  test('隨手記只寫碎片，送上來的標題不算數', async () => {
     const h = await fresh();
     const post = async (payload: Record<string, string>) => {
       const res = await h.app.fastify.inject({
@@ -1008,19 +1027,19 @@ describe('介面', () => {
       return (res.json() as { id: string }).id;
     };
 
-    const bare = await post({ title: '', body: '一句隨口的話。' });
+    const bare = await post({ body: '一句隨口的話。' });
+    // 舊的客戶端還帶著標題：v3 §4.3 之後它不再決定型別。
     const named = await post({ title: '一個主張', body: '主張的內容。' });
 
-    const asFleeting = readCard(h.corpus, bare);
-    assert.equal(asFleeting.type, 'fleeting');
-    assert.equal(fleetingText(asFleeting), '一句隨口的話。');
-    assert.equal(asFleeting.body, '', '碎片的整段文字存在 title，body 留空');
-
-    const asThinking = readCard(h.corpus, named);
-    assert.equal(asThinking.type, 'thinking');
-    assert.equal(asThinking.title, '一個主張');
-    // 卡片檔案一律以換行結尾，所以讀回來的內文帶著它。
-    assert.equal(asThinking.body, '主張的內容。\n');
+    for (const [id, text] of [
+      [bare, '一句隨口的話。'],
+      [named, '主張的內容。'],
+    ] as const) {
+      const card = readCard(h.corpus, id);
+      assert.equal(card.type, 'fleeting');
+      assert.equal(fleetingText(card), text);
+      assert.equal(card.body, '', '碎片的整段文字存在 title，body 留空');
+    }
   });
 
   test('側欄的「追加外部資料」直接開 original 的表單', async () => {
@@ -1151,6 +1170,7 @@ describe('介面', () => {
         type: 'thinking',
         title: '從它發想的',
         body: 'y',
+        tags: '發想',
         reply_to: source,
         link_rel: 'about',
         link_to: source,
@@ -1225,18 +1245,17 @@ describe('介面', () => {
 describe('記完之後去哪裡、看到什麼', () => {
   test('碎片記完回首頁，思考跳到新卡片頁', async () => {
     const h = await fresh();
-    const quick = async (title: string) => {
-      const res = await h.app.fastify.inject({
-        method: 'POST',
-        url: '/quick',
-        payload: { title, body: '內容。' },
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
-      });
-      return res.headers.location as string;
-    };
+    const res = await h.app.fastify.inject({
+      method: 'POST',
+      url: '/quick',
+      payload: { body: '內容。' },
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+    });
     // 碎片的標題就是它的全部內容，跳過去只是把同一句話再讀一次。
-    assert.equal(await quick(''), '/');
-    assert.match(await quick('一個主張'), /^\/c\/[0-9]+$/);
+    assert.equal(res.headers.location, '/');
+
+    const thinking = await postCard(h, { type: 'thinking', title: '一個主張', body: '內容。' });
+    assert.match(thinking.headers.location as string, /^\/c\/[0-9]+$/);
   });
 
   test('卡片頁只有時間戳記，倒數留在編輯頁', async () => {
@@ -1568,22 +1587,44 @@ describe('外部 url 的內嵌', () => {
 });
 
 describe('側欄', () => {
-  test('順序是站名、首頁、工作狀態、動作與工具、最近卡片', async () => {
+  test('順序是站名、首頁、工作狀態、動作與工具、最近的標籤', async () => {
     const h = await fresh();
-    await createCard(h, { type: 'thinking', title: '最近寫的一張', body: 'x' });
+    await createCard(h, { type: 'thinking', title: '最近寫的一張', body: 'x', tags: ['最近的主題'] });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    // 側欄依序包含：站名、首頁、工作清單、動作與工具、卡片索引。用只出現一次的記號定位。
-    const order = ['drawerbrand', 'icon-home', 'drawernav', 'icon-plus', 'cardindex'];
+    // 側欄依序包含：站名、首頁、工作清單、動作與工具、標籤清單。用只出現一次的記號定位。
+    const order = ['drawerbrand', 'icon-home', 'drawernav', 'icon-plus', 'sidetags'];
     let at = -1;
     for (const cls of order) {
       const next = aside.indexOf(cls);
       assert.ok(next > at, `${cls} 的位置不對`);
       at = next;
     }
-    assert.ok(aside.includes('最近寫的一張'), '卡片索引要列在側欄');
+    assert.ok(aside.includes('#最近的主題'), '標籤要列在側欄');
+    // v3 §5：文章一覽列最近的標籤；最近的卡片只在卡片頁與編輯介面列出。
+    assert.ok(!aside.includes('最近寫的一張'), '一覽頁的側欄不列卡片');
     assert.ok(!aside.includes('drawernew'), '左下不該再有建立卡片');
+  });
+
+  test('動作與工具：追加外部資料、搜尋、標籤、更新', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
+    const tools = aside.slice(aside.indexOf('/new?type=original'));
+
+    const order = ['/new?type=original', 'href="/search"', 'href="/tags"', 'action="/update"'];
+    let at = -1;
+    for (const mark of order) {
+      const next = tools.indexOf(mark);
+      assert.ok(next > at, `${mark} 的位置不對`);
+      at = next;
+    }
+    // 「更新」有副作用，所以是 POST 的按鈕，不是連結。
+    assert.match(tools, /<form method="post" action="\/update">\s*<button type="submit"/);
+    assert.ok(!aside.includes('href="/update"'));
+    // 產出沒有側欄入口：沒有來處的產出從隨手記展開（v3 §4.3）。
+    assert.ok(!aside.includes('type=output'));
   });
 
   test('站名不可點，第一列是首頁', async () => {
@@ -1607,18 +1648,29 @@ describe('側欄', () => {
     assert.ok(!aside.includes('draweraction'), '不該再有專屬格式');
 
     // U9：工作狀態那幾項不掛數量。
-    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('cardindex'));
+    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('/new?type=original'));
     assert.ok(!work.includes('wcount'));
   });
 
-  test('U11：卡片索引有小標，職責在畫面上可讀', async () => {
+  test('側欄的標籤：最近使用的排前面，不列鎖定的，有小標', async () => {
     const h = await fresh();
-    await createCard(h, { type: 'thinking', title: '一張卡', body: 'x' });
+    fs.writeFileSync(path.join(h.corpus, 'tags.yml'), 'locked:\n  - 匯入\n', 'utf8');
+    await createCard(h, { type: 'thinking', title: 'A', body: 'x', tags: ['舊的', '匯入'] });
+    await createCard(h, { type: 'thinking', title: 'B', body: 'x', tags: ['新的'] });
+
     const body = (await h.app.fastify.inject('/')).body;
-    const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
-    // 它的用途是建立連結時查名稱，不是導覽——所以要說出來，不能看起來像第二份清單。
-    assert.ok(aside.includes('class="indexhead">卡片索引<'));
-    assert.ok(aside.includes('一張卡'));
+    const side = body.slice(body.indexOf('class="sidetags"'), body.indexOf('</aside>'));
+    assert.ok(side.includes('class="indexhead">最近的標籤<'));
+    assert.ok(side.indexOf('#新的') < side.indexOf('#舊的'), '最近使用的排前面');
+    // 鎖定的是出處標記，不是主題（v2.2 §7.2）。標籤頁上照樣看得到它。
+    assert.ok(!side.includes('#匯入'));
+    assert.ok(side.includes(`href="/?tag=${encodeURIComponent('新的')}"`));
+  });
+
+  test('一個標籤都沒有時，側欄不畫那一塊', async () => {
+    const h = await fresh();
+    const body = (await h.app.fastify.inject('/')).body;
+    assert.ok(!body.includes('class="sidetags"'));
   });
 
   test('搜尋是一個連結，不是側欄裡的輸入框', async () => {
@@ -1633,12 +1685,13 @@ describe('側欄', () => {
     assert.ok(page.body.includes('class="searchpage"'));
   });
 
-  test('正在看的那張卡在側欄裡被標起來', async () => {
+  test('首頁正在篩的那個標籤在側欄裡被標起來', async () => {
     const h = await fresh();
-    const id = await createCard(h, { type: 'thinking', title: '這一張', body: 'x' });
-    const body = (await h.app.fastify.inject(`/c/${id}`)).body;
+    await createCard(h, { type: 'thinking', title: '這一張', body: 'x', tags: ['這個', '那個'] });
+    const body = (await h.app.fastify.inject(`/?tag=${encodeURIComponent('這個')}`)).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
-    assert.ok(aside.includes(`href="/c/${id}" class="on"`));
+    assert.ok(aside.includes(`href="/?tag=${encodeURIComponent('這個')}" class="on"`));
+    assert.ok(aside.includes(`href="/?tag=${encodeURIComponent('那個')}" class=""`));
   });
 });
 
@@ -1717,6 +1770,7 @@ describe('provenance 欄位', () => {
         type: 'thinking',
         title: '沒有 provenance 的思考卡',
         body: 'x',
+        tags: '測試',
         provenance: 'translated',
       }).toString(),
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -2020,7 +2074,7 @@ describe('碎片沒有標題', () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'fleeting', title: '隨手記的一句', body: '' });
     const feed = (await h.app.fastify.inject('/')).body;
-    // 側欄的卡片索引也有 <li>，而且排在前面，所以結尾要從列首開始找。
+    // 側欄的標籤清單也有 <li>，而且排在前面，所以結尾要從列首開始找。
     const rowAt = feed.indexOf('<li class="row untitled">');
     const row = feed.slice(rowAt, feed.indexOf('</li>', rowAt));
 
@@ -2349,23 +2403,21 @@ describe('動作的形式是一份', () => {
     assert.match(css, /\.stepnav \.destructive\s*\{[^}]*margin-left:\s*auto/);
   });
 
-  test('側欄索引用色點分辨型別，不放型別名', async () => {
-    // 那一欄很窄，標題本來就在截斷邊緣，再塞兩個字等於把標題再砍掉兩個字。
+  test('側欄的標籤只列名稱，太長的截斷', async () => {
+    // 這一欄要安靜：數量在標籤頁上，這裡只是一份隨手可點的主題清單。
     const h = await fresh();
-    await createCard(h, { type: 'fleeting', title: '一句話', body: '' });
+    await createCard(h, { type: 'thinking', title: 'A', body: 'x', tags: ['一個很長很長很長很長的標籤名字'] });
 
     const page = (await h.app.fastify.inject('/')).body;
-    const at = page.indexOf('cardindex');
-    const index = page.slice(at, page.indexOf('</div>', at));
+    const at = page.indexOf('class="sidetags"');
+    const side = page.slice(at, page.indexOf('</div>', at));
+    assert.ok(side.includes('#一個很長很長很長很長的標籤名字'));
+    assert.ok(!/\bn\b|class="n"/.test(side), '不列數量');
 
-    assert.ok(index.includes('dot dot-fleeting'), '型別靠色點');
-    assert.ok(!index.includes('tname'), '不放型別名');
-    // 截斷落在標題上，不落在整條連結上——否則色點會跟著被裁掉。
+    // 截斷落在名稱上，不落在整條連結上（最近的卡片那一份前面還有色點）。
+    assert.match(side, /<span\s+class="indextitle">#/);
     const css = readCss();
     assert.match(css, /\.indextitle\s*\{[^}]*text-overflow:\s*ellipsis/);
-    // 13px 的文字配小一號的色點。改寫容器上的 --dot 就整組跟著縮，
-    // 不必多一條 .dot 的規則。
-    assert.match(css, /\.cardindex\s*\{[^}]*--dot:\s*var\(--dot-sm\)/);
   });
 });
 
@@ -2381,7 +2433,8 @@ describe('標籤推薦', () => {
     ] as const) {
       await createCard(h, { type: 'thinking', title: t, body: 'x', tags });
     }
-    const id = await createCard(h, { type: 'thinking', title: 'D', body: 'x' });
+    // R11：思考要有標籤。D 用最多的那一個，它因此也是最近用的那一個。
+    const id = await createCard(h, { type: 'thinking', title: 'D', body: 'x', tags: '自我分析' });
 
     for (const url of ['/new?type=thinking', `/c/${id}/edit`]) {
       const page = (await h.app.fastify.inject(url)).body;
@@ -2394,8 +2447,8 @@ describe('標籤推薦', () => {
       const list = JSON.parse(raw.replaceAll('&quot;', '"')) as { tag: string; n: number }[];
       // 全部列出來：截斷會把長尾藏起來，而長尾正是「上次到底打哪個字」最需要看見的。
       assert.equal(list.length, 3, `${url} 三個標籤都要在`);
-      assert.equal(list[0]?.tag, '自我分析', '用得最多的排最前');
-      assert.equal(list[0]?.n, 3);
+      assert.equal(list[0]?.tag, '自我分析', '最近用的排最前');
+      assert.equal(list[0]?.n, 4);
     }
 
     // 面板高度有上限、用捲的，而不是只列前幾個。
@@ -2672,7 +2725,13 @@ describe('草稿暫存', () => {
     const ok = await h.app.fastify.inject({
       method: 'POST',
       url: '/new',
-      payload: { type: 'thinking', title: '寫成了', body: 'x', draft_scope: 'new:thinking:expand' },
+      payload: {
+        type: 'thinking',
+        title: '寫成了',
+        body: 'x',
+        tags: '測試',
+        draft_scope: 'new:thinking:expand',
+      },
     });
     assert.equal(ok.statusCode, 302);
     assert.match(String(ok.headers.location), /[?&]d=new%3Athinking%3Aexpand/);
@@ -2701,8 +2760,9 @@ describe('草稿暫存', () => {
     const res = await h.app.fastify.inject({
       method: 'POST',
       url: '/new',
-      payload: { type: 'thinking', title: '從 API 來的', body: 'x' },
+      payload: { type: 'thinking', title: '從 API 來的', body: 'x', tags: '測試' },
     });
+    assert.equal(res.statusCode, 302);
     assert.ok(!String(res.headers.location).includes('d='), 'API 與測試從來沒存過草稿');
   });
 
@@ -2787,7 +2847,7 @@ describe('內文複製', () => {
 });
 
 describe('手動空白連結列的預設關係', () => {
-  test('thinking 落在弱語義的 related，其餘維持原樣', async () => {
+  test('thinking 與 output 落在弱語義的 related，其餘維持原樣', async () => {
     const h = await fresh();
     const table = /data-default-rels='([^']*)'/.exec(
       (await h.app.fastify.inject('/new')).body,
@@ -2797,6 +2857,8 @@ describe('手動空白連結列的預設關係', () => {
       original: 'part-of',
       restatement: 'about',
       thinking: 'related',
+      // 產出手動加的那一列幾乎都是取材。
+      output: 'related',
     });
     assert.ok(!('fleeting' in parsed), 'R2：碎片不得有連結');
   });
@@ -2901,7 +2963,7 @@ describe('標籤的推薦、鎖定與排序', () => {
     assert.deepEqual([...parseLocked('nothing: here\n')], []);
   });
 
-  test('推薦按最近使用排序，索引頁預設按數量', async () => {
+  test('推薦與索引頁都預設按最近使用', async () => {
     const h = await fresh();
     await createCard(h, { type: 'thinking', title: 'A', body: 'x', tags: ['多數'] });
     await createCard(h, { type: 'thinking', title: 'B', body: 'x', tags: ['多數'] });
@@ -2914,18 +2976,24 @@ describe('標籤的推薦、鎖定與排序', () => {
       '寫卡的當下，主題是一陣一陣的——最近用過的才是候選',
     );
 
-    const order = (body: string) => [...body.matchAll(/#([^<]+)</g)].map((m) => m[1]);
-    assert.deepEqual(order((await h.app.fastify.inject('/tags')).body), ['多數', '最近']);
-    assert.deepEqual(order((await h.app.fastify.inject('/tags?sort=recent')).body), [
-      '最近',
-      '多數',
-    ]);
-    assert.deepEqual(order((await h.app.fastify.inject('/tags?sort=name')).body), ['多數', '最近']);
-    assert.deepEqual(
-      order((await h.app.fastify.inject('/tags?sort=亂填')).body),
-      ['多數', '最近'],
-      '亂填的排序退回預設，不是空清單',
-    );
+    // 只看索引頁那一份清單：側欄也列著標籤（v3 §5）。
+    const order = async (url: string) => {
+      const body = (await h.app.fastify.inject(url)).body;
+      const list = body.slice(body.indexOf('class="taglist"'));
+      return [...list.matchAll(/#([^<]+)</g)].map((m) => m[1]);
+    };
+    // v3 §6.2：索引頁最常拿來看「最近在想什麼」，所以預設改成最近。
+    assert.deepEqual(await order('/tags'), ['最近', '多數']);
+    assert.deepEqual(await order('/tags?sort=count'), ['多數', '最近']);
+    assert.deepEqual(await order('/tags?sort=name'), ['多數', '最近']);
+    assert.deepEqual(await order('/tags?sort=亂填'), ['最近', '多數'], '亂填的排序退回預設，不是空清單');
+
+    // 分頁的順序跟著換：預設那一個排第一，而且它的連結不帶 ?sort=。
+    const page = (await h.app.fastify.inject('/tags')).body;
+    const filters = page.slice(page.indexOf('class="filters"'), page.indexOf('</div>', page.indexOf('class="filters"')));
+    const labels = [...filters.matchAll(/>([^<>]+)<\/a>/g)].map((m) => m[1]);
+    assert.deepEqual(labels, ['最近', '數量', '名稱']);
+    assert.match(filters, /href="\/tags"\s+class="textbtn on">最近/);
   });
 });
 
@@ -3003,7 +3071,7 @@ describe('搜尋結果的片段與型別篩選', () => {
     const only = (
       await h.app.fastify.inject('/search?q=' + encodeURIComponent('關鍵字') + '&type=thinking')
     ).body;
-    // 側欄的卡片索引也會列出每一張卡的標題，所以範圍要收到結果清單裡。
+    // 側欄也會列出東西（標籤），所以範圍要收到結果清單裡。
     const rows = only.slice(only.indexOf('<ul class="rows">'));
     assert.ok(!rows.includes('資料裡的關鍵字'), 'original 被篩掉');
     assert.ok(rows.includes('思考裡的關鍵字'));

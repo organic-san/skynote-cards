@@ -1,4 +1,4 @@
-import type { Card, CardDraft, CardLink, CardType, Provenance, Rel } from './types.ts';
+import type { CardDraft, CardLink, CardType, Provenance, Rel } from './types.ts';
 import { TYPE_LABELS, allowedTargets, isCardType, isProvenance, isRel } from './types.ts';
 import { compareIds, isValidIdFormat } from './id.ts';
 
@@ -50,6 +50,7 @@ export function validateDraft(draft: CardDraft, deps: ValidateDeps): ValidationR
   if (title === '') errors.push('標題不得為空');
 
   // 標籤：每一項 trim 後非空、不含逗號，去重
+  const tagsBefore = errors.length;
   const tags: string[] = [];
   for (const raw of draft.tags ?? []) {
     const t = typeof raw === 'string' ? raw.trim() : '';
@@ -69,6 +70,12 @@ export function validateDraft(draft: CardDraft, deps: ValidateDeps): ValidationR
     }
     // 不做任何正規化（不轉小寫、不合併相似項），只去除完全相同的重複。
     if (!tags.includes(t)) tags.push(t);
+  }
+
+  // R11 只在每一個標籤本身都成立之後才問：唯一的標籤因為逗號被擋下來時，
+  // 問題是「那個標籤寫錯了」，不是「沒有標籤」。報兩次會蓋住真正的那一句。
+  if (isCardType(draft.type) && errors.length === tagsBefore) {
+    errors.push(...checkThinkingHasTag(draft.type, tags));
   }
 
   // R2 先擋：碎片帶了連結，問題就是「它不該有連結」，
@@ -235,6 +242,24 @@ export function checkRelMatrix(
   return errors;
 }
 
+// ---------------------------------------------------------------- 型別對標籤的約束
+
+/**
+ * R11：thinking 至少要有一個標籤；其餘型別不強制。
+ *
+ * 標籤的職責是主題普查，而思考是普查的主體。其餘幾型各有不強制的理由：
+ * 碎片的價值在於零決策輸入（被完整化成思考時標籤自然補上）；資料沒有脈絡
+ * 可以繼承，強制的成本最高；重述依 R1 錨定原文，脈絡已經由原文提供；
+ * 產出常從隨手記展開建立，跟資料一樣沒有可繼承的標籤。
+ *
+ * 成本由兩件事壓低：卡片頁 `+` 衍生的思考自動繼承來源卡的標籤，
+ * 而隨手記只寫碎片——要記成思考就得展開成完整表單，那裡有標籤欄。
+ */
+export function checkThinkingHasTag(type: CardType, tags: readonly string[]): string[] {
+  if (type !== 'thinking' || tags.length > 0) return [];
+  return ['思考至少要有一個標籤'];
+}
+
 /**
  * 連結只能指向 ID 較小、也就是更早建立的卡片。
  * 這保證整張圖是 DAG，也保證新增連結永遠只需要寫新檔案。
@@ -272,10 +297,22 @@ export const UNDELETABLE_MESSAGE = '這張卡已定案，不能刪除。';
  *
  * `reason` 分兩種不是為了好看：時間到與被指向在畫面上要說不同的話
  * （D.5：已被指向而提前定案的顯示定案狀態，而不是一個已經沒有意義的倒數）。
+ *
+ * `until` 是 null 代表沒有期限（R15）：還開著，而且不會因為時間到而關上。
  */
 export type Rumination =
-  | { open: true; until: string }
+  | { open: true; until: string | null }
   | { open: false; reason: 'cited' | 'expired' };
+
+/**
+ * R15：沒有反芻期的型別。被引用（R6）之前，修改、新增連結與刪除都不受時間限制。
+ *
+ * 產出需要反覆改稿：反芻期一過就只能發新版本的話，每改一次就多一張卡。
+ * 定案照舊只看 R6——被引用之後，修改以新版本（updates）延續。
+ *
+ * 寫成一份清單而不是一個 if，是因為「沉澱」那句 SQL 也要問同一件事（見 query.ts）。
+ */
+export const UNWINDOWED_TYPES: readonly CardType[] = ['output'];
 
 /**
  * 純函式：兩個事實進來，狀態出去。
@@ -283,13 +320,19 @@ export type Rumination =
  * 「有沒有人指向這張卡」是索引才知道的事，而這一層不能碰索引，所以它是
  * 參數而不是查詢——跟 validateDraft 收 { cardExists, typeOf } 是同一個做法。
  * 去問索引的那一步在 service/cards.ts 的 ruminationFor。
+ *
+ * 型別收的是字串：索引裡的列也會問這一句，而那裡的 type 是沒有收窄過的 TEXT。
  */
 export function ruminationOf(
-  card: Pick<Card, 'created'>,
+  card: { created: string; type: string },
   ctx: { windowMs: number; cited: boolean; now?: number },
 ): Rumination {
   // R6 先判：被指向就立刻定案，不論反芻期是否結束。
   if (ctx.cited) return { open: false, reason: 'cited' };
+
+  if ((UNWINDOWED_TYPES as readonly string[]).includes(card.type)) {
+    return { open: true, until: null };
+  }
 
   const created = Date.parse(card.created);
   if (Number.isNaN(created)) return { open: false, reason: 'expired' };
@@ -310,4 +353,28 @@ export function ruminationOf(
  */
 export function editableSince(windowMs: number, now = Date.now()): string {
   return new Date(now - windowMs).toISOString();
+}
+
+// ---------------------------------------------------------------- 勾選
+
+/**
+ * R14：切換勾選標記不算修改卡片，不受反芻期（R5）與定案（R6）限制。
+ *
+ * 不可變的意義在於寫完不必回頭維護，不在於禁止狀態改變：勾選記錄的是
+ * 「這件事做完了」，不是對內容的修訂。它也不牴觸 R6——R6 守護的是段落錨點，
+ * 換一個字元不改變區塊的數量與順序，`#b{n}` 照舊指得到同一段。
+ *
+ * 為了不讓這條變成編輯的後門，它能做的事只有這裡這一件：把 `at` 那一格在
+ * 「空白」與「x」之間換掉。哪一格是標記由解析器決定（web/render.ts 的
+ * taskMarks）——這一層不解析 Markdown，只認得那一格長什麼樣子。
+ *
+ * 那一格不是標記就回 null，不寫：位置算錯的時候，寧可什麼都不做，
+ * 也不要在一張可能已經定案的卡上換掉一個不相干的字。
+ */
+export function setTaskMark(text: string, at: number, checked: boolean): string | null {
+  const now = text.charAt(at);
+  const framed = text.charAt(at - 1) === '[' && text.charAt(at + 1) === ']';
+  if (!framed || (now !== ' ' && now !== 'x' && now !== 'X')) return null;
+  if ((now !== ' ') === checked) return text;
+  return `${text.slice(0, at)}${checked ? 'x' : ' '}${text.slice(at + 1)}`;
 }

@@ -291,7 +291,7 @@ describe('驗收條件', () => {
 
     // 同一個判準也把它移出「沉澱」清單。
     const page2 = (await h.app.fastify.inject('/settling')).body;
-    // 側欄的卡片索引每一頁都在，會把每張卡的標題都印一次——要看的是清單本身。
+    // 側欄每一頁都在，也會列出東西（最近的標籤或卡片）——要看的是清單本身。
     const settling = page2.slice(page2.indexOf('<main'), page2.indexOf('</main>'));
     // 用 ID 而不是標題來判斷：B 的 meta 行會把 about 目標（也就是 A）的標題
     // 印出來，拿標題比對會誤判成「A 還在清單裡」。

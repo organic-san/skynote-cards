@@ -99,8 +99,8 @@
     fields(form).forEach(function (el) {
       if (typeof f[el.name] !== 'string') return;
       el.value = f[el.name];
-      // 內容是程式改的，聽 input 的那幾支（隨手記的「將存為什麼」、標籤推薦）
-      // 要自己收到通知，否則畫面上的判斷停在還原之前。
+      // 內容是程式改的，聽 input 的那幾支（標籤推薦）要自己收到通知，
+      // 否則畫面上的判斷停在還原之前。
       el.dispatchEvent(new Event('input', { bubbles: true }));
     });
   }

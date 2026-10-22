@@ -190,21 +190,4 @@
     });
   }
 
-  // ------------------------------------------------------------ 將存為什麼
-  //
-  // U18：把已經做完的判斷顯示出來。不是多一次決策——
-  // 「不填標題就是碎片」那條生死線不動，只是讓結果在送出前可見。
-
-  var quick = document.getElementById('quickform');
-  var willsave = document.getElementById('quicksubmit');
-  if (quick && willsave) {
-    var titleInput = quick.querySelector('input[name=title]');
-    var label = willsave.querySelector('span');
-    var syncWillSave = function () {
-      label.textContent = titleInput.value.trim() === '' ? '碎片' : '思考';
-    };
-    titleInput.addEventListener('input', syncWillSave);
-    syncWillSave();
-  }
-
 })();

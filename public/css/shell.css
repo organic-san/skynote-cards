@@ -89,8 +89,21 @@ body:has(.drawer.open) .menubtn {
 .drawernav { display: flex; flex-direction: column; gap: 2px; }
 .drawernav { padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 
+/* 「更新」是一顆 POST 的按鈕（v3 §7），長得要跟旁邊的連結一樣：
+   form 本身不佔版面，按鈕吃掉連結的那一套樣式。 */
+.drawernav form { display: contents; }
+.drawernav button {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .drawerwork a,
-.drawernav a {
+.drawernav a,
+.drawernav button {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -100,23 +113,26 @@ body:has(.drawer.open) .menubtn {
   color: var(--text-2);
 }
 .drawerwork a:hover,
-.drawernav a:hover { background: var(--hover-bg); text-decoration: none; }
+.drawernav a:hover,
+.drawernav button:hover { background: var(--hover-bg); text-decoration: none; }
 
 /* U32 selected：底色塊，字重不變。 */
 .drawerwork a.on,
-.drawernav a.on { background: var(--selected-bg); color: var(--text); }
+.drawernav a.on,
+.drawernav button.on { background: var(--selected-bg); color: var(--text); }
 
 .drawerwork .icon,
 .drawernav .icon { flex: 0 0 auto; color: var(--text-3); }
 
 /*
-  U11：卡片索引。用途是建立連結時查名稱，不是導覽，所以字級小一級、
-  顏色跟側欄其他項目一致——不再是這裡唯一的藍色連結。
+  側欄下半（v3 §5）：文章一覽列最近的標籤，卡片頁與編輯介面列最近的卡片。
+  字級小一級、顏色跟側欄其他項目一致：它是隨手可點的參照，不與上半的工作狀態競爭。
 */
 /* 這一欄的文字是 13px，色點跟著縮一號（見 tokens 的 --dot-sm）。
    碎片的虛線環在 6px 上幾乎看不出是虛線，只剩「空心」這個區別——
-   空心才是它跟另外三型的分界，虛線是那之上的修飾，縮小時優雅地退掉。 */
-.cardindex {
+   空心才是它跟另外幾型的分界，虛線是那之上的修飾，縮小時優雅地退掉。 */
+.sidecards,
+.sidetags {
   --dot: var(--dot-sm);
   /* 這一份吃掉側欄剩下的全部高度，所以上面每一組的留白都直接從它身上扣——
      清單要夠長，才有「查得到東西」的價值。 */
@@ -130,8 +146,10 @@ body:has(.drawer.open) .menubtn {
   font-size: var(--fs-1);
   color: var(--text-3);
 }
-.cardindex ul { list-style: none; margin: 0; padding: 0; }
-.cardindex a {
+.sidecards ul,
+.sidetags ul { list-style: none; margin: 0; padding: 0; }
+.sidecards a,
+.sidetags a {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -141,15 +159,17 @@ body:has(.drawer.open) .menubtn {
   line-height: var(--lh-1);
   color: var(--text-2);
 }
-/* 截斷落在標題上，不落在整條連結上——否則色點會跟著被裁掉。 */
+/* 截斷落在名稱上，不落在整條連結上——否則色點會跟著被裁掉。 */
 .indextitle {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cardindex a:hover { background: var(--hover-bg); text-decoration: none; }
-.cardindex a.on { background: var(--selected-bg); color: var(--text); }
+.sidecards a:hover,
+.sidetags a:hover { background: var(--hover-bg); text-decoration: none; }
+.sidecards a.on,
+.sidetags a.on { background: var(--selected-bg); color: var(--text); }
 
 /*
   U19：內容欄靠左對齊，距側欄右緣一個固定間距。

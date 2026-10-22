@@ -61,8 +61,8 @@
 .fabmenu-item .icon { flex: 0 0 auto; color: var(--text-3); }
 .fabmenu-item:hover .icon { color: var(--text-2); }
 
-/* 隨手記：兩個欄位加一顆送出鍵。沒有型別、沒有標籤、沒有連結——
-   憑空記一句話如果需要一次型別決策，它就輸給 Discord。 */
+/* 隨手記：一個文字框加一顆送出鍵，只寫碎片（v3 §4.3）。沒有標題、沒有型別、
+   沒有標籤、沒有連結——憑空記一句話如果需要一次型別決策，它就輸給 Discord。 */
 .quick { width: min(var(--quick-w), calc(100vw - var(--sp-7))); padding: var(--sp-3); }
 /* 標題那一排：左邊是這是什麼，右邊是「這一則不只一句話」的出口。 */
 .quickhead {
@@ -77,10 +77,12 @@
 /* 它是一個動作，不是一個標籤——所以比左邊那幾個字深一階，而且帶圖示。 */
 .quickexpand { color: var(--text-2); }
 .quickexpand .icon { width: var(--sp-4); height: var(--sp-4); }
-.quick input, .quick textarea {
+.quick textarea {
   display: block;
   width: 100%;
   font: inherit;
+  font-family: var(--font-doc);
+  line-height: var(--lh-2);
   padding: var(--sp-2) var(--sp-3);
   margin-bottom: var(--sp-2);
   border: 1px solid var(--line);
@@ -88,9 +90,6 @@
   background: var(--surface-raised);
   resize: vertical;
 }
-.quick textarea { font-family: var(--font-doc); line-height: var(--lh-2); }
-.willsave { margin: 0 0 var(--sp-2); font-size: var(--fs-1); color: var(--text-3); }
-.willsave span { color: var(--text-2); }
 .quick .primary { width: 100%; }
 
 /* ---------------------------------------------------------- 表單 */
@@ -131,8 +130,11 @@
 
 .typepick { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-7); }
 .typebtn input { position: absolute; opacity: 0; pointer-events: none; }
-.typebtn span {
-  display: inline-block;
+/* 只套按鈕那一層：裡面的色點也是 span，不能跟著長出框線與內距。 */
+.typebtn > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-field);

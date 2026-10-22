@@ -1,3 +1,4 @@
+import { UNWINDOWED_TYPES } from '../../domain/rules.ts';
 import { type IndexDb, ftsQuery, idDesc } from './schema.ts';
 
 /** 索引的讀取面。每一支都是純查詢，不寫入任何東西。 */
@@ -250,8 +251,12 @@ const LOOSE_THINKING = `c.type = 'thinking' AND c.link_count = 0 AND ${NO_INBOUN
  * 兩個條件都要：時間還沒到（R5），而且還沒有人指向它（R6）。
  * 被指向就定案，那一刻它就不再屬於「還可以動的東西」——
  * 這跟關閉編輯、禁止刪除是同一個判準，只是在這裡寫成 SQL。
+ *
+ * 沒有反芻期的型別不列（R15）：這份清單是「還在反芻期內」的卡，
+ * 產出被引用之前一直改得動，列進來它就永遠不會離開。
  */
-const SETTLING = `c.created > ? AND ${NO_INBOUND}`;
+const WINDOWED = `c.type NOT IN (${UNWINDOWED_TYPES.map((t) => `'${t}'`).join(', ')})`;
+const SETTLING = `c.created > ? AND ${NO_INBOUND} AND ${WINDOWED}`;
 
 /**
  * R6：有沒有任何卡片指向它。

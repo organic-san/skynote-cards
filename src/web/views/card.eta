@@ -24,16 +24,24 @@
     <% } %>
     <% if (it.provenance) { %><span class="sep">·</span><span><%= it.provenance %></span><% } %>
     <%/* D.5：meta 行末尾的反芻狀態。不加框、不做倒數跳動（U12）——
-         這一頁是拿來讀的。數字由 app.js 依 datetime 算一次，重整就正確。 */%>
-    <% if (it.rumination.open) { %>
+         這一頁是拿來讀的。數字由 app.js 依 datetime 算一次，重整就正確。
+         沒有期限的（產出，R15）沒有「還剩多久」可說，不顯示。 */%>
+    <% if (it.rumination.until) { %>
     <span class="sep">·</span>
     <span class="settling">尚可編輯 <time datetime="<%= it.rumination.until %>" data-remain><%= it.rumination.text %></time></span>
     <% } %>
-    <%/* 複製鈕置於時間與 meta 行末（.cardmeta），每筆資料皆有。交出去的是 data-md
-         上的原始 Markdown，不是畫面上這份 HTML——見 routes 的 body_md 與 js/copy.js。 */%>
-    <button type="button" class="copybtn" id="copybtn" aria-label="複製內文">
-      <%~ include('icon', { name: 'copy' }) %><%~ include('icon', { name: 'check' }) %><span class="copysaid">已複製</span>
-    </button>
+    <%/* 複製與下載置於 meta 行末（.cardmeta），每筆資料皆有。交出去的是 data-md
+         上的原始 Markdown，不是畫面上這份 HTML——見 routes 的 body_md、js/copy.js
+         與 js/download.js。 */%>
+    <span class="cardtools">
+      <button type="button" class="toolbtn copybtn" id="copybtn" aria-label="複製內文">
+        <%~ include('icon', { name: 'copy' }) %><%~ include('icon', { name: 'check' }) %><span class="copysaid">已複製</span>
+      </button>
+      <button type="button" class="toolbtn dlbtn" id="dlbtn" aria-label="下載成 .md 檔"
+              data-file="<%= it.heading ? it.heading.text : it.card.id %>.md">
+        <%~ include('icon', { name: 'download' }) %>
+      </button>
+    </span>
   </p>
 
   <% if (it.card.tags.length) { %>
@@ -60,7 +68,10 @@
   </div>
   <% } %>
 
-  <div class="body" data-md="<%= it.body_md %>"><%~ it.body_html %></div>
+  <%/* data-title：下載的檔案以 `# 標題` 開頭（v3 §6.1），碎片沒有標題就不印。
+       data-rev：勾選帶回去比對用（R14，見 js/tasks.js）。 */%>
+  <div class="body" data-id="<%= it.card.id %>" data-md="<%= it.body_md %>" data-rev="<%= it.rev %>"
+       <% if (it.heading) { %>data-title="<%= it.heading.text %>"<% } %>><%~ it.body_html %></div>
 
   <% if (it.editable) { %>
   <p class="actions"><a class="textbtn" href="/c/<%= it.card.id %>/edit">編輯</a></p>
@@ -68,6 +79,8 @@
 </article>
 
 <script src="/static/js/copy.js" defer></script>
+<script src="/static/js/download.js" defer></script>
+<script src="/static/js/tasks.js" defer></script>
 
 <%/* U13：關聯區塊維持縱向的體感式結構。上游在上、下游在下，
      中間是「你在這裡」，方向由**空間位置**表達而不是由文字說明表達。

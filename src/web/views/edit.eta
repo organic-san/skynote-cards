@@ -5,14 +5,21 @@
 <%/* 這一頁的欄位一律是伺服器從卡片填進來的，所以草稿不靜默覆蓋。
      清除也跟建立頁不同：送出走 fetch PUT，沒有導向可以掛 ?d=，
      由 editform.js 在請求成功之後自己清（見 js/draft.js）。 */%>
-<form class="newform" id="editcard" data-id="<%= it.card.id %>"
+<%/* data-rev：載入時這張卡的內容。送出時帶回去，伺服器發現別處改過就回 409，
+     舊的這一頁不會無聲蓋掉另一頁存下的修改（見 js/editform.js）。 */%>
+<form class="newform" id="editcard" data-id="<%= it.card.id %>" data-rev="<%= it.rev %>"
       data-draft-scope="<%= it.draftScope %>" data-draft-prefilled>
   <p class="cardmeta">
     <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
     <time datetime="<%= it.created_display.iso %>"><%= it.created_display.text %></time>
     <%/* 倒數只出現在這一頁。卡片頁是拿來讀的，一個每秒跳一次的數字
-         放在內文上方是干擾；在這裡你就是在跟那段時間賽跑。 */%>
+         放在內文上方是干擾；在這裡你就是在跟那段時間賽跑。
+         沒有期限的（產出，R15）沒有賽跑，只說一次規則。 */%>
+    <% if (it.no_window) { %>
+    <span class="lock">被引用之前都可以修改</span>
+    <% } else { %>
     <span class="lock num" id="lock" data-until="<%= it.lock_at %>"></span>
+    <% } %>
   </p>
 
   <% if (it.single) { %>

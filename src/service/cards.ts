@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import type { Card, CardDraft, CardLink, CardType } from '../domain/types.ts';
 import { isCardType } from '../domain/types.ts';
 import { fileExistsTaken, generateId } from '../domain/id.ts';
+import { cardText, withCardText } from '../domain/card.ts';
 import {
   LOCKED_MESSAGE,
   UNDELETABLE_MESSAGE,
@@ -8,7 +10,9 @@ import {
   checkFleetingHasNoLinks,
   checkLinks,
   checkRelMatrix,
+  checkThinkingHasTag,
   ruminationOf,
+  setTaskMark,
   validateDraft,
   validateLinkOrder,
 } from '../domain/rules.ts';
@@ -49,7 +53,7 @@ export interface CardServiceDeps {
  */
 export function ruminationFor(
   deps: Pick<CardServiceDeps, 'index' | 'editWindowMs'>,
-  card: Pick<Card, 'id' | 'created'>,
+  card: { id: string; created: string; type: string },
   now?: number,
 ): Rumination {
   return ruminationOf(card, {
@@ -59,12 +63,42 @@ export function ruminationFor(
   });
 }
 
+/**
+ * 這張卡現在的內容，濃縮成一個短字串。
+ *
+ * 頁面載入時拿一份，送出時帶回來比對——對不上就是這段時間裡別處改過它
+ * （另一台裝置的編輯頁、另一個分頁的勾選）。舊的那頁照樣存下去的話，
+ * 會無聲蓋掉那次修改；勾選的話，序號可能已經指到別的項目。
+ *
+ * 只算使用者寫得到的那幾樣。連結不算：它只增不減，兩邊各加各的不會互相蓋掉。
+ * 內文去掉首尾空白再算，因為索引裡那一份與檔案裡那一份在首尾不一定逐字相同
+ * （見 routes 的 body_md），而首尾的空白不會讓第 k 個標記換人。
+ * 卡片頁從索引算、寫入路徑從檔案算，兩邊因此算得出同一個值。
+ */
+export function contentRev(card: {
+  title: string;
+  tags: readonly string[];
+  url: string | null;
+  body: string;
+}): string {
+  return createHash('sha1')
+    .update(JSON.stringify([card.title, card.tags, card.url, card.body.trim()]))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+/** 頁面帶回來的 rev 跟現在對不上時說的話。 */
+export const CONFLICT_MESSAGE = '這張卡在別的地方改過了，重新載入之後再試一次。';
+
 export type CreateResult = { ok: true; card: Card } | { ok: false; errors: string[] };
 
-/** 修改失敗分兩種：窗口已關（不可回復），與內容不合格（改了再送就行）。 */
+/**
+ * 修改失敗分三種：窗口已關（不可回復）、內容不合格（改了再送就行）、
+ * 頁面過期（別處改過，重新載入再說）。
+ */
 export type UpdateResult =
   | { ok: true; card: Card }
-  | { ok: false; reason: 'locked' | 'invalid'; errors: string[] };
+  | { ok: false; reason: 'locked' | 'invalid' | 'conflict'; errors: string[] };
 
 /**
  * 表單送上來、還沒有 ID 的東西經過驗證之後落地。
@@ -120,6 +154,11 @@ export interface UpdatePatch {
    * 而寫錯的樣子是一條連結無聲消失。
    */
   addLinks?: { rel?: string; to?: string }[];
+  /**
+   * 編輯頁載入時那一份 contentRev。對不上就不寫（409）。
+   * 沒帶的請求（API、測試）不檢查——它們沒有「載入時」可言。
+   */
+  rev?: string;
 }
 
 export function updateCard(
@@ -130,6 +169,9 @@ export function updateCard(
   const existing = readCard(deps.corpusPath, id);
   if (!ruminationFor(deps, existing).open) {
     return { ok: false, reason: 'locked', errors: [LOCKED_MESSAGE] };
+  }
+  if (patch.rev !== undefined && patch.rev !== contentRev(existing)) {
+    return { ok: false, reason: 'conflict', errors: [CONFLICT_MESSAGE] };
   }
 
   // 可改的只有這四個欄位。類型、連結、id、created 不接受任何形式的修改。
@@ -144,6 +186,10 @@ export function updateCard(
     }
     tags = [...new Set(tags)];
   }
+
+  // R11：修改視同建立（R4 的但書），不能把思考的標籤刪到一個不剩。
+  const untagged = checkThinkingHasTag(existing.type, tags);
+  if (untagged.length > 0) return { ok: false, reason: 'invalid', errors: untagged };
 
   const url = pickUrl(existing.url, patch.url);
 
@@ -240,6 +286,39 @@ export function deleteCard(deps: CardServiceDeps, id: string): DeleteResult {
   return { ok: true };
 }
 
+export type ToggleResult =
+  | { ok: true; card: Card; rev: string }
+  | { ok: false; reason: 'conflict' | 'invalid'; errors: string[] };
+
+/**
+ * R14：切換一個勾選標記。不問反芻期，也不問定案——勾選不算修改。
+ *
+ * `at` 是標記在那段文字裡的位置，由路由用解析器算好（web/render.ts 的
+ * taskMarks）。這一層不能碰 render，所以收的是位置，不是序號。
+ *
+ * 跟修改分開的兩件事：不更新 `revised`（那個欄位記的是內容的修訂），
+ * commit 的動作是 `check`。其餘照一般的寫入路徑走：寫檔、索引、一個 commit。
+ */
+export function toggleTask(
+  deps: CardServiceDeps,
+  id: string,
+  opts: { at: number; checked: boolean; rev: string },
+): ToggleResult {
+  const existing = readCard(deps.corpusPath, id);
+  if (opts.rev !== contentRev(existing)) {
+    return { ok: false, reason: 'conflict', errors: [CONFLICT_MESSAGE] };
+  }
+
+  const before = cardText(existing);
+  const after = setTaskMark(before, opts.at, opts.checked);
+  if (after === null) return { ok: false, reason: 'invalid', errors: ['那裡沒有勾選標記'] };
+  if (after === before) return { ok: true, card: existing, rev: contentRev(existing) };
+
+  const updated = withCardText(existing, after);
+  persist(deps, updated, 'check');
+  return { ok: true, card: updated, rev: contentRev(updated) };
+}
+
 function pickUrl(current: string | null, given: string | undefined): string | null {
   if (given === undefined) return current;
   const v = given.trim();
@@ -251,7 +330,7 @@ function pickUrl(current: string | null, given: string | undefined): string | nu
  * 索引寫失敗不往上丟：檔案已經在了，索引隨時可以重建。
  * 備份是 fire-and-forget，不會擋住任何一條寫入路徑。
  */
-function persist(deps: CardServiceDeps, card: Card, action: 'add' | 'edit'): void {
+function persist(deps: CardServiceDeps, card: Card, action: 'add' | 'edit' | 'check'): void {
   writeCardFile(deps.corpusPath, card);
   try {
     deps.index.putCard(card);
