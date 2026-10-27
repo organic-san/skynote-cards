@@ -23,7 +23,7 @@ import fs from 'node:fs';
 
   代價：ID 從 17 位變成 19 位。全程 BigInt（compareIds、nextRaw），
   索引排序用 `LENGTH DESC, TEXT DESC`（等價於數值），程式碼裡沒有任何
-  `Number(id)`，所以位數變長不影響任何一處。距離 2^63 還有約 50 年。
+  `Number(id)`，所以位數變長不影響任何一處。2^63 要到 2088 年才會用完。
 */
 export const EPOCH = 1546300800000n; // 2019-01-01T00:00:00Z
 

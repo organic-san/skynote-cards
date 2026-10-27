@@ -1,8 +1,8 @@
-# /etc/systemd/system/append-cards.service
+# /etc/systemd/system/skynote-cards.service
 # 只監聽 localhost:3000，對外由 cloudflared 接手，機器不開任何對外埠。
 
 [Unit]
-Description=append-cards
+Description=skynote-cards
 After=network-online.target
 Wants=network-online.target
 
