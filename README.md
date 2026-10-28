@@ -58,7 +58,7 @@ npm run dev                     # 開發模式（預設監聽 127.0.0.1:3000）
 
 環境變數（程式不會自己讀 `.env`；要嘛先 export，要嘛用 `node --env-file=.env src/server.ts` 啟動）：
 - `CORPUS_PATH`：語料庫目錄路徑（裡面放 `cards/*.md`，預設 `./corpus-dev`）。
-  - 同一層可以放一個選用的 `tags.yml`（跟著語料庫一起版控），把「匯入」這類出處標記擋在表單推薦與側欄最近標籤外面；標籤頁、搜尋跟手動輸入都不受影響：
+  - 同一層可以放一個選用的 `tags.yml`（跟著語料庫一起版控），把「匯入」這類出處標記擋在表單推薦與側欄最近標籤外面。
     ```yaml
     locked:
       - 匯入
@@ -68,13 +68,13 @@ npm run dev                     # 開發模式（預設監聽 127.0.0.1:3000）
 - `HOST`：監聽位址（預設 `127.0.0.1`，只有本機連得到）。
 - `EDIT_WINDOW_HOURS`：反芻期小時數（預設 `8`）。
 
-App Engine 用的設定（Cloud Storage、GitHub token、IAP）寫在 [`app.yaml`](app.yaml)，說明見 [deploy/README.md](deploy/README.md)。本機不設它們，行為就跟以前一樣：本機檔案是真相。
+App Engine 用的設定（Cloud Storage、GitHub token、IAP）寫在 [`app.yaml`](app.yaml)，說明見 [deploy/README.md](deploy/README.md)。
 
 ---
 
 ## 部署與維運
 
-正式環境在 Google App Engine（`asia-east1`），透過 IAP 只讓自己的 Google 帳號登入。push 到 `main` 之後，GitHub Actions 先跑測試，過了才部署；只改文件不會觸發。從零開始的設定步驟見 [deploy/README.md](deploy/README.md)。
+正式環境在 Google App Engine（`asia-east1`），透過 IAP 只讓自己的 Google 帳號登入。push 到 `main` 之後，GitHub Actions 先跑測試，過了才部署。從零開始的設定步驟見 [deploy/README.md](deploy/README.md)。
 
 ```
 Cloud Storage：<專案 ID>-corpus     ← 卡片的唯一真相
@@ -91,5 +91,3 @@ App Engine 的 /tmp/corpus、index.db ← 開機時對帳出來的副本與索�
 | **取回遠端語料庫並重建索引** | 側欄的「更新」（`POST /update`） |
 
 如果在別處的 clone 手動改了卡片檔或 `tags.yml` 並 push 上去，按一下側欄的「更新」：系統會先補上還沒 commit 的卡片、跑 `git pull --rebase`、跟 bucket 對帳（取回來的修改傳上 bucket）、把本機領先的 commit 推回去，最後重建索引。遇到衝突就直接放棄這次取回，不會把語料庫弄髒。重建後的報告也會列出有沒有因為手改而違反規則的卡片或壞連結。
-
-想放在自己的機器上（VM、家裡的小主機），照 [deploy/vm.md](deploy/vm.md)：不設 Cloud Storage，本機檔案就是真相，對外改用 Cloudflare Tunnel 與 Access。
