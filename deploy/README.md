@@ -376,6 +376,7 @@ bucket 存不進去時回 503「暫時存不進去」，什麼都沒寫；草稿
 | 手動重建索引 | `POST /_reindex`（不用，換機器也會重建） |
 | 換一台機器 | `gcloud app instances delete <ID> --service=default --version=<版本>` |
 | 換 GitHub token | `printf '%s' "$NEW" \| gcloud secrets versions add corpus-git-token --data-file=-`，再換一台機器 |
+| 新增、移除可以登入的人 | `gcloud projects add-iam-policy-binding $PROJECT --member=user:<Google 帳號> --role=roles/iap.httpsResourceAccessor`（移除用 `remove-iam-policy-binding`），或在主控台的 IAM 頁操作。程式不分使用者：進得來的人能讀寫、刪除全部卡片，commit 的作者也都是同一個 |
 | 看花了多少錢 | 見下面的「費用」 |
 
 ### 費用
