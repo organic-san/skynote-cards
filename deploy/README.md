@@ -163,7 +163,9 @@ gcloud iap web enable --resource-type=app-engine \
 unset SECRET
 ```
 
-**確認**：主控台 → 安全性 → Identity-Aware Proxy，「App Engine 應用程式」那一列的 IAP 是開的。
+**確認**：`gcloud app describe --format='yaml(iap)'` 有 `enabled: true` 與你的用戶端 ID。
+`oauth2ClientSecretSha256` 是 `e3b0c442` 開頭的話，代表送出去的密鑰是空的（例如中間開了新的終端機，
+`$SECRET` 不見了），重跑一次。第一次部署之前，主控台的 IAP 頁可能還看不到 App Engine。
 
 **5.4 只放行你自己：**
 
@@ -172,7 +174,8 @@ gcloud projects add-iam-policy-binding $PROJECT \
   --member=user:$GMAIL --role=roles/iap.httpsResourceAccessor
 ```
 
-（主控台的說法是「IAP-secured Web App User」。明確加上這個角色，不要依賴專案擁有者的身分。）
+（主控台的說法是「IAP-secured Web App User」，在 IAM 頁授予存取權也行。
+明確加上這個角色，不要依賴專案擁有者的身分：擁有者不會自動有這個權限。）
 
 **確認**（第一次部署之後）：
 
