@@ -1,0 +1,64 @@
+name: ci
+
+# 只在 main 上自動跑：開發分支 push 再多次也不花 CI。
+# 要在分支上跑測試就到 Actions 頁面手動觸發（workflow_dispatch）；
+# 手動觸發在分支上只跑測試，部署只會發生在 main。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  # 測試過了才部署到 App Engine。設定步驟見 deploy/README.md。
+  #
+  # GCP 那邊還沒設定好（repo 的 Variables 裡沒有 GCP_PROJECT_ID）就整個跳過，
+  # 不會因為部署失敗而一片紅。
+  #
+  # 這裡不存任何金鑰：Workload Identity Federation 拿 GitHub 簽給這次執行的
+  # OIDC token 去換 GCP 的短期憑證。GCP 那邊只認這個 repo 的 main 分支，
+  # 所以別人 fork 之後跑的 workflow 換不到。
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    # 兩次 push 靠得很近時，部署一個一個來，不要同時跑兩個。
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy
+        run: gcloud app deploy app.yaml --project "$PROJECT" --quiet --promote
+
+      # 每次部署都留下一個版本。只留現在的與上一版（出事時切回去用），其餘刪掉，
+      # 不然建置出來的映像檔會一直累積。刪不掉不算部署失敗。
+      - name: Keep only the previous version
+        continue-on-error: true
+        run: |
+          gcloud app versions list --project "$PROJECT" --service default \
+              --filter='traffic_split=0' --sort-by='~last_deployed_time' --format='value(id)' \
+            | tail -n +2 \
+            | xargs -r gcloud app versions delete --project "$PROJECT" --service default --quiet
