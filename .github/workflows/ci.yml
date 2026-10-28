@@ -1,19 +1,24 @@
 name: ci
 
 # 只在 main 上自動跑：開發分支 push 再多次也不花 CI。
+# 只改文件（Markdown、截圖、VM 用的檔案）也不跑：部署的內容沒變，不必多一個版本與映像檔。
 # 要在分支上跑測試就到 Actions 頁面手動觸發（workflow_dispatch）；
 # 手動觸發在分支上只跑測試，部署只會發生在 main。
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'deploy/**'
   workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -43,18 +48,19 @@ jobs:
     env:
       PROJECT: ${{ vars.GCP_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: google-github-actions/auth@v2
+      - uses: actions/checkout@v7
+      - uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@v3
 
       - name: Deploy
         run: gcloud app deploy app.yaml --project "$PROJECT" --quiet --promote
 
-      # 每次部署都留下一個版本。只留現在的與上一版（出事時切回去用），其餘刪掉，
-      # 不然建置出來的映像檔會一直累積。刪不掉不算部署失敗。
+      # 每次部署都留下一個版本。只留現在的與上一版（出事時切回去用），其餘刪掉。
+      # 建置出來的映像檔另外靠 Artifact Registry 的清除政策清掉（deploy/README.md 第 10 節）。
+      # 刪不掉不算部署失敗。
       - name: Keep only the previous version
         continue-on-error: true
         run: |

@@ -74,7 +74,7 @@ App Engine 用的設定（Cloud Storage、GitHub token、IAP）寫在 [`app.yaml
 
 ## 部署與維運
 
-正式環境在 Google App Engine（`asia-east1`），透過 IAP 只讓自己的 Google 帳號登入。push 到 `main` 之後，GitHub Actions 先跑測試，過了才部署。從零開始的設定步驟見 [deploy/README.md](deploy/README.md)。
+正式環境在 Google App Engine（`asia-east1`），透過 IAP 只讓自己的 Google 帳號登入。push 到 `main` 之後，GitHub Actions 先跑測試，過了才部署；只改文件不會觸發。從零開始的設定步驟見 [deploy/README.md](deploy/README.md)。
 
 ```
 Cloud Storage：<專案 ID>-corpus     ← 卡片的唯一真相

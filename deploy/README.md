@@ -40,7 +40,7 @@ GitHub（skynote-cards）──push main──▶ GitHub Actions：測試 → gc
 GitHub repo 推。切換的順序在第 6 步。
 
 **要綁付款帳戶。** App Engine 一律要求付款方式；這個用量在免費額度內，
-但建議設一個預算警示（第 9 節）。
+但建議設一個預算警示（第 10 節「費用」）。
 
 下面的指令在裝了 gcloud 的終端機裡跑：自己的電腦，或主控台右上角的 Cloud Shell
 （開在瀏覽器裡，已經登入、不用安裝）。先把這四行改成你的值，貼進終端機執行，
@@ -231,7 +231,7 @@ corpus=/tmp/corpus index=/tmp/index.db store=gs://<專案 ID>-corpus iap=require
 ## 7. 自動部署（GitHub Actions）
 
 之後只要 push 到 main，[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 會先跑測試，
-過了才部署。分支上不會自動跑。
+過了才部署。分支上不會自動跑；只改文件（`.md`、`docs/`、`deploy/`）也不會跑。
 
 GitHub 上不存任何金鑰：Workload Identity Federation 讓 Actions 拿 GitHub 簽的身分證明，
 換一個短期的 GCP 憑證。GCP 那邊只認 `organic-san/skynote-cards` 的 main 分支。
@@ -243,8 +243,8 @@ NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
 # 部署用的服務帳號與權限
 gcloud iam service-accounts create github-deployer --display-name="GitHub Actions deploy"
 DEPLOY_SA=github-deployer@$PROJECT.iam.gserviceaccount.com
-for role in roles/appengine.appAdmin roles/cloudbuild.builds.editor \
-            roles/storage.admin roles/serviceusage.serviceUsageConsumer; do
+for role in roles/appengine.appAdmin roles/cloudbuild.builds.editor roles/storage.admin \
+            roles/artifactregistry.writer roles/serviceusage.serviceUsageConsumer; do
   gcloud projects add-iam-policy-binding $PROJECT \
     --member=serviceAccount:$DEPLOY_SA --role=$role --condition=None
 done
@@ -271,11 +271,15 @@ echo "GCP_DEPLOY_SA    = $DEPLOY_SA"
 （不是 Secrets，這三個值都不是祕密）新增上面印出來的三個值。
 **設好的那一刻起，下一次 push 到 main 就會部署**；沒設的時候部署那一段會自動跳過。
 
-上面的權限是照官方部署 action 的說明整理的。第一次自動部署如果出現 permission denied，
-訊息會寫缺哪個權限、缺在哪個帳號上，照著補。
+上面的權限是照官方部署 action 與 App Engine 的說明整理的。建置出來的映像檔放在
+Artifact Registry，部署的帳號少了 `roles/artifactregistry.writer` 的話，會在建置完之後才失敗
+（`You do not have permission to use the container`）。自己在終端機部署不會遇到，
+因為專案擁有者什麼權限都有。其他 permission denied 的訊息會寫缺哪個權限、缺在哪個帳號上，照著補。
 
-**確認**：push 一個小改動到 main → Actions 頁面 `test` 與 `deploy` 都是綠的 →
-`gcloud app versions list` 有新版本在接流量，舊版本只剩上一版。
+**確認**：push 一個程式的改動到 main，或在 Actions 頁面手動執行 `ci`（選 main）→
+`test` 與 `deploy` 都是綠的 → `gcloud app versions list` 有新版本在接流量，舊版本只剩上一版。
+
+第一次部署之後，再替映像檔設清除政策（第 10 節「費用」）。
 
 ## 8. 收尾（可選）
 
@@ -285,8 +289,21 @@ echo "GCP_DEPLOY_SA    = $DEPLOY_SA"
 同一個主機名稱原本指向 Cloudflare Tunnel，先把那筆刪掉。
 IAP 對自訂網域一樣有效；Cloudflare Tunnel 與 Access 之後都用不到了。
 
-**刪掉 VM。** 確認穩定幾天之後，刪掉 VM、它的磁碟、快照排程與快照。
-如果快照排程也掛在別的磁碟上，只把它從 Skynote 的磁碟拿掉，不要整個刪。
+驗證的是主網域，對應時只填子網域；預先填好的主網域與 `www` 要刪掉，那是網站本身。
+憑證簽好（`gcloud app ssl-certificates list` 列得出來、狀態 `OK`）之後，Google 的前端
+還要幾分鐘才會開始用它。這段時間瀏覽器會顯示「無法連上這個網站」，等一下就好。
+
+**刪掉 VM 與 Cloudflare 上的東西。** 確認穩定幾天之後。VM 所在的專案裡如果還有別的機器，
+只動 Skynote 自己的資源：
+
+1. 刪掉 VM。開機磁碟設成跟著 VM 刪除（建立時的預設）的話，磁碟會一起刪掉；不然另外刪。
+2. 刪掉快照排程。刪之前確認它只掛在 Skynote 的磁碟上；也掛在別的磁碟上的話，
+   只把它從 Skynote 的磁碟拿掉。
+3. 刪掉快照。磁碟刪掉之後，排程產生的快照預設不會跟著刪，會繼續收費。依來源磁碟篩選出來刪。
+4. GitHub 上 VM 用的 deploy key：語料庫 repo 的 Settings → Deploy keys。那把有寫入權，
+   VM 不在了就不該留著。程式碼 repo 如果也加過，一起刪。
+5. Cloudflare Zero Trust：刪掉 Tunnel 與舊網址的 Access 應用程式。
+   DNS 裡不該再有指向 `*.cfargotunnel.com` 的記錄。
 
 ---
 
@@ -323,6 +340,7 @@ bucket 存不進去時回 503「暫時存不進去」，什麼都沒寫；草稿
   → CI 刪掉更舊的版本，只留上一版
 ```
 
+- 只改文件（`.md`、`docs/`、`deploy/`）：CI 不跑，不會多一個版本。
 - 測試沒過：不部署。
 - 建置失敗：舊版照跑，新版本是整批切換的。
 - 新版一上線就壞：切回上一版，一行指令：
@@ -358,16 +376,55 @@ bucket 存不進去時回 503「暫時存不進去」，什麼都沒寫；草稿
 | 手動重建索引 | `POST /_reindex`（不用，換機器也會重建） |
 | 換一台機器 | `gcloud app instances delete <ID> --service=default --version=<版本>` |
 | 換 GitHub token | `printf '%s' "$NEW" \| gcloud secrets versions add corpus-git-token --data-file=-`，再換一台機器 |
-| 看花了多少錢 | 主控台 → 帳單；建議在「預算與快訊」設一個 1 美元的預算警示 |
+| 新增、移除可以登入的人 | `gcloud projects add-iam-policy-binding $PROJECT --member=user:<Google 帳號> --role=roles/iap.httpsResourceAccessor`（移除用 `remove-iam-policy-binding`），或在主控台的 IAM 頁操作。程式不分使用者：進得來的人能讀寫、刪除全部卡片，commit 的作者也都是同一個 |
+| 看花了多少錢 | 見下面的「費用」 |
 
-**費用。** App Engine F1 一台常駐一天 24 小時，在每天 28 小時的免費額度內；
-bucket 只有幾 MB；Secret Manager、Cloud Build、Logging 都在免費額度內。
-建置出來的映像檔超過 0.5 GB 才收錢，CI 只留兩版就是為了這個。
+### 費用
+
+設計成落在免費額度內。額度按帳單帳戶算（Logging 除外），同一個帳單帳戶下的其他專案也會用到。
+
+| 項目 | 這個系統的用量 | 免費額度 |
+|---|---|---|
+| App Engine F1 執行個體 | 一台常駐，每天 24 小時；部署時短暫多一台 | 每天 28 小時 |
+| App Engine 對外流量 | 一個人讀寫，很少 | 每天 1 GB |
+| Artifact Registry（建置出來的映像檔） | 每版一兩百 MB，靠清除政策只留兩版 | 0.5 GB |
+| Cloud Build | 每次部署幾分鐘 | 每月 2,500 分鐘 |
+| Secret Manager | 1 個 secret，開機時讀一次 | 6 個版本、每月 1 萬次存取 |
+| Logging | 很少 | 每個專案每月 50 GiB |
+| Cloud Storage | 幾 MB | 只限美國區域，asia-east1 照算；幾 MB 一個月不到一分錢 |
+
+**映像檔的清除政策。** 每次部署都會在 Artifact Registry 的 `gae-standard` 留下一個映像檔，
+連建置完才失敗的那次也會留。只留最新兩個（線上與上一版），其他超過 7 天的刪掉。
+`gae-standard` 是第一次部署時才建出來的，所以這一步在第一次部署之後做：
+
+```bash
+cat > cleanup.json <<'EOF'
+[
+  {"name": "delete-old", "action": {"type": "Delete"},
+   "condition": {"tagState": "any", "olderThan": "7d"}},
+  {"name": "keep-two", "action": {"type": "Keep"},
+   "mostRecentVersions": {"keepCount": 2}}
+]
+EOF
+gcloud artifacts repositories set-cleanup-policies gae-standard --location=$REGION \
+  --policy=cleanup.json --no-dry-run
+```
+
+清除是背景工作，大約一天內生效。
+
+**怎麼確認還在免費額度內：**
+
+- **預算警示**：帳單 → 預算與快訊 → 建立預算，範圍選這個專案、金額 1 美元。開始收錢就會寄信。
+- **App Engine → 配額詳細資料**：今天用了幾小時的執行個體，上限 28。
+- **帳單 → 報表**：篩選這個專案、依 SKU 分組，每一項都應該是 0。帳單資料大約晚一天。
+- **Artifact Registry**：`gae-standard` 的大小在 0.5 GB 以下。
 
 ### 出問題的時候
 
 | 看到什麼 | 原因 |
 |---|---|
+| 部署時 `staging.<專案 ID>.appspot.com` … `The specified bucket does not exist` | App Engine 部署用的暫存值區沒有建出來。`gcloud beta app repair` 會補建 |
+| CI 部署在建置完之後失敗：`You do not have permission to use the container` | `github-deployer` 少了 `roles/artifactregistry.writer`（第 7 節）。補上之後重跑失敗的 job |
 | 第一次部署就失敗，訊息說 `$APP_SA` 缺某個權限 | 2024 年 6 月之後開的專案，建置可能改用這個帳號，權限不一定夠。照訊息替它補角色；Google 文件的解法是 Storage 管理員，或直接給編輯者 |
 | 每一頁都是「需要經過 Google 登入（IAP）」的 403 | IAP 沒打開，或請求沒經過 IAP。程式在擋，不是壞了 |
 | Google 的「You don't have access」 | 這個帳號沒有 `roles/iap.httpsResourceAccessor`（5.4） |
