@@ -42,7 +42,9 @@ GitHub repo 推。切換的順序在第 6 步。
 **要綁付款帳戶。** App Engine 一律要求付款方式；這個用量在免費額度內，
 但建議設一個預算警示（第 9 節）。
 
-下面的指令都在 WSL 裡跑，先把這幾個值設好：
+下面的指令在裝了 gcloud 的終端機裡跑：自己的電腦，或主控台右上角的 Cloud Shell
+（開在瀏覽器裡，已經登入、不用安裝）。先把這四行改成你的值，貼進終端機執行，
+後面指令裡的 `$PROJECT` 這些就會代入；開新的終端機要再貼一次：
 
 ```bash
 PROJECT=skynote-xxxxxx        # 新專案的 ID，全球唯一，自己取
@@ -149,10 +151,17 @@ token 不寫進任何檔案：程式開機時讀 secret，用環境變數交給 
 - 再編輯這個用戶端，「已授權的重新導向 URI」加一條：
   `https://iap.googleapis.com/v1/oauth/clientIds/<用戶端 ID>:handleRedirect`
 
-**5.3 打開 App Engine 的 IAP。** 主控台 → 安全性 → Identity-Aware Proxy：
+**5.3 打開 App Engine 的 IAP，並指定 5.2 的用戶端。** 用指令做：Google 的文件對 App Engine
+建議用這個方式指定自訂用戶端，主控台的設定方式沒有寫支援 App Engine。
 
-- 列表裡的「App Engine 應用程式」那一列，把 IAP 開關打開。
-- 要求 OAuth 設定時（或在該列的設定裡）選自訂 OAuth，貼上 5.2 的用戶端 ID 與密鑰。
+```bash
+read -rs SECRET                      # 貼上用戶端密鑰，畫面不會顯示
+gcloud iap web enable --resource-type=app-engine \
+  --oauth2-client-id=<用戶端 ID> --oauth2-client-secret="$SECRET"
+unset SECRET
+```
+
+**確認**：主控台 → 安全性 → Identity-Aware Proxy，「App Engine 應用程式」那一列的 IAP 是開的。
 
 **5.4 只放行你自己：**
 
@@ -165,7 +174,8 @@ gcloud projects add-iam-policy-binding $PROJECT \
 
 **確認**（第一次部署之後）：
 
-- 無痕視窗開 `https://$PROJECT.appspot.com`：先看到 Google 登入，登入後才是卡片列表。
+- 無痕視窗開 App Engine 的網址（`gcloud app describe --format='value(defaultHostname)'`，
+  長得像 `$PROJECT.<區域代碼>.r.appspot.com`）：先看到 Google 登入，登入後才是卡片列表。
 - 用另一個 Google 帳號登入：看到「You don't have access」。
 - 有登入時開 `/_health`：看得到 JSON。
 
@@ -181,7 +191,8 @@ sudo systemctl disable --now skynote-cards-deploy.timer skynote-cards
 `unpushed_commits` 不是 0，先在側欄按一次「更新」，等它變 0 再停。
 停了之後 VM 不會再寫，GitHub 上的語料庫就是全部。
 
-**6.2 部署。** 第一次在本機手動跑，看得到完整的輸出：
+**6.2 部署。** 第一次手動跑，看得到完整的輸出（在 Cloud Shell 的話，先把這個 repo
+clone 下來、切到要部署的分支，在 repo 的目錄裡跑）：
 
 ```bash
 gcloud app deploy app.yaml --project $PROJECT
@@ -352,6 +363,7 @@ bucket 只有幾 MB；Secret Manager、Cloud Build、Logging 都在免費額度�
 
 | 看到什麼 | 原因 |
 |---|---|
+| 第一次部署就失敗，訊息說 `$APP_SA` 缺某個權限 | 2024 年 6 月之後開的專案，建置可能改用這個帳號，權限不一定夠。照訊息替它補角色；Google 文件的解法是 Storage 管理員，或直接給編輯者 |
 | 每一頁都是「需要經過 Google 登入（IAP）」的 403 | IAP 沒打開，或請求沒經過 IAP。程式在擋，不是壞了 |
 | Google 的「You don't have access」 | 這個帳號沒有 `roles/iap.httpsResourceAccessor`（5.4） |
 | 502 `Empty Google Account OAuth client ID(s)/secret(s)` | 沒有設自訂 OAuth 用戶端（5.2、5.3） |
