@@ -102,13 +102,15 @@ gcloud storage buckets add-iam-policy-binding gs://$PROJECT-corpus \
 
 App Engine 上沒有 SSH 金鑰可以放，改用 token 走 HTTPS。
 
-GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** →
-Generate new token：
+GitHub 上建一個 fine-grained token。這個連結會先填好名稱、擁有者（`organic-san`）、
+期限 366 天與 Contents 的寫入權限：
 
-- Resource owner：`organic-san`
-- Repository access：Only select repositories → **`skynote-cards-corpus`**
-- Permissions → Repository permissions → **Contents：Read and write**
-- Expiration：自己決定。過期之後推不上去（卡片照樣存在 bucket），換法見第 10 節。
+<https://github.com/settings/personal-access-tokens/new?name=skynote-app-engine&target_name=organic-san&expires_in=366&contents=write>
+
+- Repository access：**Only select repositories** → **`skynote-cards-corpus`**。
+  選「Public repositories」的話只有唯讀權限。
+- 產生之前確認 Permissions 的 Repositories 分頁裡，Contents 是 **Read and write**。
+- 期限可以改。過期之後推不上去（卡片照樣存在 bucket），換法見第 10 節。
 
 存進 Secret Manager，只讓 App Engine 讀得到：
 
