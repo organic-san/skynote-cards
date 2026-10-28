@@ -243,8 +243,8 @@ NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
 # 部署用的服務帳號與權限
 gcloud iam service-accounts create github-deployer --display-name="GitHub Actions deploy"
 DEPLOY_SA=github-deployer@$PROJECT.iam.gserviceaccount.com
-for role in roles/appengine.appAdmin roles/cloudbuild.builds.editor \
-            roles/storage.admin roles/serviceusage.serviceUsageConsumer; do
+for role in roles/appengine.appAdmin roles/cloudbuild.builds.editor roles/storage.admin \
+            roles/artifactregistry.writer roles/serviceusage.serviceUsageConsumer; do
   gcloud projects add-iam-policy-binding $PROJECT \
     --member=serviceAccount:$DEPLOY_SA --role=$role --condition=None
 done
@@ -271,8 +271,10 @@ echo "GCP_DEPLOY_SA    = $DEPLOY_SA"
 （不是 Secrets，這三個值都不是祕密）新增上面印出來的三個值。
 **設好的那一刻起，下一次 push 到 main 就會部署**；沒設的時候部署那一段會自動跳過。
 
-上面的權限是照官方部署 action 的說明整理的。第一次自動部署如果出現 permission denied，
-訊息會寫缺哪個權限、缺在哪個帳號上，照著補。
+上面的權限是照官方部署 action 與 App Engine 的說明整理的。建置出來的映像檔放在
+Artifact Registry，部署的帳號少了 `roles/artifactregistry.writer` 的話，會在建置完之後才失敗
+（`You do not have permission to use the container`）。自己在終端機部署不會遇到，
+因為專案擁有者什麼權限都有。其他 permission denied 的訊息會寫缺哪個權限、缺在哪個帳號上，照著補。
 
 **確認**：push 一個小改動到 main → Actions 頁面 `test` 與 `deploy` 都是綠的 →
 `gcloud app versions list` 有新版本在接流量，舊版本只剩上一版。
@@ -368,6 +370,8 @@ bucket 只有幾 MB；Secret Manager、Cloud Build、Logging 都在免費額度�
 
 | 看到什麼 | 原因 |
 |---|---|
+| 部署時 `staging.<專案 ID>.appspot.com` … `The specified bucket does not exist` | App Engine 部署用的暫存值區沒有建出來。`gcloud beta app repair` 會補建 |
+| CI 部署在建置完之後失敗：`You do not have permission to use the container` | `github-deployer` 少了 `roles/artifactregistry.writer`（第 7 節）。補上之後重跑失敗的 job |
 | 第一次部署就失敗，訊息說 `$APP_SA` 缺某個權限 | 2024 年 6 月之後開的專案，建置可能改用這個帳號，權限不一定夠。照訊息替它補角色；Google 文件的解法是 Storage 管理員，或直接給編輯者 |
 | 每一頁都是「需要經過 Google 登入（IAP）」的 403 | IAP 沒打開，或請求沒經過 IAP。程式在擋，不是壞了 |
 | Google 的「You don't have access」 | 這個帳號沒有 `roles/iap.httpsResourceAccessor`（5.4） |
