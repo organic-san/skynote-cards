@@ -24,6 +24,11 @@
 - **[v3.1 草案：環境與修改期限](Append_cards_v3.1_draft.md)**
   規劃以「環境」切開不同主題的工作空間、移除側欄待處理清單，並評估未被引用的卡片是否取消修改時限。
 
+### 部署架構
+
+- **[App Engine 部署](../deploy/README.md)**
+  部署在 App Engine 時，卡片的唯一真相從本機檔案改為 Cloud Storage bucket：存檔要等 bucket 回應成功才算數，機器上的 `cards/` 是開機時與 bucket、Git 對帳出來的副本。這修改了 MVP 的 I1（檔案是唯一真相）與寫入順序；沒有設定 bucket 時（本機、VM）行為不變。對應測試見 [`test/cloud.test.ts`](../test/cloud.test.ts)。
+
 ---
 
 文件中的 `R1`～`R15` 為 domain 規則（對應 [`src/domain/rules.ts`](../src/domain/rules.ts)），`U1`～`U28` 為介面決議；編號指派後不重編、不重用。

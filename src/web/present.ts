@@ -580,6 +580,8 @@ export type UpdateView = {
   conflicts: string[];
   /** git 的原話。失敗時才有，照原樣印。 */
   detail: string | null;
+  /** 跟遠端存放處（bucket）的對帳。沒有遠端時是 null，那一段不出現。 */
+  store: { line: string; conflicts: string[]; error: string | null } | null;
   reindex: {
     line: string;
     failures: { file: string; error: string }[];
@@ -590,7 +592,14 @@ export type UpdateView = {
 
 export function updateView(outcome: UpdateOutcome): UpdateView {
   const { pull, reindex } = outcome;
-  const view: UpdateView = { summary: '', commits: [], conflicts: [], detail: null, reindex: null };
+  const view: UpdateView = {
+    summary: '',
+    commits: [],
+    conflicts: [],
+    detail: null,
+    store: null,
+    reindex: null,
+  };
 
   switch (pull.kind) {
     case 'no-git':
@@ -618,6 +627,21 @@ export function updateView(outcome: UpdateOutcome): UpdateView {
       view.detail = pull.message;
       view.summary = '沒有取回成功，語料庫維持原狀。';
       break;
+  }
+
+  if (outcome.store) {
+    const r = outcome.store.report;
+    view.store = {
+      line: r
+        ? `傳上 bucket ${r.uploaded.length}、從 bucket 取回 ${r.downloaded.length}` +
+          `、從 bucket 刪除 ${r.deleted.length}` +
+          (r.deletionsSkipped.length
+            ? `；有 ${r.deletionsSkipped.length} 個要刪的物件看起來不對，這次沒刪`
+            : '')
+        : '沒有對帳成功，bucket 與本機維持原狀，稍後再按一次更新。',
+      conflicts: r?.conflicts ?? [],
+      error: outcome.store.error,
+    };
   }
 
   if (reindex) {

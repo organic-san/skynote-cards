@@ -48,7 +48,16 @@ export interface GitBackupOptions {
   authorEmail: string;
   logger: Logger;
   retryIntervalMs?: number;
+  /**
+   * push 因為遠端比本機新（non-fast-forward）被拒絕時呼叫。
+   * 那種失敗重推一百次也不會好，要先取回；誰來取回由呼叫端決定（見 app.ts）。
+   * 不在佇列裡同步等它——取回本身也要排進同一條佇列。
+   */
+  onPushRejected?: () => void;
 }
+
+/** 遠端有本機沒有的 commit。被 hook 擋下（`[remote rejected]`）不算，那個取回也沒用。 */
+const NON_FAST_FORWARD = /non-fast-forward|\(fetch first\)/i;
 
 export class GitBackup {
   private readonly git: SimpleGit | null;
@@ -61,10 +70,12 @@ export class GitBackup {
   private timer: NodeJS.Timeout | null = null;
   private pushPending = false;
   private disabledReason: string | null = null;
+  private readonly onPushRejected: (() => void) | undefined;
 
   constructor(opts: GitBackupOptions) {
     this.logger = opts.logger;
     this.corpusPath = opts.corpusPath;
+    this.onPushRejected = opts.onPushRejected;
     if (!fs.existsSync(path.join(opts.corpusPath, '.git'))) {
       this.git = null;
       this.puller = null;
@@ -93,13 +104,29 @@ export class GitBackup {
    * 沒有這一步它們就再也不會進到備份裡。
    */
   start(): void {
-    if (!this.git) return;
-    this.enqueue(async (git) => {
-      const committed = await this.commitPendingCards(git);
-      const unpushed = await this.countUnpushed(git);
-      if (committed > 0 || unpushed === null || unpushed > 0) {
-        await this.push(git);
-      }
+    void this.commitAndPush();
+  }
+
+  /**
+   * 把還沒 commit 的卡片補上 commit，有領先遠端的 commit 就推上去；做完才回來。
+   *
+   * 開機時用它，對帳（store/reconcile.ts）把 bucket 上較新的卡寫進本機之後也用它——
+   * 那些卡在本機是「有檔案、沒有 commit」，跟行程被中斷時留下的是同一種狀態。
+   */
+  commitAndPush(): Promise<void> {
+    if (!this.git) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.enqueue(async (git) => {
+        try {
+          const committed = await this.commitPendingCards(git);
+          const unpushed = await this.countUnpushed(git);
+          if (committed > 0 || unpushed === null || unpushed > 0) {
+            await this.push(git);
+          }
+        } finally {
+          resolve();
+        }
+      });
     });
   }
 
@@ -182,16 +209,21 @@ export class GitBackup {
       });
   }
 
-  /** 只有檔案、沒有 commit 的卡片，一張補一個 commit，訊息格式與正常路徑相同。 */
+  /**
+   * 跟 commit 對不上的卡片檔，一張補一個 commit，訊息格式與正常路徑相同。
+   * 刪除也算：`git add` 對已經不在工作區的檔案會 stage 那次刪除。
+   */
   private async commitPendingCards(git: SimpleGit): Promise<number> {
     const status = await git.status();
     const isCard = (f: string) => f.startsWith('cards/') && f.endsWith('.md');
     const added = new Set([...status.not_added, ...status.created].filter(isCard));
     const modified = new Set(status.modified.filter(isCard));
+    const deleted = new Set(status.deleted.filter(isCard));
     let n = 0;
     for (const [files, action] of [
       [added, 'add'],
       [modified, 'edit'],
+      [deleted, 'rm'],
     ] as const) {
       for (const file of files) {
         const id = path.basename(file, '.md');
@@ -288,11 +320,9 @@ export class GitBackup {
       this.pushPending = false;
     } catch (err) {
       this.pushPending = true;
-      this.logger.error(
-        `git push failed (卡片已寫入本機，將於 5 分鐘後重試): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`git push failed (卡片已寫入本機，將於 5 分鐘後重試): ${message}`);
+      if (this.onPushRejected && NON_FAST_FORWARD.test(message)) this.onPushRejected();
     }
   }
 

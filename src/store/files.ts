@@ -4,8 +4,10 @@ import type { Card, CardMeta } from '../domain/types.ts';
 import { parseCard, serializeCard } from '../domain/card.ts';
 
 /**
- * 卡片檔案的讀寫。檔案是唯一真相。
+ * 卡片檔案的讀寫。沒有設定遠端存放處時，檔案是唯一真相；
+ * 有設定時（App Engine），真相在 bucket，這裡是它的副本（見 store/remote.ts）。
  * 這是唯一碰 cards/ 的模組，寫入動作有三種：建立、反芻期內重寫、反芻期內刪除。
+ * 對帳（reconcile.ts）用的是同一支原子寫入。
  */
 
 export function cardsDir(corpusPath: string): string {
@@ -60,20 +62,27 @@ export function readCardMeta(corpusPath: string, id: string): CardMeta {
 
 // ---------------------------------------------------------------- 寫入
 
+export function writeCardFile(corpusPath: string, card: Card): string {
+  return writeCardContent(corpusPath, card.id, serializeCard(card));
+}
+
+/** 已經序列化好的卡片內容。寫入路徑要先把同一份內容傳上遠端，所以序列化只做一次。 */
+export function writeCardContent(corpusPath: string, id: string, content: string): string {
+  return writeFileAtomic(cardPath(corpusPath, id), content);
+}
+
 /**
  * 先寫 .tmp、fsync、再 rename。
  * 任何時刻中斷，cards/ 下都不會出現半個檔案。
  */
-export function writeCardFile(corpusPath: string, card: Card): string {
-  const dir = cardsDir(corpusPath);
+export function writeFileAtomic(finalPath: string, content: string | Buffer): string {
+  const dir = path.dirname(finalPath);
   fs.mkdirSync(dir, { recursive: true });
-  const finalPath = cardPath(corpusPath, card.id);
   const tmpPath = `${finalPath}.tmp`;
-  const content = serializeCard(card);
 
   const fd = fs.openSync(tmpPath, 'w');
   try {
-    fs.writeFileSync(fd, content, 'utf8');
+    fs.writeFileSync(fd, content);
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);

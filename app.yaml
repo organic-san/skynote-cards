@@ -1,0 +1,43 @@
+# App Engine standard（第二代）。設定步驟與整個架構見 deploy/README.md。
+#
+# 這份檔案在公開的 repo 裡，所以不寫任何專案專屬的值：
+# 專案 ID 由 App Engine 自己給（GOOGLE_CLOUD_PROJECT），bucket 名稱用 {project} 代入，
+# GitHub token 放在 Secret Manager，這裡只寫 secret 的名字。
+
+# Node 22，不用 24：git 在 App Engine 的 Ubuntu 22.04 映像檔裡（官方的套件清單有列），
+# Node 24 跑在 Ubuntu 24.04 上，那份清單沒有公開。沒有 git 也開得了機，
+# 只是不做 GitHub 備份（/_health 的 git.enabled 會是 false）。
+runtime: nodejs22
+
+# F1：384MB 記憶體，每天 28 小時免費。一台常駐一天用 24 小時。
+instance_class: F1
+
+automatic_scaling:
+  # 一台一直開著：不必每次打開都等開機（clone、對帳、重建索引）。
+  min_instances: 1
+  # 最多一台：卡片的副本在 /tmp，兩台會各有一份。App Engine 對這個上限是盡力而為，
+  # 偶爾短暫超過也不會掉資料（寫入都先進 bucket），見 deploy/README.md 的「可用性」。
+  max_instances: 1
+
+# 新機器先收到 /_ah/warmup 才開始接請求。
+inbound_services:
+  - warmup
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always
+
+env_variables:
+  NODE_ENV: production
+  # App Engine 的前端連得到才行；對外的那一層是 IAP。
+  HOST: 0.0.0.0
+  REQUIRE_IAP: "1"
+  # /tmp 是記憶體，機器換掉就沒了——它只是副本，真相在 bucket。
+  CORPUS_PATH: /tmp/corpus
+  INDEX_PATH: /tmp/index.db
+  CORPUS_BUCKET: "{project}-corpus"
+  CORPUS_REMOTE: https://github.com/organic-san/skynote-cards-corpus.git
+  CORPUS_GIT_TOKEN_SECRET: corpus-git-token
+  GIT_AUTHOR_NAME: skynote-cards
+  GIT_AUTHOR_EMAIL: skynote-cards@localhost

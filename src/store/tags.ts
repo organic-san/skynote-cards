@@ -17,6 +17,8 @@ import path from 'node:path';
  *
  * 檔案放在語料庫 repo 裡（跟著卡片一起被版控），但**不由本程式寫入或 commit**——
  * backup.ts 只 add cards/*.md。它是手工編輯的設定，不是卡片。
+ * 同樣的理由，它也不進 App Engine 的 bucket：只經 git 進來（clone 與「更新」）。
+ * 開機時 clone 失敗的那台機器上就沒有它——鎖定只影響推薦選單，可以接受。
  */
 
 const FILE = 'tags.yml';

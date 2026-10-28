@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp, type App } from '../src/app.ts';
 import { DEFAULT_EDIT_WINDOW_HOURS } from '../src/domain/rules.ts';
+import type { CorpusStore } from '../src/store/remote.ts';
+import type { IapVerifier } from '../src/web/iap.ts';
 
 /** 每個測試自己一個暫存語料庫與索引，彼此不共用狀態。 */
 
@@ -36,6 +38,9 @@ export async function start(ws: {
   indexPath: string;
   /** 反芻期長度。想測「窗口關了」的行為就把它調短。 */
   editWindowMs?: number;
+  /** 遠端存放處（App Engine 的 bucket）。沒給就是本機檔案為真相。 */
+  store?: CorpusStore;
+  iap?: IapVerifier;
 }): Promise<Harness & { dir: string }> {
   const logs: string[] = [];
   const app = createApp({
@@ -43,10 +48,15 @@ export async function start(ws: {
       corpusPath: ws.corpus,
       indexPath: ws.indexPath,
       port: 0,
+      host: '127.0.0.1',
       gitAuthorName: 'test',
       gitAuthorEmail: 'test@localhost',
       editWindowMs: ws.editWindowMs ?? DEFAULT_EDIT_WINDOW_HOURS * 60 * 60 * 1000,
+      cloud: null,
+      requireIap: false,
     },
+    store: ws.store,
+    iap: ws.iap,
     logger: {
       level: 'info',
       stream: {

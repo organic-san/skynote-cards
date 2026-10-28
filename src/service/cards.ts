@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import type { Card, CardDraft, CardLink, CardType } from '../domain/types.ts';
 import { isCardType } from '../domain/types.ts';
 import { fileExistsTaken, generateId } from '../domain/id.ts';
-import { cardText, withCardText } from '../domain/card.ts';
+import { cardText, serializeCard, withCardText } from '../domain/card.ts';
 import {
   LOCKED_MESSAGE,
   UNDELETABLE_MESSAGE,
@@ -18,30 +19,40 @@ import {
 } from '../domain/rules.ts';
 import {
   cardExists,
+  cardPath,
   cardsDir,
   deleteCardFile,
   readCard,
-  writeCardFile,
+  writeCardContent,
 } from '../store/files.ts';
 import type { CardIndex } from '../store/index/index.ts';
 import type { GitBackup } from '../store/backup.ts';
+import { NO_BASE, blobHash, cardObjectName, type CorpusStore } from '../store/remote.ts';
+import { withWriteLock } from './lock.ts';
 
 /**
  * 建立與修改卡片。
  *
  * 這是唯一一個知道「一次寫入由哪幾件事構成」的地方：
- * 先落檔、再投影到索引、最後排一次備份。三者的順序與失敗的處理方式
- * 只在這裡定義一次，路由不重複一遍。
+ * 先存進真相（有遠端時是 bucket，沒有時就是本機檔案）、再寫本機檔案、
+ * 投影到索引、最後排一次備份。順序與失敗的處理方式只在這裡定義一次，
+ * 路由不重複一遍。
  */
 
 export interface CardServiceDeps {
   corpusPath: string;
   index: CardIndex;
   git: GitBackup;
+  /** 遠端存放處。NO_STORE 時本機檔案就是真相。 */
+  store: CorpusStore;
   logger: { error(msg: string): void };
   /** 反芻期長度，毫秒。來自 config（R5）。 */
   editWindowMs: number;
 }
+
+/** 遠端存不進去時說的話。這次寫入什麼都沒發生，表單裡的內容要留著。 */
+export const STORE_UNAVAILABLE_MESSAGE =
+  '暫時存不進去，這次沒有寫入。內容還留在表單裡，稍後再送一次。';
 
 /**
  * 這張卡的反芻狀態。
@@ -90,21 +101,28 @@ export function contentRev(card: {
 /** 頁面帶回來的 rev 跟現在對不上時說的話。 */
 export const CONFLICT_MESSAGE = '這張卡在別的地方改過了，重新載入之後再試一次。';
 
-export type CreateResult = { ok: true; card: Card } | { ok: false; errors: string[] };
+/** `unavailable`：遠端存不進去，什麼都沒寫（503）。 */
+export type CreateResult =
+  | { ok: true; card: Card }
+  | { ok: false; errors: string[]; unavailable?: true };
 
 /**
- * 修改失敗分三種：窗口已關（不可回復）、內容不合格（改了再送就行）、
- * 頁面過期（別處改過，重新載入再說）。
+ * 修改失敗分四種：窗口已關（不可回復）、內容不合格（改了再送就行）、
+ * 頁面過期（別處改過，重新載入再說）、遠端存不進去（稍後再送）。
  */
 export type UpdateResult =
   | { ok: true; card: Card }
-  | { ok: false; reason: 'locked' | 'invalid' | 'conflict'; errors: string[] };
+  | { ok: false; reason: 'locked' | 'invalid' | 'conflict' | 'unavailable'; errors: string[] };
 
 /**
  * 表單送上來、還沒有 ID 的東西經過驗證之後落地。
  * 連結的順序規則需要本卡 ID，所以驗證分兩段，中間夾著發號。
  */
-export function createCard(deps: CardServiceDeps, draft: CardDraft): CreateResult {
+export function createCard(deps: CardServiceDeps, draft: CardDraft): Promise<CreateResult> {
+  return withWriteLock(deps.corpusPath, () => createNow(deps, draft));
+}
+
+async function createNow(deps: CardServiceDeps, draft: CardDraft): Promise<CreateResult> {
   const checked = validateDraft(draft, {
     cardExists: (id) => cardExists(deps.corpusPath, id),
     typeOf: (id) => cardTypeOf(deps, id),
@@ -131,7 +149,9 @@ export function createCard(deps: CardServiceDeps, draft: CardDraft): CreateResul
     body: draft.body.replace(/\r\n/g, '\n'),
   };
 
-  persist(deps, card, 'add');
+  if (!(await persist(deps, card, 'add'))) {
+    return { ok: false, errors: [STORE_UNAVAILABLE_MESSAGE], unavailable: true };
+  }
   return { ok: true, card };
 }
 
@@ -165,7 +185,15 @@ export function updateCard(
   deps: CardServiceDeps,
   id: string,
   patch: UpdatePatch,
-): UpdateResult {
+): Promise<UpdateResult> {
+  return withWriteLock(deps.corpusPath, () => updateNow(deps, id, patch));
+}
+
+async function updateNow(
+  deps: CardServiceDeps,
+  id: string,
+  patch: UpdatePatch,
+): Promise<UpdateResult> {
   const existing = readCard(deps.corpusPath, id);
   if (!ruminationFor(deps, existing).open) {
     return { ok: false, reason: 'locked', errors: [LOCKED_MESSAGE] };
@@ -211,7 +239,9 @@ export function updateCard(
     body: (patch.body === undefined ? existing.body : patch.body).replace(/\r\n/g, '\n'),
   };
 
-  persist(deps, updated, 'edit');
+  if (!(await persist(deps, updated, 'edit'))) {
+    return { ok: false, reason: 'unavailable', errors: [STORE_UNAVAILABLE_MESSAGE] };
+  }
   return { ok: true, card: updated };
 }
 
@@ -253,7 +283,7 @@ function appendLinks(
   return { links: [...existing.links, ...checked.links] };
 }
 
-export type DeleteResult = { ok: true } | { ok: false; errors: string[] };
+export type DeleteResult = { ok: true } | { ok: false; errors: string[]; unavailable?: true };
 
 /**
  * R9：反芻期內、且尚未被任何卡片指向的卡片可以刪除。
@@ -267,11 +297,23 @@ export type DeleteResult = { ok: true } | { ok: false; errors: string[] };
  * 順序跟寫入路徑相反但理由相同：檔案是唯一真相，所以最後再動它？不——
  * 還是先動檔案。索引刪失敗可以重建，檔案還在才是不一致的那一種；
  * 反過來則會留下一張索引查得到、檔案已經不見的卡。
+ * 有遠端時，遠端是真相，所以最先動它；它刪不掉，就什麼都不動。
  */
-export function deleteCard(deps: CardServiceDeps, id: string): DeleteResult {
+export function deleteCard(deps: CardServiceDeps, id: string): Promise<DeleteResult> {
+  return withWriteLock(deps.corpusPath, () => deleteNow(deps, id));
+}
+
+async function deleteNow(deps: CardServiceDeps, id: string): Promise<DeleteResult> {
   const existing = readCard(deps.corpusPath, id);
   if (!ruminationFor(deps, existing).open) {
     return { ok: false, errors: [UNDELETABLE_MESSAGE] };
+  }
+
+  try {
+    await deps.store.delete(cardObjectName(id));
+  } catch (err) {
+    deps.logger.error(`遠端刪除失敗 ${id}: ${errText(err)}`);
+    return { ok: false, errors: [STORE_UNAVAILABLE_MESSAGE], unavailable: true };
   }
 
   deleteCardFile(deps.corpusPath, id);
@@ -288,7 +330,7 @@ export function deleteCard(deps: CardServiceDeps, id: string): DeleteResult {
 
 export type ToggleResult =
   | { ok: true; card: Card; rev: string }
-  | { ok: false; reason: 'conflict' | 'invalid'; errors: string[] };
+  | { ok: false; reason: 'conflict' | 'invalid' | 'unavailable'; errors: string[] };
 
 /**
  * R14：切換一個勾選標記。不問反芻期，也不問定案——勾選不算修改。
@@ -303,7 +345,15 @@ export function toggleTask(
   deps: CardServiceDeps,
   id: string,
   opts: { at: number; checked: boolean; rev: string },
-): ToggleResult {
+): Promise<ToggleResult> {
+  return withWriteLock(deps.corpusPath, () => toggleNow(deps, id, opts));
+}
+
+async function toggleNow(
+  deps: CardServiceDeps,
+  id: string,
+  opts: { at: number; checked: boolean; rev: string },
+): Promise<ToggleResult> {
   const existing = readCard(deps.corpusPath, id);
   if (opts.rev !== contentRev(existing)) {
     return { ok: false, reason: 'conflict', errors: [CONFLICT_MESSAGE] };
@@ -315,7 +365,9 @@ export function toggleTask(
   if (after === before) return { ok: true, card: existing, rev: contentRev(existing) };
 
   const updated = withCardText(existing, after);
-  persist(deps, updated, 'check');
+  if (!(await persist(deps, updated, 'check'))) {
+    return { ok: false, reason: 'unavailable', errors: [STORE_UNAVAILABLE_MESSAGE] };
+  }
   return { ok: true, card: updated, rev: contentRev(updated) };
 }
 
@@ -326,20 +378,51 @@ function pickUrl(current: string | null, given: string | undefined): string | nu
 }
 
 /**
- * 檔案是唯一真相，所以先寫檔。
+ * 先存進真相，再寫本機檔案。回傳 false 代表遠端存不進去，這次什麼都沒寫。
+ *
+ * 有遠端時，**遠端回應成功才算存好**：本機的 /tmp 只是副本，機器換掉就沒了。
+ * 上傳時記下這份內容改自哪一份（本機原本那份的 blob 雜湊），
+ * 對帳時靠它分辨「bucket 比 git 新」與「bucket 是舊的」，見 store/reconcile.ts。
+ * 新卡要求物件還不存在：ID 萬一撞了，寧可失敗也不覆蓋別張卡。
+ *
+ * 沒有遠端時，本機檔案就是真相，所以先寫檔——跟以前一樣。
  * 索引寫失敗不往上丟：檔案已經在了，索引隨時可以重建。
  * 備份是 fire-and-forget，不會擋住任何一條寫入路徑。
  */
-function persist(deps: CardServiceDeps, card: Card, action: 'add' | 'edit' | 'check'): void {
-  writeCardFile(deps.corpusPath, card);
+async function persist(
+  deps: CardServiceDeps,
+  card: Card,
+  action: 'add' | 'edit' | 'check',
+): Promise<boolean> {
+  const content = serializeCard(card);
+
+  if (deps.store.kind !== 'none') {
+    const file = cardPath(deps.corpusPath, card.id);
+    const before = action === 'add' || !fs.existsSync(file) ? null : fs.readFileSync(file);
+    try {
+      await deps.store.put(cardObjectName(card.id), content, {
+        blob: blobHash(content),
+        base: before ? blobHash(before) : NO_BASE,
+        ifGenerationMatch: action === 'add' ? 0 : undefined,
+      });
+    } catch (err) {
+      deps.logger.error(`遠端寫入失敗 ${card.id}: ${errText(err)}`);
+      return false;
+    }
+  }
+
+  writeCardContent(deps.corpusPath, card.id, content);
   try {
     deps.index.putCard(card);
   } catch (err) {
-    deps.logger.error(
-      `索引寫入失敗 ${card.id}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    deps.logger.error(`索引寫入失敗 ${card.id}: ${errText(err)}`);
   }
   deps.git.commitCard(card.id, action);
+  return true;
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
