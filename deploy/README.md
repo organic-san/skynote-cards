@@ -287,6 +287,10 @@ Artifact Registry，部署的帳號少了 `roles/artifactregistry.writer` 的話
 同一個主機名稱原本指向 Cloudflare Tunnel，先把那筆刪掉。
 IAP 對自訂網域一樣有效；Cloudflare Tunnel 與 Access 之後都用不到了。
 
+驗證的是主網域，對應時只填子網域；預先填好的主網域與 `www` 要刪掉，那是網站本身。
+憑證簽好（`gcloud app ssl-certificates list` 列得出來、狀態 `OK`）之後，Google 的前端
+還要幾分鐘才會開始用它。這段時間瀏覽器會顯示「無法連上這個網站」，等一下就好。
+
 **刪掉 VM。** 確認穩定幾天之後，刪掉 VM、它的磁碟、快照排程與快照。
 如果快照排程也掛在別的磁碟上，只把它從 Skynote 的磁碟拿掉，不要整個刪。
 
