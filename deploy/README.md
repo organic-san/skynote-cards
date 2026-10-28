@@ -1,390 +1,364 @@
-# 部署
+# 部署到 App Engine
 
-從零到可以用，大約一小時。每一步都標了「怎麼確認這一步成功了」，
-因為這條鏈上任何一環悄悄壞掉，症狀都是幾週後才發現卡片沒有備份。
+從零到穩定運作大約兩小時，大部分時間花在第 5 步的 IAP 與第 7 步的自動部署。
+每一步都標了「怎麼確認這一步成功了」。
+
+想放在自己的機器上（VM、Oracle 免費機器、家裡的小主機），見 [vm.md](vm.md)。
 
 ```
-GCP e2-micro
-├── /srv/app          ← 程式碼 repo
-├── /srv/corpus       ← 語料庫 repo（deploy key 有寫入權）
-├── /srv/index.db     ← SQLite（WAL，另有 -wal/-shm），不進版控，隨時可刪
-└── systemd: skynote-cards.service + cloudflared.service
+GitHub（skynote-cards）──push main──▶ GitHub Actions：測試 → gcloud app deploy
+
+你 ──Google 登入（IAP）──▶ App Engine（asia-east1，F1，一台常駐）
+                             ├─ /tmp/corpus    語料庫的副本（開機時 clone）
+                             ├─ /tmp/index.db  索引（開機時重建）
+              寫入先存這裡 ──┼─▶ Cloud Storage：<專案 ID>-corpus    ← 唯一真相
+              背景推送 ──────┴─▶ GitHub：skynote-cards-corpus       ← 備份與歷史
+```
+
+- **bucket 是唯一真相。** 寫一張卡，要等 bucket 回應成功才算存好。App Engine 的 `/tmp`
+  在記憶體裡，機器一換就沒了，它只是副本。
+- **GitHub 是備份，不在讀寫的路上。** 存好之後才在背景 commit、push；GitHub 掛了照樣能寫。
+- **開機時對帳。** clone 語料庫之後跟 bucket 比對，誰比較新就以誰為準（規則見
+  [`src/store/reconcile.ts`](../src/store/reconcile.ts)），還沒推上去的寫入補 commit 推上去。
+  側欄的「更新」做的是同一件事。
+- **這支程式不做登入。** 擋人的是 IAP；程式另外檢查 IAP 簽的 JWT，
+  沒有就一律 403（`REQUIRE_IAP`，見 [`src/web/iap.ts`](../src/web/iap.ts)）。
+
+設定都在 [`app.yaml`](../app.yaml)，裡面不寫任何專案專屬的值，換專案不用改它。
+
+---
+
+## 0. 先知道的幾件事
+
+**App Engine 的區域選了就不能改，一個專案只能有一個。** 選 `asia-east1`（台灣）。
+所以建議為 Skynote 開一個新專案，不要放進已經有別的東西的專案。
+
+**IAP 在第一次部署之前就要設好。** 程式本身會擋掉沒經過 IAP 的請求，
+所以順序錯了不會外洩，但會看到滿版的 403。
+
+**不要讓 VM 與 App Engine 同時寫同一份語料庫。** 兩邊各有一份副本，都會往同一個
+GitHub repo 推。切換的順序在第 6 步。
+
+**要綁付款帳戶。** App Engine 一律要求付款方式；這個用量在免費額度內，
+但建議設一個預算警示（第 9 節）。
+
+下面的指令都在 WSL 裡跑，先把這幾個值設好：
+
+```bash
+PROJECT=skynote-xxxxxx        # 新專案的 ID，全球唯一，自己取
+REGION=asia-east1
+GMAIL=you@gmail.com           # 要能登入的那個 Google 帳號
+APP_SA=$PROJECT@appspot.gserviceaccount.com   # App Engine 執行時的身分
 ```
 
 ---
 
-## 0. 先知道兩件會花錢／出事的事
+## 1. 專案與 API
 
-**asia-east1 的 e2-micro 不在免費額度內。** GCP 的永久免費 e2-micro 只有
-us-west1 / us-central1 / us-east1。asia-east1 大約每月 6–8 美金。
-台灣連 us-central1 的延遲大概多 150–200ms，對這個用途（送出後就導頁）
-其實無感，但打字時的連結搜尋會有感。自己權衡。
+```bash
+gcloud projects create $PROJECT
+gcloud billing accounts list
+gcloud billing projects link $PROJECT --billing-account=XXXXXX-XXXXXX-XXXXXX
+gcloud config set project $PROJECT
 
-**Cloudflare Access 的 policy 必須在建立公開主機名稱之前就設好。**
-這支程式**完全不實作驗證**，它信任所有到得了它的流量都是你。
-順序錯了，中間那段時間任何人都能讀你全部的卡片、也能寫入。
+gcloud services enable appengine.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com secretmanager.googleapis.com iap.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com
+```
+
+**確認**：`gcloud services list --enabled` 列得出上面七個。
+
+## 2. App Engine 應用程式
+
+```bash
+gcloud app create --region=$REGION
+```
+
+**確認**：`gcloud app describe` 的 `locationId` 是 `asia-east1`。
+`gcloud iam service-accounts list` 裡有 `$APP_SA`。
+
+## 3. bucket
+
+```bash
+gcloud storage buckets create gs://$PROJECT-corpus --location=$REGION \
+  --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets add-iam-policy-binding gs://$PROJECT-corpus \
+  --member=serviceAccount:$APP_SA --role=roles/storage.objectAdmin
+```
+
+名字一定要是 `<專案 ID>-corpus`：`app.yaml` 裡寫的是 `{project}-corpus`。
+
+**不要手動把卡片傳上去。** 第一次開機時 bucket 是空的，程式會把 GitHub 上的卡全部傳上去，
+而且標好對帳要用的記號。手動上傳的物件沒有記號，對帳只能退回比較保守的判斷。
+
+新 bucket 預設有 7 天的軟刪除（刪掉的物件 7 天內救得回來），留著它。
+
+**確認**：`gcloud storage buckets describe gs://$PROJECT-corpus --format='value(location)'`
+是 `ASIA-EAST1`。
+
+## 4. GitHub token
+
+App Engine 上沒有 SSH 金鑰可以放，改用 token 走 HTTPS。
+
+GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** →
+Generate new token：
+
+- Resource owner：`organic-san`
+- Repository access：Only select repositories → **`skynote-cards-corpus`**
+- Permissions → Repository permissions → **Contents：Read and write**
+- Expiration：自己決定。過期之後推不上去（卡片照樣存在 bucket），換法見第 10 節。
+
+存進 Secret Manager，只讓 App Engine 讀得到：
+
+```bash
+read -rs TOKEN                       # 貼上 token，畫面不會顯示
+printf '%s' "$TOKEN" | gcloud secrets create corpus-git-token \
+  --data-file=- --replication-policy=automatic
+unset TOKEN
+gcloud secrets add-iam-policy-binding corpus-git-token \
+  --member=serviceAccount:$APP_SA --role=roles/secretmanager.secretAccessor
+```
+
+token 不寫進任何檔案：程式開機時讀 secret，用環境變數交給 git，只對 github.com 生效
+（[`src/bootstrap.ts`](../src/bootstrap.ts) 的 `useGitToken`）。
+
+**確認**：`gcloud secrets versions list corpus-git-token` 有一個 `enabled`。
+
+## 5. IAP（只讓你自己進得來）
+
+個人 Gmail 開的專案沒有「組織」，IAP 不能用 Google 代管的登入設定，
+要自己建一組 OAuth 用戶端。少了這一步，開了 IAP 只會看到
+`Empty Google Account OAuth client ID(s)/secret(s)` 的 502。
+
+**5.1 OAuth 同意畫面。** 主控台 → API 和服務 → OAuth 同意畫面（Google Auth Platform）→ 開始：
+
+- 應用程式名稱：`Skynote`；使用者支援電子郵件：你的 Gmail
+- 目標對象：**外部**
+- 聯絡資訊：你的 Gmail
+
+建好之後到「目標對象」頁，二選一：
+
+- 按「發布應用程式」改成正式版。只用到基本的登入範圍，不需要送審。
+  發布不代表誰都能進：能不能進是 5.4 的權限決定的。
+- 或維持「測試中」，把你的 Gmail 加進測試使用者。
+
+**5.2 OAuth 用戶端。** Google Auth Platform → 用戶端 → 建立用戶端：
+
+- 應用程式類型：**網頁應用程式**，名稱：`IAP Skynote`
+- 建立後記下**用戶端 ID**與**用戶端密鑰**
+- 再編輯這個用戶端，「已授權的重新導向 URI」加一條：
+  `https://iap.googleapis.com/v1/oauth/clientIds/<用戶端 ID>:handleRedirect`
+
+**5.3 打開 App Engine 的 IAP。** 主控台 → 安全性 → Identity-Aware Proxy：
+
+- 列表裡的「App Engine 應用程式」那一列，把 IAP 開關打開。
+- 要求 OAuth 設定時（或在該列的設定裡）選自訂 OAuth，貼上 5.2 的用戶端 ID 與密鑰。
+
+**5.4 只放行你自己：**
+
+```bash
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member=user:$GMAIL --role=roles/iap.httpsResourceAccessor
+```
+
+（主控台的說法是「IAP-secured Web App User」。明確加上這個角色，不要依賴專案擁有者的身分。）
+
+**確認**（第一次部署之後）：
+
+- 無痕視窗開 `https://$PROJECT.appspot.com`：先看到 Google 登入，登入後才是卡片列表。
+- 用另一個 Google 帳號登入：看到「You don't have access」。
+- 有登入時開 `/_health`：看得到 JSON。
+
+## 6. 第一次部署與切換
+
+**6.1 停掉舊的那一台。** 在 VM 上：
+
+```bash
+curl -s localhost:3000/_health        # unpushed_commits 必須是 0
+sudo systemctl disable --now skynote-cards-deploy.timer skynote-cards
+```
+
+`unpushed_commits` 不是 0，先在側欄按一次「更新」，等它變 0 再停。
+停了之後 VM 不會再寫，GitHub 上的語料庫就是全部。
+
+**6.2 部署。** 第一次在本機手動跑，看得到完整的輸出：
+
+```bash
+gcloud app deploy app.yaml --project $PROJECT
+gcloud app logs tail -s default --project $PROJECT
+```
+
+建置在 Google 那邊跑（`npm ci` → `npm run build` → 只留正式套件），幾分鐘。
+日誌裡要看到兩行：
+
+```
+開機對帳（gs://<專案 ID>-corpus，git cloned，…ms）：上傳 N、下載 0、刪除 0、衝突 0
+corpus=/tmp/corpus index=/tmp/index.db store=gs://<專案 ID>-corpus iap=required
+```
+
+第一次的 `上傳 N` 就是 GitHub 上的卡片數。
+
+**6.3 確認到了穩定狀態**，一項一項打勾：
+
+- [ ] 登入後首頁的卡片跟以前一樣多。
+- [ ] `/_health`：`store` 是 `gs://…`、`git.enabled` 是 `true`、`unpushed_commits` 是 `0`、
+      `cards_files` 等於 `cards_indexed`。
+- [ ] 寫一張測試卡：幾秒內 GitHub 的語料庫 repo 出現 `add <id>` 的 commit。
+- [ ] 刪掉那張測試卡（反芻期內可以刪）：出現 `rm <id>`。
+- [ ] `gcloud storage ls gs://$PROJECT-corpus/cards/ | wc -l` 等於卡片數。
+- [ ] 換一台機器：`gcloud app instances list` 找到那台，
+      `gcloud app instances delete <ID> --service=default --version=<版本>`。
+      一兩分鐘後新的一台起來，卡片都在，日誌的對帳是 `上傳 0、下載 0`。
+
+全部打勾就是穩定狀態。VM 留著停機幾天再刪（第 8 節）。
+
+## 7. 自動部署（GitHub Actions）
+
+之後只要 push 到 main，[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 會先跑測試，
+過了才部署。分支上不會自動跑。
+
+GitHub 上不存任何金鑰：Workload Identity Federation 讓 Actions 拿 GitHub 簽的身分證明，
+換一個短期的 GCP 憑證。GCP 那邊只認 `organic-san/skynote-cards` 的 main 分支。
+repo 是公開的，這個條件就是安全邊界，別人 fork 之後跑的 workflow 換不到。
+
+```bash
+NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+
+# 部署用的服務帳號與權限
+gcloud iam service-accounts create github-deployer --display-name="GitHub Actions deploy"
+DEPLOY_SA=github-deployer@$PROJECT.iam.gserviceaccount.com
+for role in roles/appengine.appAdmin roles/cloudbuild.builds.editor \
+            roles/storage.admin roles/serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding $PROJECT \
+    --member=serviceAccount:$DEPLOY_SA --role=$role --condition=None
+done
+gcloud iam service-accounts add-iam-policy-binding $APP_SA \
+  --member=serviceAccount:$DEPLOY_SA --role=roles/iam.serviceAccountUser
+
+# 只認這個 repo 的 main 分支
+gcloud iam workload-identity-pools create github --location=global --display-name=GitHub
+gcloud iam workload-identity-pools providers create-oidc skynote \
+  --location=global --workload-identity-pool=github \
+  --issuer-uri=https://token.actions.githubusercontent.com \
+  --attribute-mapping='google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref' \
+  --attribute-condition="assertion.repository=='organic-san/skynote-cards' && assertion.ref=='refs/heads/main'"
+gcloud iam service-accounts add-iam-policy-binding $DEPLOY_SA \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/organic-san/skynote-cards"
+
+echo "GCP_PROJECT_ID   = $PROJECT"
+echo "GCP_WIF_PROVIDER = projects/$NUMBER/locations/global/workloadIdentityPools/github/providers/skynote"
+echo "GCP_DEPLOY_SA    = $DEPLOY_SA"
+```
+
+最後在 GitHub repo → Settings → Secrets and variables → Actions → **Variables**
+（不是 Secrets，這三個值都不是祕密）新增上面印出來的三個值。
+**設好的那一刻起，下一次 push 到 main 就會部署**；沒設的時候部署那一段會自動跳過。
+
+上面的權限是照官方部署 action 的說明整理的。第一次自動部署如果出現 permission denied，
+訊息會寫缺哪個權限、缺在哪個帳號上，照著補。
+
+**確認**：push 一個小改動到 main → Actions 頁面 `test` 與 `deploy` 都是綠的 →
+`gcloud app versions list` 有新版本在接流量，舊版本只剩上一版。
+
+## 8. 收尾（可選）
+
+**自訂網域。** 主控台 → App Engine → 設定 → 自訂網域 → 新增，照指示驗證網域
+（在 Cloudflare 加一筆 TXT），對應 `cards.<你的網域>`。它給的 DNS 記錄在 Cloudflare 加上，
+**設成「僅限 DNS」（灰雲）**：經過 Cloudflare 代理的話，Google 的憑證可能簽不下來。
+同一個主機名稱原本指向 Cloudflare Tunnel，先把那筆刪掉。
+IAP 對自訂網域一樣有效；Cloudflare Tunnel 與 Access 之後都用不到了。
+
+**刪掉 VM。** 確認穩定幾天之後，刪掉 VM、它的磁碟、快照排程與快照。
+如果快照排程也掛在別的磁碟上，只把它從 Skynote 的磁碟拿掉，不要整個刪。
 
 ---
 
-## 1. 兩個 GitHub repo
+## 9. 日常
+
+### 資料怎麼更新
+
+**在網頁寫卡：**
 
 ```
-skynote-cards          ← 這個 repo（程式碼）
-skynote-cards-corpus   ← 語料庫，設成 private
+驗證 → 存進 bucket（成功才算存好）→ 寫 /tmp 副本與索引 → 302 → 背景 commit、push
 ```
 
-語料庫 repo 先推一個空骨架上去：
+bucket 存不進去時回 503「暫時存不進去」，什麼都沒寫；草稿還在瀏覽器裡，稍後再送。
 
-```bash
-mkdir -p corpus/cards && cd corpus
-printf 'index.db*\n*.tmp\n' > .gitignore
-git init -b main && git add -A
-git commit -m 'init' && git remote add origin git@github.com:organic-san/skynote-cards-corpus.git
-git push -u origin main
-```
-
-`cards/` 是空的，git 不追蹤空目錄——沒關係，服務啟動時會自己建。
-
----
-
-## 2. 開機器
+**在別處改卡片：** 在自己電腦的語料庫 clone 裡改、push，再按側欄的「更新」：
 
 ```
-機型     e2-micro
-映像     Ubuntu 24.04 LTS minimal
-磁碟     10GB balanced（pd-balanced，不要選 standard）
-防火牆   全部不勾。不要開 80、不要開 443。
+補 commit → git pull --rebase → 跟 bucket 對帳 → 補 commit、push → 重建索引
 ```
 
-**磁碟一定要選 balanced，這是我一開始寫錯的地方。** pd-standard 的效能是
-按容量給的：每 GB 只有 1.5 write IOPS 與 0.12 MB/s，所以 10GB 就只有
-**15 IOPS、1.2 MB/s**。卡片是純文字沒錯，但寫一張卡要 fsync 卡片檔、
-再寫索引，貼一篇長文章時索引一次會長 200KB 以上、上百次隨機寫——
-在 15 IOPS 上排隊就是幾十秒，前端會先吃到 Cloudflare 的 502。
-pd-balanced 不看容量，基準就是 3,000 IOPS，差兩個數量級，
-而 10GB 每月價差不到 1 美金。
+對帳時，取回來的修改會傳上 bucket。沒按「更新」就碰上換機器也沒關係，
+開機做的是同一件事。
 
-**已經開成 standard 了怎麼救**：磁碟類型不能原地改。因為這個系統的全部
-狀態就是兩個 git repo，最省事的做法是直接開一台新的（磁碟選 balanced）
-重跑第 3–8 節，舊的砍掉。真的想保留原機的話，就停機 → 建快照 →
-用快照建一顆 balanced 新磁碟 → 換開機碟。
+**push 被拒絕**（別處先推了）：自動跑一次「更新」再推，不用等人去按。
+兩次之間至少隔五分鐘。
 
-外部 IP 可以設成「無」——所有連線都是機器主動打出去的（git push、
-cloudflared）。這樣連 SSH 都得走 IAP，攻擊面小很多：
+### 新版程式怎麼上線
 
-```bash
-gcloud compute ssh skynote-cards --tunnel-through-iap
+```
+在分支上開發 → 合併到 main → CI：測試 → 部署
+  → Google 建置 → 新版開一台：clone、對帳、重建索引 → 流量切過去 → 舊版停掉
+  → 新版開機一分鐘後再對帳一次（接住交接那幾秒舊版收到的寫入）
+  → CI 刪掉更舊的版本，只留上一版
 ```
 
-**確認**：`ss -ltn` 應該只有 SSH。
-
----
-
-## 3. 基本環境
-
-e2-micro 只有 1GB RAM，`npm ci` 很容易被 OOM killer 砍掉。**先加 swap**：
-
-```bash
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-Node 24：
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-sudo apt-get install -y nodejs git
-```
-
-**確認**：`node -v` 是 v24.x，`which node` 是 `/usr/bin/node`——
-systemd unit 裡寫死的就是這個路徑。
-
-服務帳號與目錄：
-
-```bash
-sudo useradd -r -m -d /srv/append -s /usr/sbin/nologin append
-sudo mkdir -p /srv/app /srv/corpus && sudo chown -R append:append /srv
-```
-
----
-
-## 4. 語料庫的 deploy key
-
-這把鑰匙**只給語料庫 repo**，而且要有寫入權——程式會 push 進去。
-
-```bash
-sudo -u append ssh-keygen -t ed25519 -N '' -f /srv/deploy_key
-sudo cat /srv/deploy_key.pub
-```
-
-貼到 `skynote-cards-corpus` 的 Settings → Deploy keys → Add，
-**Allow write access 要勾**。
-
-```bash
-sudo -u append git clone git@github.com:organic-san/skynote-cards-corpus.git /srv/corpus
-sudo -u append git -C /srv/corpus config user.name  'skynote-cards'
-sudo -u append git -C /srv/corpus config user.email 'skynote-cards@localhost'
-```
-
-clone 時會用到這把 key，所以先試一次：
-
-```bash
-sudo -u append env GIT_SSH_COMMAND='ssh -i /srv/deploy_key -o IdentitiesOnly=yes' \
-  git -C /srv/corpus push
-```
-
-**確認**：`Everything up-to-date`。這一步不過，之後卡片就只會躺在本機。
-
----
-
-## 5. 放程式碼、起服務
-
-```bash
-sudo -u append git clone git@github.com:organic-san/skynote-cards.git /srv/app
-cd /srv/app
-sudo -u append npm ci
-sudo -u append npm run build
-
-sudo cp deploy/skynote-cards.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now skynote-cards
-```
-
-**確認**：
-
-```bash
-curl -s localhost:3000/_health
-# cards_files 與 cards_indexed 都是 0，git.enabled 是 true
-journalctl -u skynote-cards -n 30
-```
-
-`git.enabled` 如果是 `false`，代表 `/srv/corpus/.git` 不在或權限不對，
-備份是關掉的——先修這個再往下。
-
----
-
-## 6. Cloudflare Tunnel
-
-```bash
-curl -fsSL https://pkg.cloudflare.com/cloudflared-main.gpg \
-  | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
-  | sudo tee /etc/apt/sources.list.d/cloudflared.list
-sudo apt-get update && sudo apt-get install -y cloudflared
-
-cloudflared tunnel login
-cloudflared tunnel create skynote-cards
-```
-
-把 `deploy/cloudflared-config.yml` 複製到 `/etc/cloudflared/config.yml`，
-填入 tunnel UUID 與你的子網域，然後裝 service：
-
-```bash
-sudo cp deploy/cloudflared.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now cloudflared
-```
-
-**先不要建 DNS 記錄。** 下一步做完再建。
-
----
-
-## 7. Cloudflare Access（做完這步才對外）
-
-Zero Trust → Access → Applications → Add：
-
-- Type：Self-hosted
-- Domain：你的子網域
-- Policy：Action **Allow**，Include → **Emails** → 只填你自己那一個
-- 再加一條 policy：Action **Block**，Include → Everyone（放在 Allow 之後）
-- Session duration 設長一點（例如 30 天），不然手機上每次都要重登，
-  那正好會殺掉這個系統唯一在乎的東西：寫入摩擦
-
-存檔之後才建 DNS：
-
-```bash
-cloudflared tunnel route dns skynote-cards cards.你的網域
-```
-
-**確認**：用無痕視窗開那個網址，應該先看到 Cloudflare 的登入頁，
-而不是卡片列表。看到卡片列表就代表 policy 沒生效，**立刻把 DNS 記錄刪掉**。
-
----
-
-## 8. 更新機制：pull 模式
-
-沒有外部 IP，GitHub Actions 連不進來這台機器，所以不是「push 觸發部署」，
-是反過來——**VM 自己每五分鐘去看一次有沒有新版本**。`.github/workflows/test.yml`
-只負責在 push 時跑測試，不碰這台機器；真正的部署完全在 VM 這邊發生。
-
-`deploy/pull-deploy.sh`、`deploy/skynote-cards-deploy.service`、
-`deploy/skynote-cards-deploy.timer` 三個檔案已經在 repo 裡，拉下來的
-`/srv/app` 自然就有：
-
-```bash
-sudo cp /srv/app/deploy/skynote-cards-deploy.service /etc/systemd/system/
-sudo cp /srv/app/deploy/skynote-cards-deploy.timer   /etc/systemd/system/
-```
-
-腳本裡有一行 `sudo systemctl restart skynote-cards`，跑腳本的是 `append`
-這個沒有登入權的帳號，所以要讓它不用密碼就能重啟服務：
-
-```bash
-echo 'append ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart skynote-cards' \
-  | sudo tee /etc/sudoers.d/skynote-cards
-```
-
-打開 timer（**不要**啟動 `.service`——那個只給 timer 觸發，自己啟動只會跑一次就結束）：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now skynote-cards-deploy.timer
-```
-
-**確認**：
-
-```bash
-systemctl list-timers skynote-cards-deploy.timer
-# NEXT 欄位應該是 5 分鐘內的某個時間
-
-sudo systemctl start skynote-cards-deploy.service   # 手動催一次，不必等
-journalctl -u skynote-cards-deploy -n 20
-```
-
-日誌裡最後一行如果是 `deploy: <舊commit> -> <新commit>`，代表這次真的抓到
-新版本並重啟了；如果什麼都沒印，代表 `git fetch` 之後沒有變動——這是
-正常情況，不是壞掉。 
-
-之後的日常流程就是：`git push` 到 `main`，最多等五分鐘，VM 自己會跟上。
-
-**`npm ci` 不是每次更新都跑。** 它會整個刪掉 `node_modules` 重裝，
-在 1GB RAM 的機器上很貴，所以腳本只在這次抓到的 commit 範圍內真的動到
-`package.json` 或 `package-lock.json` 時才跑；只改程式碼或模板的更新
-只做 `npm run build` 加重啟，快很多。
-不想等的話，隨時可以自己 SSH 進去 `sudo systemctl start skynote-cards-deploy`。
-
-**`deploy/` 底下的 unit 檔改了不會自動生效。** pull-deploy 只更新
-`/srv/app` 裡的程式碼，`/etc/systemd/system/` 底下那幾份是你當初手動複製的。
-`.service` 或 `.timer` 有異動時要自己再抄一次：
-
-```bash
-sudo cp /srv/app/deploy/skynote-cards.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl restart skynote-cards
-```
-
----
-
-## 9. 上線後第一天要做的三件事
-
-**一、確認備份真的到得了 GitHub。** 建第一張卡片，然後：
-
-```bash
-curl -s localhost:3000/_health   # unpushed_commits 應該是 0
-```
-
-再去 GitHub 上打開 `cards/`，看得到那個 `.md` 檔才算數。
-`unpushed_commits` 是 `null` 代表分支還沒有 upstream——建第一張卡片時
-程式會用 `-u` 推第一次，之後就有數字了。
-
-**二、演練一次索引重建。**
-
-```bash
-sudo systemctl stop skynote-cards
-sudo rm -f /srv/index.db*      # 索引用 WAL，還有 -wal 與 -shm 兩個伴生檔
-sudo systemctl start skynote-cards
-```
-
-頁面內容應該跟砍掉之前逐字相同。這一步是在驗證「檔案是唯一真相」
-不是一句口號。
-
-**三、演練一次整機遺失。** 在別的機器上 clone 語料庫 repo，
-確認 `cards/*.md` 就是全部——沒有任何東西只存在於那台 VM 上。
-
----
-
-## 之後的維運
-
-只有三件事：
-
-- `GET /_health` — 檔案數、索引筆數、未 push 的 commit 數。
-  未 push 的數字如果連續幾天不是 0，deploy key 或網路壞了。
-- `POST /_reindex` — 回報解析失敗的檔案、壞連結與規則警告。
-  這是發現資料完整性問題的地方，值得每個月手動跑一次看報告。
-- 側欄的「更新」（`POST /update`）— 在別處的語料庫 clone 手動調整卡片檔、
-  push 上去之後，用它把結果取回來：補上還沒 commit 的卡片、`git pull --rebase`、
-  推上本機領先的 commit，最後重建索引。結果頁附同一份重建報告。
-  有衝突就放棄這次取回、語料庫維持原狀，不必登進機器處理。
-
-### 遇到 502 的時候
-
-502 是 cloudflared 說「我連不到後面那支程式」。先分清楚是應用程式的問題
-還是通道的問題——在機器上直接打本機，繞過整條 Cloudflare：
-
-```bash
-curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' localhost:3000/tags
-```
-
-（用 `/tags` 不用 `/_health`，因為 `/_health` 會 spawn 一個 git 行程去數
-未 push 的 commit，本身就有負擔，會干擾判斷。）
-
-- **本機也慢或不通** → 問題在應用程式或機器。往下看。
-- **本機很快但外面 502** → 問題在 cloudflared，看 `journalctl -u cloudflared`。
-
-應用程式那一側，最常見的是**記憶體被換到 swap**。症狀很好認：閒置一陣子
-之後第一次開很慢或 502，重試就好了；寫完長文章之後也會有幾秒不能用。
-
-```bash
-PID=$(systemctl show -p MainPID --value skynote-cards)
-grep -E 'VmRSS|VmSwap' /proc/$PID/status
-```
-
-`VmSwap` 不是 0 就是它。unit 檔裡的 `MemorySwapMax=0` 就是為了擋這件事，
-確認它有生效：
-
-```bash
-systemctl show -p MemorySwapMax skynote-cards   # 應該是 0
-```
-
-**cloudflared 說 `connection refused` 或 `EOF` 的話，不是慢，是行程不在了。**
-前者代表連埠都沒人聽，後者代表處理到一半死掉——兩個都是崩潰加重啟，
-不是 swap（swap 只會慢，不會拒絕連線）。原因去另一個 unit 找：
-
-```bash
-journalctl -u skynote-cards --since '1 hour ago' --no-pager   | grep -vE 'incoming request|request completed'
-sudo dmesg -T | grep -iE 'out of memory|oom-kill|Killed process'
-```
-
-| 看到什麼 | 病因 |
+- 測試沒過：不部署。
+- 建置失敗：舊版照跑，新版本是整批切換的。
+- 新版一上線就壞：切回上一版，一行指令：
+
+  ```bash
+  gcloud app versions list --service=default
+  gcloud app services set-traffic default --splits=<上一版的 ID>=1
+  ```
+
+  部署期間換版那幾十秒避免寫卡；真的寫了也不會掉，只是要等那一分鐘後的對帳才看得到。
+
+### 可用性
+
+| 發生什麼事 | 讀 | 寫 | 備份 |
+|---|---|---|---|
+| App Engine 換機器、部署 | 等幾秒 | 等幾秒 | — |
+| Cloud Storage 故障 | 正常（讀 /tmp） | 503，草稿保留 | — |
+| GitHub 故障、token 過期 | 正常 | 正常 | 延後；`/_health` 的 `unpushed_commits` 會增加 |
+| 開機那一刻 GitHub 剛好掛了 | 正常 | 正常 | 這台機器停用 git 備份，換機器之後恢復 |
+| Google 登入（IAP）故障 | 進不去 | 進不去 | — |
+| asia-east1 整區故障 | 全部停擺 | 全部停擺 | — |
+
+`max_instances: 1` 是盡力而為，偶爾會短暫有兩台。兩台同時寫也不會掉資料：
+新卡的 ID 不會撞，上傳也要求物件不存在；只是一台看不到另一台剛寫的卡，
+要等下一次對帳。
+
+## 10. 維運
+
+| 要做的事 | 怎麼做 |
 |---|---|
-| `Killed process ... (node)` | 記憶體不足，被核心砍掉 |
-| `JavaScript heap out of memory` | Node 自己的堆爆掉 |
-| JS 堆疊加 `Main process exited, status=1` | 程式碼裡有未捕捉的例外 |
-| `Assertion failed` 加 `status=6/ABRT` 與原生堆疊 | 原生模組（better-sqlite3）跟 Node 版本不合 |
+| 看日誌 | `gcloud app logs tail -s default`，或主控台的 Logging |
+| 健康檢查 | 登入後開 `/_health` |
+| 手動重建索引 | `POST /_reindex`（不用，換機器也會重建） |
+| 換一台機器 | `gcloud app instances delete <ID> --service=default --version=<版本>` |
+| 換 GitHub token | `printf '%s' "$NEW" \| gcloud secrets versions add corpus-git-token --data-file=-`，再換一台機器 |
+| 看花了多少錢 | 主控台 → 帳單；建議在「預算與快訊」設一個 1 美元的預算警示 |
 
-最後一種長這樣，而且**記憶體與 CPU 都很正常**——不要被 502 誤導成資源問題：
+**費用。** App Engine F1 一台常駐一天 24 小時，在每天 28 小時的免費額度內；
+bucket 只有幾 MB；Secret Manager、Cloud Build、Logging 都在免費額度內。
+建置出來的映像檔超過 0.5 GB 才收錢，CI 只留兩版就是為了這個。
 
-```
-#  Assertion failed: (env) != nullptr
-   Statement::~Statement() [better-sqlite3/build/Release/better_sqlite3.node]
-skynote-cards.service: Main process exited, code=dumped, status=6/ABRT
-```
+### 出問題的時候
 
-崩在 `Statement` 的解構子代表是垃圾回收在清理 prepared statement 時炸的，
-時間點會跟請求對不上（那是 GC 的節奏）。解法是把 better-sqlite3 升到
-支援當前 Node 版本的版次；`npm ci` 之後看 `systemctl` 有沒有再出現
-`status=6/ABRT` 就知道修好沒有。
-
-1GB 的機器上最常見的是第一種，而最大的來源是 pull-deploy 的 `tsc`——
-它一次吃掉數百 MB，核心挑受害者時會挑 RSS 最大的，那多半就是伺服器本身。
-兩個 unit 檔裡的 `OOMScoreAdjust` 就是為了把這件事講清楚：
-伺服器是 `-700`（最後才動），建置是 `+500`（第一個犧牲），
-而且建置那邊有 `MemoryMax=500M` 把尖峰壓住。
-
-確認有生效：
-
-```bash
-systemctl show -p OOMScoreAdjust -p MemorySwapMax skynote-cards
-systemctl show -p OOMScoreAdjust -p MemoryMax skynote-cards-deploy
-```
-
-沒有備份索引的必要，沒有資料庫遷移，沒有要清的暫存。
-真的壞掉的話：砍掉 `/srv/index.db*`、重啟，或整台機器重灌再 clone 兩個 repo。
+| 看到什麼 | 原因 |
+|---|---|
+| 每一頁都是「需要經過 Google 登入（IAP）」的 403 | IAP 沒打開，或請求沒經過 IAP。程式在擋，不是壞了 |
+| Google 的「You don't have access」 | 這個帳號沒有 `roles/iap.httpsResourceAccessor`（5.4） |
+| 502 `Empty Google Account OAuth client ID(s)/secret(s)` | 沒有設自訂 OAuth 用戶端（5.2、5.3） |
+| 登入時 `redirect_uri_mismatch` | OAuth 用戶端少了 `…:handleRedirect` 那條網址（5.2） |
+| `/_health` 的 `git.enabled` 是 `false` | 開機時 clone 失敗。日誌搜「clone 語料庫失敗」：多半是 token 或 secret 的權限 |
+| `unpushed_commits` 一直增加 | token 過期或權限不對。卡片在 bucket，不會掉；換 token、換機器 |
+| 寫入回 503「暫時存不進去」 | Cloud Storage 寫入失敗。日誌搜「遠端寫入失敗」：權限（3）或 bucket 名稱 |
+| 日誌「開機失敗」，機器一直重開 | 設定錯了，訊息會說是哪一個。程式寧可不開機，也不在設定不完整的狀態下對外 |
+| 「更新」頁出現「兩邊都改過，以網頁那份為準」 | 同一張卡在網頁上改了、還沒推上去之前，又在別處改了推上去。git 那一份還在歷史裡 |
+| 日誌「看起來不對（remote 設錯了？），這次一個都不刪」 | 對帳要刪掉 bucket 上一大批卡。先確認 `CORPUS_REMOTE` 指的是對的 repo |
