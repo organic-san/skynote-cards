@@ -26,6 +26,23 @@
 <pre class="updatedetail"><%= it.detail %></pre>
 <% } %>
 
+<% if (it.store) { %>
+<%/* App Engine 上才有：取回之後跟 bucket 對帳的結果（store/reconcile.ts）。 */%>
+<section class="updatepart">
+  <p class="updatehead">雲端儲存</p>
+  <p class="updateline"><%= it.store.line %></p>
+  <% if (it.store.conflicts.length) { %>
+  <p class="updatehead">兩邊都改過，以網頁那份為準</p>
+  <ul class="updatelog">
+    <% it.store.conflicts.forEach(function (f) { %><li><%= f %></li><% }) %>
+  </ul>
+  <% } %>
+  <% if (it.store.error) { %>
+  <pre class="updatedetail"><%= it.store.error %></pre>
+  <% } %>
+</section>
+<% } %>
+
 <% if (it.reindex) { %>
 <section class="updatepart">
   <p class="updatehead">索引</p>

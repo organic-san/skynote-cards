@@ -1,0 +1,23 @@
+# gcloud app deploy 上傳時略過的檔案。
+# 建置在 Google 那邊跑（npm ci、npm run build），所以只送原始碼與建置要用的東西。
+.gcloudignore
+.git/
+.gitignore
+.github/
+.nvmrc
+node_modules/
+dist/
+corpus-dev/
+corpus/
+temp/
+test/
+spec/
+docs/
+deploy/
+scripts/import-draft.ts
+tsconfig.test.json
+*.md
+*.db
+*.db-*
+.env
+.env.*

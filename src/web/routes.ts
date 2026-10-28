@@ -10,6 +10,7 @@ import {
 } from '../store/index/index.ts';
 import { lockedTags } from '../store/tags.ts';
 import { GitBackup } from '../store/backup.ts';
+import type { CorpusStore } from '../store/remote.ts';
 import { isValidIdFormat } from '../domain/id.ts';
 import { embedFor } from './embed.ts';
 import { renderMarkdown, renderPage, safeHref, taskMarks, type PageOptions } from './render.ts';
@@ -57,6 +58,9 @@ import * as lists from '../service/lists.ts';
 import { updateCorpus } from '../service/update.ts';
 
 /** HTTP 這一層：解析請求、呼叫下面、選一份模板。業務判斷不放在這裡。 */
+
+/** App Engine 開新機器時打的路徑（app.yaml 的 inbound_services: warmup）。不經過 IAP（見 app.ts）。 */
+export const WARMUP_PATH = '/_ah/warmup';
 
 /**
  * 引用串一次撈幾層。上游與下游預設展開的深度不同：
@@ -197,11 +201,13 @@ export function registerRoutes(
   index: CardIndex,
   git: GitBackup,
   config: Config,
+  store: CorpusStore,
 ): void {
   const cards: CardServiceDeps = {
     corpusPath: config.corpusPath,
     index,
     git,
+    store,
     logger: { error: (msg) => app.log.error(msg) },
     editWindowMs: config.editWindowMs,
   };
@@ -458,8 +464,9 @@ export function registerRoutes(
     // 隨手記展開來的表單退回時，型別照樣是二選一（見 newFormPage 的 expand）。
     const expand = (req.body as Record<string, unknown> | undefined)?.entry === 'expand';
 
-    const reject = (errors: string[]) => {
-      if (wantsJson(req)) return reply.code(400).send({ ok: false, errors });
+    // 503 是遠端存不進去：內容沒問題，稍後原樣再送就好。表單照樣重繪，草稿不清。
+    const reject = (errors: string[], code = 400) => {
+      if (wantsJson(req)) return reply.code(code).send({ ok: false, errors });
       return html(
         reply,
         newFormPage(
@@ -479,12 +486,12 @@ export function registerRoutes(
           }),
           { errors, source, replyTo: source?.id, draftScope: draftScope || 'new', expand },
         ),
-        400,
+        code,
       );
     };
 
-    const result = createCard(cards, draft);
-    if (!result.ok) return reject(result.errors);
+    const result = await createCard(cards, draft);
+    if (!result.ok) return reject(result.errors, result.unavailable ? 503 : 400);
 
     const { id } = result.card;
     // 送出後導向新卡片頁，頂端顯示一行「已從 ⟨來源卡標題⟩ 建立」，
@@ -539,7 +546,7 @@ export function registerRoutes(
       );
     }
 
-    const result = createCard(cards, {
+    const result = await createCard(cards, {
       type: 'fleeting',
       ...fleetingDraft(String(b.body ?? '')),
       tags,
@@ -551,11 +558,12 @@ export function registerRoutes(
     });
 
     if (!result.ok) {
-      if (wantsJson(req)) return reply.code(400).send({ ok: false, errors: result.errors });
+      const code = result.unavailable ? 503 : 400;
+      if (wantsJson(req)) return reply.code(code).send({ ok: false, errors: result.errors });
       return html(
         reply,
         shell('message', { message: result.errors.join('；') }, { title: '沒寫成' }),
-        400,
+        code,
       );
     }
     const { id } = result.card;
@@ -666,9 +674,9 @@ export function registerRoutes(
     }
 
     const at = taskMarks(cardText(readCard(config.corpusPath, id)))[n] ?? -1;
-    const result = toggleTask(cards, id, { at, checked: b.checked, rev: b.rev });
+    const result = await toggleTask(cards, id, { at, checked: b.checked, rev: b.rev });
     if (!result.ok) {
-      return reply.code(result.reason === 'conflict' ? 409 : 400).send({
+      return reply.code({ conflict: 409, unavailable: 503, invalid: 400 }[result.reason]).send({
         ok: false,
         errors: result.errors,
       });
@@ -743,7 +751,7 @@ export function registerRoutes(
       b.quick_body !== undefined && index.typeOf(id) === 'fleeting'
         ? fleetingDraft(String(b.quick_body))
         : null;
-    const result = updateCard(cards, id, {
+    const result = await updateCard(cards, id, {
       title: single ? single.title : b.title == null ? undefined : String(b.title),
       tags:
         b.tags === undefined
@@ -762,7 +770,7 @@ export function registerRoutes(
     });
 
     if (!result.ok) {
-      const code = { locked: 403, conflict: 409, invalid: 400 }[result.reason];
+      const code = { locked: 403, conflict: 409, invalid: 400, unavailable: 503 }[result.reason];
       return reply.code(code).send({ ok: false, errors: result.errors });
     }
     return reply.send({ ok: true, id, revised: result.card.revised });
@@ -780,8 +788,10 @@ export function registerRoutes(
     const { id } = req.params as { id: string };
     if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
 
-    const result = deleteCard(cards, id);
-    if (!result.ok) return reply.code(403).send({ ok: false, errors: result.errors });
+    const result = await deleteCard(cards, id);
+    if (!result.ok) {
+      return reply.code(result.unavailable ? 503 : 403).send({ ok: false, errors: result.errors });
+    }
     return reply.send({ ok: true, id });
   });
 
@@ -911,7 +921,13 @@ export function registerRoutes(
    * 會等 git 做完才回應，結果直接畫在這一頁——使用者按下去就是在等這個答案。
    */
   app.post('/update', async (_req, reply) => {
-    const outcome = await updateCorpus(git, index);
+    const outcome = await updateCorpus({
+      corpusPath: config.corpusPath,
+      git,
+      index,
+      store,
+      logger: app.log,
+    });
     return html(reply, shell('update', updateView(outcome), { title: '更新', nav: 'update' }));
   });
 
@@ -923,10 +939,19 @@ export function registerRoutes(
       cards_indexed: index.countCards(),
       unpushed_commits: await git.unpushedCount(),
       git: git.status,
+      // 卡片的真相在哪裡：`none` 是本機檔案，`gs://…` 是 bucket。
+      store: store.label,
       corpus_path: config.corpusPath,
       index_path: config.indexPath,
     });
   });
+
+  /**
+   * App Engine 開新機器時先打這一支（app.yaml 的 inbound_services: warmup）。
+   * 語料庫在開始監聽之前就準備好了（見 bootstrap.ts），所以這裡什麼都不用做。
+   * /_ah/ 底下不經過 IAP 檢查（見 app.ts）。
+   */
+  app.get(WARMUP_PATH, async (_req, reply) => reply.code(200).send('ok'));
 
   app.setNotFoundHandler(async (req, reply) => {
     if (wantsJson(req)) return reply.code(404).send({ ok: false, errors: ['找不到'] });
