@@ -1,7 +1,7 @@
 <% if (it.from) { %>
 <p class="fromsource">已從 <a href="/c/<%= it.from.id %>"><%= it.from.title %></a> 建立</p>
 <% } else { %>
-<p class="back"><a class="textbtn" href="/">← 返回</a></p>
+<p class="back"><a class="textbtn" href="<%= it.base %>/">← 返回</a></p>
 <% } %>
 
 <%/* U12：卡片內容在前，關聯區塊在後。
@@ -46,7 +46,7 @@
 
   <% if (it.card.tags.length) { %>
   <p class="tags">
-    <% it.card.tags.forEach(function (t) { %><a class="tag" href="/?tag=<%= encodeURIComponent(t) %>">#<%= t %></a><% }) %>
+    <% it.card.tags.forEach(function (t) { %><a class="tag" href="<%= it.base %>/?tag=<%= encodeURIComponent(t) %>">#<%= t %></a><% }) %>
   </p>
   <% } %>
 

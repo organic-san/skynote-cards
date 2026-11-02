@@ -293,7 +293,7 @@ export const UNDELETABLE_MESSAGE = '這張卡已定案，不能刪除。';
  * 「還能不能改」「還能不能刪」「meta 行要寫什麼」先前是三個各自判斷的問題
  * （canEdit / isWithinEditWindow / lockAt 三個重疊的述詞），而它們的答案其實
  * 是同一件事。R6 把它講明白了——**有人開始依賴你，你就定案了**：一個判準
- * 同時管住從待辦清單移出、關閉編輯、禁止刪除。所以這裡只回答一次。
+ * 同時管住關閉編輯與禁止刪除。所以這裡只回答一次。
  *
  * `reason` 分兩種不是為了好看：時間到與被指向在畫面上要說不同的話
  * （D.5：已被指向而提前定案的顯示定案狀態，而不是一個已經沒有意義的倒數）。
@@ -310,7 +310,7 @@ export type Rumination =
  * 產出需要反覆改稿：反芻期一過就只能發新版本的話，每改一次就多一張卡。
  * 定案照舊只看 R6——被引用之後，修改以新版本（updates）延續。
  *
- * 寫成一份清單而不是一個 if，是因為「沉澱」那句 SQL 也要問同一件事（見 query.ts）。
+ * 寫成一份清單而不是一個 if：「哪些型別沒有反芻期」是一個事實，不是一段流程。
  */
 export const UNWINDOWED_TYPES: readonly CardType[] = ['output'];
 
@@ -344,15 +344,6 @@ export function ruminationOf(
   if (!Number.isFinite(until)) return { open: false, reason: 'expired' };
   if ((ctx.now ?? Date.now()) > until) return { open: false, reason: 'expired' };
   return { open: true, until: new Date(until).toISOString() };
-}
-
-/**
- * 還在反芻期內的卡片，最早是什麼時候建立的。
- * 「沉澱」清單用一句 SQL 撈這一批，所以界線要先算成 ISO 字串。
- * R6 的另一半（被指向就出清單）由那句 SQL 自己的條件負責，見 query.ts。
- */
-export function editableSince(windowMs: number, now = Date.now()): string {
-  return new Date(now - windowMs).toISOString();
 }
 
 // ---------------------------------------------------------------- 勾選

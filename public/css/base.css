@@ -33,12 +33,15 @@ a:hover { text-decoration: underline; }
 time, .num { font-variant-numeric: tabular-nums; letter-spacing: 0; }
 
 /*
-  U19 / U20：內容欄靠左對齊，距側欄右緣一個固定間距，寬度固定。
-  置中會讓整個版面右漂、側欄與內容看起來不屬於同一個版面。
+  內容欄寬度固定、置中。
+
+  U19 原本要它靠左、距側欄右緣固定間距；側欄常駐時早已改成在側欄右邊那塊區域裡
+  置中（見 shell.css）。側欄收起來的窄版面原本仍然靠左，比內容欄寬一點的視窗
+  （例如 700px）右邊就空一大片——v3.1 起一律置中。
 */
 main {
   max-width: var(--content-w);
-  margin: 0;
+  margin-inline: auto;
   padding: var(--sp-8) var(--sp-4) var(--sp-8);
 }
 
@@ -157,6 +160,18 @@ h1.long {
 
 /* 型別名不上色、不加框，與日期同一個次要灰階（U1）。 */
 .tname { color: var(--text-3); }
+
+/* v3.1：卡片在別的環境時標出的環境名（搜尋所有環境、引用串、連結的選卡器）。
+   淡底的小籤：它說的是「這張卡放在哪裡」，跟型別名、標籤都不是同一種東西。 */
+.envmark {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-field);
+  background: var(--selected-bg);
+  color: var(--text-2);
+  font-size: var(--fs-1);
+  white-space: nowrap;
+}
 
 /* U33：動效只出現在浮層，其餘一律不加。 */
 @media (prefers-reduced-motion: reduce) {

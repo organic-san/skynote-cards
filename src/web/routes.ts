@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from '../config.ts';
-import { cardExists, countCardFiles, readCard } from '../store/files.ts';
+import { cardExists, countCardFiles, envExists, readCard, readCardWithEnv } from '../store/files.ts';
 import {
   CardIndex,
   TAG_SORTS,
@@ -19,6 +19,8 @@ import {
   EXPAND_TYPES,
   FORM_SPEC_TABLE,
   actionsFor,
+  envBase,
+  envLabel,
   formTitle,
   headingOf,
   clip,
@@ -54,6 +56,7 @@ import {
   updateCard,
   type CardServiceDeps,
 } from '../service/cards.ts';
+import { createEnv, envList, homeEnv, orderEnvs, renameEnv } from '../service/envs.ts';
 import * as lists from '../service/lists.ts';
 import { updateCorpus } from '../service/update.ts';
 
@@ -84,6 +87,36 @@ function asArray(v: unknown): string[] {
   if (Array.isArray(v)) return v.map((x) => String(x));
   if (v === undefined || v === null || v === '') return [];
   return [String(v)];
+}
+
+/**
+ * 送出表單時所在的那一頁（瀏覽器帶來的 Referer）。只認同一個站、讀得回來的頁面：
+ * 首頁、標籤、搜尋、建立表單（可以在環境底下）、卡片頁與編輯頁；其他回 null。
+ */
+function pageBefore(req: FastifyRequest): string | null {
+  const ref = req.headers.referer;
+  if (typeof ref !== 'string') return null;
+  let u: URL;
+  try {
+    u = new URL(ref);
+  } catch {
+    return null;
+  }
+  if (u.host !== req.headers.host) return null;
+  const page =
+    /^(?:\/e\/[^/]+)?\/(?:|tags|search|new)$/.test(u.pathname) || /^\/c\/[^/]+(?:\/edit)?$/.test(u.pathname);
+  return page ? u.pathname + u.search : null;
+}
+
+/** 環境改名之後，原本那一頁的網址：在被改名的環境底下就換成新名字，其他不變。 */
+function renamedPage(page: string, from: string, to: string): string {
+  const m = /^\/e\/([^/]+)(.*)$/.exec(page);
+  if (!m) return page;
+  try {
+    return decodeURIComponent(m[1] as string) === from ? `${envBase(to)}${m[2]}` : page;
+  } catch {
+    return page;
+  }
 }
 
 /**
@@ -155,16 +188,16 @@ function normalizeDraft(body: unknown): CardDraft {
  * 掛在**導向**上而不是在渲染表單時清，是因為只有導向代表「這張卡真的寫成了」：
  * 驗證失敗走的是重新渲染那條路，草稿因此自動留著，不需要另一條規則。
  *
- * `home` 是碎片要回到的那一頁。預設是首頁，但在標籤篩選底下記的那一則
+ * `home` 是碎片要回到的那一頁：它所在環境的首頁。在標籤篩選底下記的那一則
  * 要回到**同一份篩選**：在一個標籤底下連著記三則是這個功能的典型用法，
  * 每記一則就把篩選丟掉，等於要使用者每次重新點一次那個標籤。
  */
 function afterCreate(
   type: string,
   id: string,
+  home: string,
   from?: string,
   draft?: string,
-  home = '/',
 ): string {
   const base = type === 'fleeting' ? home : `/c/${id}`;
   const parts: string[] = [];
@@ -176,14 +209,29 @@ function afterCreate(
 }
 
 /**
+ * 草稿槽帶上環境（v3.1），否則兩個環境的隨手記會共用同一格。
+ * 沒有環境維持原來的名字，既有的草稿照樣找得到。`|` 不會出現在環境名稱裡，
+ * 所以前綴的邊界不會跟槽名的其他部分混淆。
+ */
+function envScope(scope: string, env: string): string {
+  return env === '' ? scope : `${env}|${scope}`;
+}
+
+/**
  * 草稿槽的名字。
  *
  * 前端不自己推導——型別、來源卡、當前的標籤篩選都只有伺服器知道，
  * 前端要猜就得把那些規則抄一份。所以槽名由這裡算好，印在表單上。
+ * 以卡片 ID 為鍵的槽不帶環境：那張卡在哪裡，槽就跟著它。
  */
-function newDraftScope(type: string, rel: string | null, srcId: string | undefined): string {
+function newDraftScope(
+  type: string,
+  rel: string | null,
+  srcId: string | undefined,
+  env: string,
+): string {
   if (srcId && type !== '' && rel) return `new:${type}:${rel}:${srcId}`;
-  return type === '' ? 'new' : `new:${type}`;
+  return envScope(type === '' ? 'new' : `new:${type}`, env);
 }
 
 /** 槽名會原樣回到網址與 HTML 屬性裡，所以擋掉控制字元、限長。 */
@@ -192,6 +240,12 @@ function safeScope(raw: unknown): string {
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .trim()
     .slice(0, 200);
+}
+
+/** 原本的查詢字串（含 `?`），沒有就是空字串。導向時原樣帶過去。 */
+function queryOf(req: FastifyRequest): string {
+  const at = req.url.indexOf('?');
+  return at === -1 ? '' : req.url.slice(at);
 }
 
 // ---------------------------------------------------------------- 路由
@@ -215,58 +269,132 @@ export function registerRoutes(
   const html = (reply: FastifyReply, body: string, code = 200) =>
     reply.code(code).type('text/html; charset=utf-8').send(body);
 
+  /** 請求裡帶來的環境名稱，存在才算數；沒有環境是空字串。不存在回 null。 */
+  const knownEnv = (raw: unknown): string | null => {
+    if (typeof raw !== 'string') return null;
+    return envExists(config.corpusPath, raw) ? raw : null;
+  };
+
   /**
-   * 每一頁的側欄都帶著工作狀態的四份清單，下半再依頁面列最近的標籤或卡片，
-   * 所以統一從這裡出去。清單的名字與去處在這裡定義一次，模板只負責 forEach。
+   * 每一頁的側欄都帶著環境清單，下半再依頁面列最近的標籤或卡片，所以統一從這裡出去。
+   * `env` 是這一頁所在的環境：側欄的每一項、隨手記、標籤連結都以它為準。
+   * 模板拼網址用的 `base` 也從這裡塞進頁面資料，每一支路由不必各給一次。
    */
-  const shell = (view: string, data: Record<string, unknown>, opts: PageOptions) => {
+  const shell = (
+    view: string,
+    data: Record<string, unknown>,
+    opts: PageOptions & { env: string },
+  ) => {
+    const env = opts.env;
+    const base = envBase(env);
     // v3 §5：在一覽裡找方向的時候，主題（標籤）是入口；讀卡、寫卡的時候，
     // 要連到哪一張才是問題——看一眼名字就知道，不必每次都打字搜尋。
     const sideCards = opts.side === 'cards';
-    return renderPage(view, data, {
+    return renderPage(view, { ...data, base, env }, {
       ...opts,
-      // U9：不掛數量。這些清單實務上不會歸零，數字提供不了「還剩多少」的訊號，
-      // 只是每次進站都在閃一個不會變的數；清單本身的長度就是它的量。
-      // 連帶把每個請求的四次 COUNT(*) 一起省掉。
-      lists: [
-        { nav: 'pending', href: '/pending', name: '待思考' },
-        { nav: 'loose', href: '/loose', name: '初步想法' },
-        // U8：側欄這項是「fleeting 且無入向連結」，跟首頁篩選列的「碎片」
-        // （全部 fleeting）不是同一個集合，同名會讓兩處的數字對不起來。
-        { nav: 'fleeting', href: '/fleeting', name: '雜筆' },
-        { nav: 'settling', href: '/settling', name: '沉澱' },
-      ],
-      // 標籤跟表單的推薦是同一份：最近使用排前面、不列鎖定的。
+      base,
+      // v3.1：側欄的環境清單取代了原本的四份工作清單，依最近一張卡排。
+      envs: envList(cards).map((e) => ({
+        name: e.name,
+        label: envLabel(e.name),
+        href: `${envBase(e.name)}/`,
+        on: e.name === env,
+      })),
+      // ?tag= 篩選生效時，隨手記記的就是那一堆底下的東西。槽名也跟著分開：
+      // 切換標籤等於換一張表單，兩份草稿不該互相覆蓋。
+      quickScope: envScope(opts.tag ? `quick:tag:${opts.tag}` : 'quick', env),
+      // 標籤跟表單的推薦是同一份：最近使用排前面、不列鎖定的，以這個環境為界。
       sidetags: sideCards
         ? undefined
-        : lists.tagSuggestions(index, lockedTags(config.corpusPath)).map((t) => t.tag),
+        : lists.tagSuggestions(index, lockedTags(config.corpusPath), env).map((t) => t.tag),
       recent: sideCards
-        ? lists.recent(index).map((r) => ({ id: r.id, title: r.title, type: r.type }))
+        ? lists.recent(index, env).map((r) => ({ id: r.id, title: r.title, type: r.type }))
         : undefined,
     });
   };
 
+  /** 找不到的頁面。網址在某個環境底下就留在那個環境，否則是首頁通往的那一個。 */
+  const notFound = (req: FastifyRequest, reply: FastifyReply, message = '沒有這個位置。') => {
+    if (wantsJson(req)) return reply.code(404).send({ ok: false, errors: ['找不到'] });
+    const m = /^\/e\/([^/?#]+)/.exec(req.url);
+    let env: string | null = null;
+    if (m) {
+      try {
+        env = knownEnv(decodeURIComponent(m[1] as string));
+      } catch {
+        env = null;
+      }
+    }
+    return html(
+      reply,
+      shell('message', { message }, { title: '404', env: env ?? homeEnv(cards) }),
+      404,
+    );
+  };
+
+  /**
+   * 以環境為界的頁面（v3.1）。沒有環境用既有的網址，環境加上 `/e/{環境}` 前綴，
+   * 其下是同一組路由——兩份註冊、同一個處理函式，環境由網址決定。
+   *
+   * 沒有環境是過渡的狀態：裡面的卡都搬進環境之後，它的頁面（GET）導向首頁通往的環境，
+   * 舊的書籤因此照樣能用，隨手記也不會在一個看不見的地方寫下新卡。
+   */
+  const scoped = (
+    method: 'GET' | 'POST',
+    path: string,
+    handler: (req: FastifyRequest, reply: FastifyReply, env: string) => Promise<unknown>,
+  ) => {
+    app.route({
+      method,
+      url: path,
+      handler: async (req, reply) => {
+        if (method === 'GET') {
+          const home = homeEnv(cards);
+          if (home !== '') return reply.redirect(`${envBase(home)}${path}${queryOf(req)}`);
+        }
+        return handler(req, reply, '');
+      },
+    });
+    app.route({
+      method,
+      url: `/e/:env${path}`,
+      handler: async (req, reply) => {
+        const env = knownEnv((req.params as { env: string }).env);
+        if (env === null || env === '') return notFound(req, reply, '沒有這個環境。');
+        return handler(req, reply, env);
+      },
+    });
+  };
+
+  // 環境的首頁一律帶結尾的斜線，`/e/繪圖` 導過去。
+  app.get('/e/:env', async (req, reply) => {
+    const env = knownEnv((req.params as { env: string }).env);
+    if (env === null || env === '') return notFound(req, reply, '沒有這個環境。');
+    return reply.redirect(`${envBase(env)}/${queryOf(req)}`);
+  });
+
   // ---- 時間逆序的卡片流
 
-  app.get('/', async (req, reply) => {
+  scoped('GET', '/', async (req, reply, env) => {
     const q = req.query as Record<string, string | undefined>;
     const type = CARD_TYPES.includes(q.type as CardType) ? q.type : undefined;
     const tag = q.tag && q.tag !== '' ? q.tag : undefined;
     const page = Math.max(1, Number(q.page ?? 1) || 1);
 
-    const { rows, total, pages } = lists.feed(index, { type, tag, page });
+    const { rows, total, pages } = lists.feed(index, { env, type, tag, page });
 
+    const base = envBase(env);
     const parts: string[] = [];
     if (type) parts.push(`type=${encodeURIComponent(type)}`);
     if (tag) parts.push(`tag=${encodeURIComponent(tag)}`);
-    const baseQuery = `/?${parts.length ? `${parts.join('&')}&` : ''}`;
+    const baseQuery = `${base}/?${parts.length ? `${parts.join('&')}&` : ''}`;
 
     return html(
       reply,
       shell(
         'feed',
         {
-          items: lists.decorate(index, rows).map(toItem),
+          items: lists.decorate(index, rows).map((r) => toItem(r, env)),
           total,
           type,
           tag,
@@ -278,7 +406,7 @@ export function registerRoutes(
         },
         // tag 一路帶到 layout：右下的隨手記要說出「現在記的是哪一堆」，
         // 並在送出時自動帶上那個標籤（見 layout.eta 與 POST /quick）。
-        { title: tag ? `#${tag}` : 'cards', nav: 'feed', tag },
+        { title: tag ? `#${tag}` : env === '' ? 'cards' : env, nav: 'feed', tag, env },
       ),
     );
   });
@@ -286,6 +414,7 @@ export function registerRoutes(
   // ---- 建立
 
   const newFormPage = (
+    env: string,
     values: Record<string, string>,
     links: {
       rel: string;
@@ -321,6 +450,7 @@ export function registerRoutes(
       provenance: '',
       source_author: '',
       source_date: '',
+      env,
       ...values,
     };
 
@@ -339,12 +469,20 @@ export function registerRoutes(
         (k) => (merged[k] ?? '') !== '',
       );
 
+    /*
+      新卡落在哪個環境（v3.1）。隨手記、追加外部資料、裸的 /new 都是目前所在的環境，
+      表單上不問；從卡片頁 + 進來的預設是來源卡的環境，可以改選——
+      跨環境衍生是明確的需求（專題最早的發想，來自故事與創意發想）。
+      只有一個環境可選時不必問。
+    */
+    const envChoices = opts.source ? envList(cards) : [];
+
     return shell(
       'new',
       {
         values: merged,
         links,
-        draftScope: opts.draftScope ?? 'new',
+        draftScope: opts.draftScope ?? envScope('new', env),
         draftClear: opts.draftClear ?? '',
         draftPrefilled: prefilled,
         errors: opts.errors ?? [],
@@ -362,6 +500,10 @@ export function registerRoutes(
               provenance: opts.source.provenance === 'default' ? null : opts.source.provenance,
             }
           : null,
+        envs:
+          envChoices.length > 1
+            ? envChoices.map((e) => ({ name: e.name, label: envLabel(e.name) }))
+            : [],
         // U14：說出這是什麼動作，而且在送出**前**就看得到。
         action: opts.expand
           ? EXPAND_TITLE
@@ -385,14 +527,15 @@ export function registerRoutes(
         default_rels: DEFAULT_REL,
         provenances: PROVENANCES,
         // 標籤推薦：直接嵌在頁面裡，不開端點——標籤表很小，沒有網路往返的必要。
-        tags_all: lists.tagSuggestions(index, lockedTags(config.corpusPath)),
+        // 推薦的是新卡要落進的那個環境用過的標籤。
+        tags_all: lists.tagSuggestions(index, lockedTags(config.corpusPath), merged.env),
       },
       // 寫卡的時候側欄列最近的卡片：連結要指向誰，看一眼名字就知道（v3 §5）。
-      { title: '新增', fab: false, side: 'cards' },
+      { title: '新增', fab: false, side: 'cards', env },
     );
   };
 
-  app.get('/new', async (req, reply) => {
+  scoped('GET', '/new', async (req, reply, env) => {
     const q = req.query as Record<string, string | undefined>;
     const target = q.to && isValidIdFormat(q.to) ? index.getCard(q.to) : null;
     const type = isCardType(q.type) ? q.type : '';
@@ -427,6 +570,8 @@ export function registerRoutes(
       body,
       rel: rel ?? '',
       tags,
+      // 從卡片頁 + 進來的，新卡預設落在來源卡的環境（v3.1）。
+      env: target ? target.env : env,
       ...(target && rel === 'part-of' && target.type === 'original'
         ? {
             url: target.url ?? '',
@@ -439,18 +584,21 @@ export function registerRoutes(
 
     return html(
       reply,
-      newFormPage(values, links, {
+      newFormPage(env, values, links, {
         replyTo: target?.id,
         source: target,
-        draftScope: newDraftScope(type, rel, target?.id),
+        draftScope: newDraftScope(type, rel, target?.id, env),
       }),
     );
   });
 
-  app.post('/new', async (req, reply) => {
-    const draft = normalizeDraft(req.body);
+  scoped('POST', '/new', async (req, reply, env) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const draft = normalizeDraft(b);
+    // 新卡落進的環境：表單上選的（從卡片頁 + 進來時可以改選），沒帶就是網址的那一個。
+    const target = typeof b.env === 'string' ? b.env : env;
     // 表單裡帶著它是從哪張卡開出來的，驗證失敗退回時來源面板才能跟著回來。
-    const replyTo = String((req.body as Record<string, unknown> | undefined)?.reply_to ?? '');
+    const replyTo = String(b.reply_to ?? '');
     /*
       草稿槽同理：退回的那張表單必須是同一格，否則使用者改完再送一次，
       存的是新的一格，舊的那格永遠留著。
@@ -459,10 +607,10 @@ export function registerRoutes(
       憑空給一個預設值等於叫一個從來沒存過草稿的客戶端去清一格不存在的東西，
       而且會把一個查詢參數黏在每一條導向上。表單重繪那條路才需要保底值。
     */
-    const draftScope = safeScope((req.body as Record<string, unknown> | undefined)?.draft_scope);
+    const draftScope = safeScope(b.draft_scope);
     const source = isValidIdFormat(replyTo) ? index.getCard(replyTo) : null;
     // 隨手記展開來的表單退回時，型別照樣是二選一（見 newFormPage 的 expand）。
-    const expand = (req.body as Record<string, unknown> | undefined)?.entry === 'expand';
+    const expand = b.entry === 'expand';
 
     // 503 是遠端存不進去：內容沒問題，稍後原樣再送就好。表單照樣重繪，草稿不清。
     const reject = (errors: string[], code = 400) => {
@@ -470,6 +618,7 @@ export function registerRoutes(
       return html(
         reply,
         newFormPage(
+          env,
           {
             type: draft.type,
             title: draft.title,
@@ -479,18 +628,25 @@ export function registerRoutes(
             provenance: draft.provenance ?? '',
             source_author: draft.source_author ?? '',
             source_date: draft.source_date ?? '',
+            env: target,
           },
           draft.links.map((l) => {
             const t = index.getCard(l.to);
             return { ...l, title: t?.title ?? null, targetType: t?.type ?? null };
           }),
-          { errors, source, replyTo: source?.id, draftScope: draftScope || 'new', expand },
+          {
+            errors,
+            source,
+            replyTo: source?.id,
+            draftScope: draftScope || envScope('new', env),
+            expand,
+          },
         ),
         code,
       );
     };
 
-    const result = await createCard(cards, draft);
+    const result = await createCard(cards, draft, target);
     if (!result.ok) return reject(result.errors, result.unavailable ? 503 : 400);
 
     const { id } = result.card;
@@ -498,8 +654,8 @@ export function registerRoutes(
     // 讓來源可一鍵返回——建立一張卡幾乎總是為了回到剛才在看的東西。
     //
     // 碎片例外：它的標題就是它的全部內容，跳過去只是把同一句話再讀一次。
-    // 回首頁反而讓「連著記三句」變順。
-    const location = afterCreate(result.card.type, id, source?.id, draftScope);
+    // 回它所在環境的首頁反而讓「連著記三句」變順。
+    const location = afterCreate(result.card.type, id, `${envBase(target)}/`, source?.id, draftScope);
     if (wantsJson(req)) {
       return reply.code(302).header('location', location).send({ ok: true, id });
     }
@@ -512,11 +668,12 @@ export function registerRoutes(
    * 一個文字框加一個送出鍵，**只寫碎片**（v3 §4.3）。沒有型別選單、沒有標籤欄、
    * 沒有連結。要記成思考或產出就按「展開」進完整表單——R11 要的標籤欄在那裡，
    * 所以 R11 不必在這裡另外處理，入口的意圖也只有一個。
+   * 寫進目前所在的環境（v3.1）：網址決定。
    *
    * 這條路徑刻意跟 /new 分開：把外面的東西收進來，和把腦袋裡的東西倒出來，
    * 是截然不同的兩種動機，共用一顆按鈕會讓兩邊都變鈍。
    */
-  app.post('/quick', async (req, reply) => {
+  scoped('POST', '/quick', async (req, reply, env) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     /*
       首頁 `?tag=` 篩選生效時，隨手記那張表單帶著那個標籤（見 layout.eta）。
@@ -539,38 +696,48 @@ export function registerRoutes(
       return html(
         reply,
         newFormPage(
+          env,
           { type: 'thinking', body: String(b.body ?? ''), tags: tags.join(' ') },
           [],
-          { draftScope: 'new:thinking:expand', draftClear: draftScope, expand: true },
+          {
+            draftScope: envScope('new:thinking:expand', env),
+            draftClear: draftScope,
+            expand: true,
+          },
         ),
       );
     }
 
-    const result = await createCard(cards, {
-      type: 'fleeting',
-      ...fleetingDraft(String(b.body ?? '')),
-      tags,
-      url: null,
-      provenance: null,
-      source_author: null,
-      source_date: null,
-      links: [],
-    });
+    const result = await createCard(
+      cards,
+      {
+        type: 'fleeting',
+        ...fleetingDraft(String(b.body ?? '')),
+        tags,
+        url: null,
+        provenance: null,
+        source_author: null,
+        source_date: null,
+        links: [],
+      },
+      env,
+    );
 
     if (!result.ok) {
       const code = result.unavailable ? 503 : 400;
       if (wantsJson(req)) return reply.code(code).send({ ok: false, errors: result.errors });
       return html(
         reply,
-        shell('message', { message: result.errors.join('；') }, { title: '沒寫成' }),
+        shell('message', { message: result.errors.join('；') }, { title: '沒寫成', env }),
         code,
       );
     }
     const { id } = result.card;
     // tags 只有一個來源：篩選生效時隨手記表單上的那個 hidden 欄位（見 layout.eta）。
     // 所以它有值就代表「剛才在看某個標籤」，記完要回到那裡。
-    const home = tags[0] === undefined ? '/' : `/?tag=${encodeURIComponent(tags[0])}`;
-    const location = afterCreate(result.card.type, id, undefined, draftScope, home);
+    const base = envBase(env);
+    const home = tags[0] === undefined ? `${base}/` : `${base}/?tag=${encodeURIComponent(tags[0])}`;
+    const location = afterCreate(result.card.type, id, home, undefined, draftScope);
     if (wantsJson(req)) {
       return reply.code(302).header('location', location).send({ ok: true, id });
     }
@@ -581,9 +748,9 @@ export function registerRoutes(
 
   app.get('/c/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!isValidIdFormat(id)) return reply.callNotFound();
+    if (!isValidIdFormat(id)) return notFound(req, reply);
     const card = index.getCard(id);
-    if (!card) return reply.callNotFound();
+    if (!card) return notFound(req, reply);
 
     const out = index.outLinks(id);
     const fromId = (req.query as Record<string, string | undefined>).from;
@@ -605,8 +772,10 @@ export function registerRoutes(
     */
     const body_md = cardText(card).replace(/\s+$/, '');
 
-    const upstream = flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out');
-    const downstream = flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in');
+    // 卡片的網址是全域的（不帶環境）；頁面的外殼以這張卡所屬的環境為目前環境。
+    const env = card.env;
+    const upstream = flattenThread(index.linkTree(id, 'out', THREAD_DEPTH), UPSTREAM_OPEN, 'out', env);
+    const downstream = flattenThread(index.linkTree(id, 'in', THREAD_DEPTH), DOWNSTREAM_OPEN, 'in', env);
     const has_toggles = upstream.some((r) => r.children > 0) || downstream.some((r) => r.children > 0);
 
     return html(
@@ -646,12 +815,16 @@ export function registerRoutes(
           upstream_count: out.length,
           downstream_count: index.backLinks(id).length,
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
-          // U27：選取文字帶當前卡片的型別色，因為選取是「引用選取的段落」的前置動作。
-          type_slug: card.type,
           from: from ? { id: from.id, title: from.title } : null,
           editable: rumination.open,
         },
-        { title: card.title, fab: { actions: actionsFor(card.type, id) }, side: 'cards', activeId: id },
+        {
+          title: card.title,
+          fab: { actions: actionsFor(card.type, id, env) },
+          side: 'cards',
+          activeId: id,
+          env,
+        },
       ),
     );
   });
@@ -665,7 +838,7 @@ export function registerRoutes(
    */
   app.post('/c/:id/tasks/:k', async (req, reply) => {
     const { id, k } = req.params as { id: string; k: string };
-    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
+    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return notFound(req, reply);
 
     const b = (req.body ?? {}) as Record<string, unknown>;
     const n = Number(k);
@@ -689,14 +862,14 @@ export function registerRoutes(
 
   app.get('/c/:id/edit', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
-    const card = readCard(config.corpusPath, id);
+    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return notFound(req, reply);
+    const { card, env } = readCardWithEnv(config.corpusPath, id);
     const out = index.outLinks(id);
     const rumination = ruminationFor(cards, card);
     if (!rumination.open) {
       return html(
         reply,
-        shell('message', { message: LOCKED_MESSAGE, back_id: id }, { title: 'locked' }),
+        shell('message', { message: LOCKED_MESSAGE, back_id: id }, { title: 'locked', env }),
         403,
       );
     }
@@ -716,7 +889,7 @@ export function registerRoutes(
           // 編輯頁一律是伺服器預填的，所以草稿不靜默覆蓋（見 draft.js）。
           draftScope: `edit:${card.id}`,
           tags_line: card.tags.join(' '),
-          tags_all: lists.tagSuggestions(index, lockedTags(config.corpusPath)),
+          tags_all: lists.tagSuggestions(index, lockedTags(config.corpusPath), env),
           // R7：既有的連結是一份唯讀清單，新增的才是表單列。兩者分開呈現，
           // 因為它們能做的事不一樣——分不開的話「只增不減」就要靠說明去講。
           links: out.map((l) => ({
@@ -735,14 +908,14 @@ export function registerRoutes(
           rel_table: { [card.type]: relOptions(card.type) },
           default_rels: DEFAULT_REL,
         },
-        { title: 'edit', fab: false, side: 'cards', activeId: card.id },
+        { title: 'edit', fab: false, side: 'cards', activeId: card.id, env },
       ),
     );
   });
 
   app.put('/c/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
+    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return notFound(req, reply);
 
     const b = (req.body ?? {}) as Record<string, unknown>;
     // 碎片的編輯表單只送 quick_body，跟建立時同一條守門（見 normalizeDraft）：
@@ -786,7 +959,7 @@ export function registerRoutes(
    */
   app.delete('/c/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return reply.callNotFound();
+    if (!isValidIdFormat(id) || !cardExists(config.corpusPath, id)) return notFound(req, reply);
 
     const result = await deleteCard(cards, id);
     if (!result.ok) {
@@ -795,9 +968,9 @@ export function registerRoutes(
     return reply.send({ ok: true, id });
   });
 
-  // ---- 標籤、孤兒、搜尋
+  // ---- 標籤、搜尋
 
-  app.get('/tags', async (req, reply) => {
+  scoped('GET', '/tags', async (req, reply, env) => {
     const raw = (req.query as Record<string, string | undefined>).sort;
     // v3 §6.2：預設是最近使用——這一頁最常拿來看「最近在想什麼」。
     const sort = (TAG_SORTS as readonly string[]).includes(raw ?? '')
@@ -808,7 +981,7 @@ export function registerRoutes(
       shell(
         'tags',
         {
-          tags: lists.tagCounts(index, { sort, locked: lockedTags(config.corpusPath) }),
+          tags: lists.tagCounts(index, { env, sort, locked: lockedTags(config.corpusPath) }),
           sort,
           // 三種排法對應三個問題，順序由「最常問的排前面」決定，不按字母。
           // 第一個就是預設，所以它的連結不帶 ?sort=（見 tags.eta）。
@@ -818,73 +991,25 @@ export function registerRoutes(
             { value: 'name', label: '名稱' },
           ],
         },
-        { title: 'tags', nav: 'tags' },
+        { title: 'tags', nav: 'tags', env },
       ),
     );
   });
 
-  // ---- 工作狀態的四份清單
-
-  /**
-   * 四份清單。
-   *
-   * `empty` 陳述的是「這份清單問了什麼、答案是沒有」，用的是查詢本身的說法，
-   * 不替使用者詮釋——「沒有任何卡片指向的原始資料」是事實，
-   * 「收進來但還沒有人接手」是我在替他解讀。清單有東西的時候，
-   * 東西本身就是說明，所以那句話只在空的時候出現。
-   */
-  const WORK_LISTS = [
-    {
-      nav: 'pending',
-      path: '/pending',
-      heading: '待思考',
-      empty: '沒有任何原始資料是無人指向的。',
-      rows: () => lists.pending(index),
-    },
-    {
-      nav: 'loose',
-      path: '/loose',
-      heading: '初步想法',
-      empty: '沒有任何思考是進出皆無連結的。',
-      rows: () => lists.looseThinking(index),
-    },
-    {
-      nav: 'fleeting',
-      path: '/fleeting',
-      heading: '雜筆',
-      empty: '沒有任何碎片是無人指向的。',
-      rows: () => lists.looseFleeting(index),
-    },
-    {
-      nav: 'settling',
-      path: '/settling',
-      heading: '沉澱',
-      empty: '沒有任何卡片仍在可修改時間內。',
-      rows: () => lists.settling(index, config.editWindowMs),
-    },
-  ] as const;
-
-  for (const l of WORK_LISTS) {
-    app.get(l.path, async (_req, reply) => {
-      const items = lists.decorate(index, l.rows()).map(toItem);
-      return html(
-        reply,
-        shell(
-          'worklist',
-          { heading: l.heading, empty: l.empty, items },
-          { title: l.heading, nav: l.nav },
-        ),
-      );
-    });
-  }
-
-  app.get('/search', async (req, reply) => {
+  scoped('GET', '/search', async (req, reply, env) => {
     const qs = req.query as Record<string, string | undefined>;
     const q = String(qs.q ?? '').trim();
     // 型別篩選複用首頁那組 chip 的視覺語彙——問的是同一件事：
     // 換一個角度看同一堆東西。複雜語法（AND/OR、日期範圍）不在這一版。
     const type = CARD_TYPES.includes(qs.type as CardType) ? qs.type : undefined;
-    const items = lists.decorate(index, lists.search(index, q, { type })).map(toItem);
+    // v3.1：預設只搜這個環境，可以切到所有環境。只有一個環境時不必切。
+    const scopes = envList(cards).length > 1;
+    const all = scopes && qs.all === '1';
+    const items = lists
+      .decorate(index, lists.search(index, q, { type, env: all ? undefined : env }))
+      .map((r) => toItem(r, env));
+    const base = envBase(env);
+    const typeQuery = type ? `&type=${encodeURIComponent(type)}` : '';
     return html(
       reply,
       shell(
@@ -895,21 +1020,102 @@ export function registerRoutes(
           searched: q !== '',
           type,
           types: CARD_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })),
-          baseQuery: `/search?q=${encodeURIComponent(q)}`,
+          baseQuery: `${base}/search?q=${encodeURIComponent(q)}${all ? '&all=1' : ''}`,
+          // 範圍切換：這個環境或所有環境，型別篩選照樣留著。
+          scopes,
+          all,
+          envName: envLabel(env),
+          scopeQuery: `${base}/search?q=${encodeURIComponent(q)}${typeQuery}`,
         },
-        { title: '搜尋', q, nav: 'search' },
+        { title: '搜尋', q, nav: 'search', env },
       ),
     );
   });
 
+  /**
+   * 建立表單的連結選擇器。連結可以跨環境，所以搜所有環境；
+   * `env` 是表單所在的環境，那裡的卡排在前面，其他環境的標出環境名（v3.1）。
+   */
   app.get('/api/search', async (req, reply) => {
     const qs = req.query as Record<string, unknown>;
     const q = String(qs.q ?? '');
+    const env = typeof qs.env === 'string' ? qs.env : '';
     const limit = Math.min(50, Math.max(1, Number(qs.limit ?? 10) || 10));
-    const rows: CardRow[] = lists.picker(index, q, limit);
+    const rows: CardRow[] = lists.picker(index, q, limit, env);
     return reply.send(
-      rows.map((r) => ({ id: r.id, title: r.title, type: r.type, created: r.created })),
+      rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        type: r.type,
+        created: r.created,
+        env: r.env,
+        envLabel: envLabel(r.env),
+      })),
     );
+  });
+
+  // ---- 環境（v3.1）
+
+  /** 環境的建立與改名沒成功時：說原因，附一條回去的路。 */
+  const envFailed = (
+    req: FastifyRequest,
+    reply: FastifyReply,
+    env: string,
+    result: { errors: string[]; unavailable?: true },
+  ) => {
+    const code = result.unavailable ? 503 : 400;
+    if (wantsJson(req)) return reply.code(code).send({ ok: false, errors: result.errors });
+    return html(
+      reply,
+      shell(
+        'message',
+        {
+          message: result.errors.join('；'),
+          back_href: `${envBase(env)}/`,
+          back_label: `回到${envLabel(env)}`,
+        },
+        { title: '沒改成', env },
+      ),
+      code,
+    );
+  };
+
+  /** 環境面板的新增。建好就進那個環境。 */
+  app.post('/envs', async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const from = knownEnv(b.from) ?? homeEnv(cards);
+    const result = await createEnv(cards, String(b.name ?? ''));
+    if (!result.ok) return envFailed(req, reply, from, result);
+    const location = `${envBase(result.name)}/`;
+    if (wantsJson(req)) return reply.code(302).header('location', location).send({ ok: true, name: result.name });
+    return reply.code(302).header('location', location).send();
+  });
+
+  /**
+   * 環境面板的改名。卡片的 ID 與網址不變，環境的網址換成新名字。
+   *
+   * 改完回到按下去時所在的那一頁：面板裡每個環境都能改，改的多半不是正在看的那一個。
+   * 那一頁在被改名的環境底下，就換成新名字的網址；認不出那一頁，就進到改好的那個環境。
+   * 沒改成的說明頁留在按下去時所在的環境（表單的 at）。
+   */
+  app.post('/envs/rename', async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const from = String(b.from ?? '');
+    const result = await renameEnv(cards, from, String(b.name ?? ''));
+    if (!result.ok) return envFailed(req, reply, knownEnv(b.at) ?? knownEnv(from) ?? homeEnv(cards), result);
+    const page = pageBefore(req);
+    const location = page === null ? `${envBase(result.name)}/` : renamedPage(page, from, result.name);
+    if (wantsJson(req)) return reply.code(302).header('location', location).send({ ok: true, name: result.name });
+    return reply.code(302).header('location', location).send();
+  });
+
+  /**
+   * 環境面板的拖曳排序（public/js/envs.js）。送來整份順序，回寫進去的那一份。
+   * 只有那支腳本會送：拖曳本來就要 JS。
+   */
+  app.post('/envs/order', async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    return reply.send({ ok: true, order: await orderEnvs(cards, asArray(b.order)) });
   });
 
   // ---- 維運
@@ -919,8 +1125,9 @@ export function registerRoutes(
    *
    * 是 POST 不是連結：它有副作用（commit、pull、push、重建），GET 不該有。
    * 會等 git 做完才回應，結果直接畫在這一頁——使用者按下去就是在等這個答案。
+   * 表單帶著按下去時所在的環境，結果頁留在那裡；那個環境在取回之後不在了，就回首頁通往的那一個。
    */
-  app.post('/update', async (_req, reply) => {
+  app.post('/update', async (req, reply) => {
     const outcome = await updateCorpus({
       corpusPath: config.corpusPath,
       git,
@@ -928,7 +1135,10 @@ export function registerRoutes(
       store,
       logger: app.log,
     });
-    return html(reply, shell('update', updateView(outcome), { title: '更新', nav: 'update' }));
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const asked = knownEnv(b.env);
+    const env = asked !== null && envList(cards).some((e) => e.name === asked) ? asked : homeEnv(cards);
+    return html(reply, shell('update', updateView(outcome), { title: '更新', nav: 'update', env }));
   });
 
   app.post('/_reindex', async (_req, reply) => reply.send(index.rebuild()));
@@ -953,8 +1163,5 @@ export function registerRoutes(
    */
   app.get(WARMUP_PATH, async (_req, reply) => reply.code(200).send('ok'));
 
-  app.setNotFoundHandler(async (req, reply) => {
-    if (wantsJson(req)) return reply.code(404).send({ ok: false, errors: ['找不到'] });
-    return html(reply, shell('message', { message: '沒有這個位置。' }, { title: '404' }), 404);
-  });
+  app.setNotFoundHandler(async (req, reply) => notFound(req, reply));
 }

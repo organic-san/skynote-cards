@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-
 /**
  * 卡片 ID：64-bit 整數，以十進位字串表示。
  *
@@ -70,7 +68,8 @@ function nextRaw(): bigint {
 
 /**
  * 產生一個尚未被使用的 ID。
- * `taken` 是最後一道防線（例如多個行程同時寫入同一個語料庫）。
+ * `taken` 是最後一道防線（例如多個行程同時寫入同一個語料庫）。ID 全域唯一，
+ * 所以它要看過每一個環境的資料夾——這一層不碰檔案系統，由呼叫端給（store/files.ts 的 cardExists）。
  */
 export function generateId(taken?: (id: string) => boolean): string {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -78,10 +77,6 @@ export function generateId(taken?: (id: string) => boolean): string {
     if (!taken || !taken(id)) return id;
   }
   throw new Error('generateId: 連續 100 次都碰撞，拒絕繼續');
-}
-
-export function fileExistsTaken(dir: string): (id: string) => boolean {
-  return (id) => fs.existsSync(`${dir}/${id}.md`);
 }
 
 /** ID 一律轉 BigInt 比較：位數會隨時間增加，字串比較不可靠。 */

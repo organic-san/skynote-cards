@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { cardRelPath } from './files.ts';
 
 /**
  * 卡片的遠端存放處（App Engine 上是 Cloud Storage bucket）。
@@ -8,8 +9,10 @@ import { createHash } from 'node:crypto';
  * 沒設定的時候（本機開發、測試、VM）用 NO_STORE，每個動作都是空操作，
  * 系統的行為跟沒有這一層時完全一樣：本機檔案就是真相。
  *
- * 物件名稱就是相對於語料庫根目錄的路徑（`cards/<id>.md`），只放卡片。
+ * 物件名稱就是相對於語料庫根目錄的路徑（`cards/<id>.md`，環境的卡是
+ * `cards/<環境>/<id>.md`），只放卡片。bucket 沒有資料夾，空的環境因此不在這裡。
  * `tags.yml` 是手工編輯、經 git 進來的設定檔，不進 bucket（見 store/tags.ts）。
+ * 環境的順序 `envs.yml` 由網頁寫入，但也只經 git 保存（見 store/envorder.ts）。
  */
 
 export interface StoredObject {
@@ -72,11 +75,17 @@ export class StoreConflictError extends Error {
   }
 }
 
-export function cardObjectName(id: string): string {
-  return `cards/${id}.md`;
+export function cardObjectName(id: string, env = ''): string {
+  return cardRelPath(id, env);
 }
 
-export const CARD_OBJECT = /^cards\/[^/]+\.md$/;
+/** 卡片物件：`cards/` 底下，或底下一層的環境裡。環境只有一層，更深的不算。 */
+export const CARD_OBJECT = /^cards\/(?:[^/.][^/]*\/)?[^/]+\.md$/;
+
+/** 物件名稱裡的卡片 ID（檔名去掉 `.md`）。對帳用它認出「同一張卡換了資料夾」。 */
+export function cardIdOf(name: string): string {
+  return name.slice(name.lastIndexOf('/') + 1, -3);
+}
 
 /**
  * git 對這份內容算出的 blob 雜湊，跟 `git hash-object` 同一個值。

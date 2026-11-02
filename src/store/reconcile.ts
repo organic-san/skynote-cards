@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { simpleGit } from 'simple-git';
-import { cardsDir, writeFileAtomic } from './files.ts';
+import { listCardFiles, writeFileAtomic } from './files.ts';
 import {
   CARD_OBJECT,
   NO_BASE,
   blobHash,
+  cardIdOf,
   md5Base64,
   type CorpusStore,
   type StoredObject,
@@ -26,11 +27,17 @@ import {
  * | 狀況 | 結果 |
  * |---|---|
  * | 內容相同 | 不動 |
+ * | 只有 bucket 有，同一張卡在本機的另一個資料夾、內容相同 | 刪掉：搬走之後留下的舊名字 |
  * | base == blob（這是 git 那份的副本） | 以 git 為準 |
+ * | 只有 bucket 有，內容在 git 歷史裡 | 以 git 為準：commit 過，之後 git 把它刪了或搬走了 |
  * | base == 本機那份 | 以 bucket 為準：在本機這份之上的寫入 |
  * | 內容在 git 歷史裡 | 以 git 為準：commit 過，之後 git 又往前走了 |
  * | 其他 | 以 bucket 為準。base 若在歷史裡，代表兩邊都改了，列為衝突 |
  * | 只有本機有 | 上傳（git 為準） |
+ *
+ * 只有 bucket 有的時候，「內容在歷史裡」要排在「base == 本機那份」前面：本機沒有這個檔，
+ * 它的雜湊記成 none，而網頁上建立、之後沒再改過的卡，base 也是 none——不先問歷史，
+ * 一張推上去之後在別處被刪掉或搬走的卡，會被當成還沒推上去的新卡取回來。
  *
  * 沒有 metadata 的物件（從主控台或 gcloud 放進去的）只看歷史那一條。
  *
@@ -40,6 +47,11 @@ import {
  *
  * 沒有 git（開機時 clone 失敗）就沒有歷史可問：一律以 bucket 為準，
  * 而且絕不刪 bucket 的東西。
+ *
+ * 環境（v3.1）是 `cards/` 底下的一層資料夾，物件名稱照樣是路徑。同一張卡換了資料夾
+ * （在別處把卡搬進環境、網頁上替環境改名），在這裡是「新名字只有本機有」加上
+ * 「舊名字只有 bucket 有」：前者上傳，後者照上表判斷——內容沒變就是表上第二列，刪掉。
+ * 新名字先傳、舊名字後刪，中途失敗也不會兩邊都沒有。
  */
 
 export interface ReconcileReport {
@@ -92,24 +104,40 @@ export async function reconcile(opts: ReconcileOptions): Promise<ReconcileReport
   const local = readLocalCards(corpusPath);
   const names = [...new Set([...remote.keys(), ...local.keys()])].sort();
 
+  // 本機每一張卡（以 ID 為準）的內容。同一張卡換了資料夾，bucket 上的舊名字
+  // 跟本機的新名字內容相同——認得出來，舊名字就不會被取回來變成第二份。
+  const localMd5ById = new Map<string, Set<string>>();
+  for (const [name, content] of local) {
+    const id = cardIdOf(name);
+    const set = localMd5ById.get(id) ?? new Set<string>();
+    set.add(md5Base64(content));
+    localMd5ById.set(id, set);
+  }
+
   // 先把每一個檔案的去向決定好，再動手——刪除要先看總數才知道該不該做。
   const plans: Plan[] = [];
   await pool(names, opts.concurrency ?? 8, async (name) => {
-    const plan = await decide(name, local.get(name) ?? null, remote.get(name) ?? null, store, history);
+    const there = remote.get(name) ?? null;
+    const elsewhere = there !== null && (localMd5ById.get(cardIdOf(name))?.has(there.md5) ?? false);
+    const plan = await decide(name, local.get(name) ?? null, there, store, history, elsewhere);
     if (plan) plans.push(plan);
   });
 
+  // 換了資料夾的卡（同一個 ID 在本機的另一個名字底下）刪掉舊名字不會少一張卡，
+  // 不算進「一次刪太多」——把整個語料庫搬進環境時，那會是全部。
+  const moved = (p: Plan) => localMd5ById.has(cardIdOf(p.name));
   const deletions = plans.filter((p) => p.kind === 'delete');
-  const massDelete =
-    deletions.length > MASS_DELETE_COUNT && deletions.length > remote.size * MASS_DELETE_RATIO;
+  const lost = deletions.filter((p) => !moved(p));
+  const massDelete = lost.length > MASS_DELETE_COUNT && lost.length > remote.size * MASS_DELETE_RATIO;
   if (massDelete) {
-    report.deletionsSkipped = deletions.map((p) => p.name).sort();
+    report.deletionsSkipped = lost.map((p) => p.name).sort();
     opts.logger.error(
-      `對帳：要刪 bucket 上 ${deletions.length} / ${remote.size} 個物件，看起來不對（remote 設錯了？），這次一個都不刪`,
+      `對帳：要刪 bucket 上 ${lost.length} / ${remote.size} 個物件，看起來不對（remote 設錯了？），這次一個都不刪`,
     );
   }
 
-  await pool(plans, opts.concurrency ?? 8, async (plan) => {
+  // 先寫、後刪：換資料夾的卡，新名字傳上去之後才刪舊名字。
+  await pool(plans.filter((p) => p.kind !== 'delete'), opts.concurrency ?? 8, async (plan) => {
     switch (plan.kind) {
       case 'upload': {
         const blob = blobHash(plan.content);
@@ -127,25 +155,29 @@ export async function reconcile(opts: ReconcileOptions): Promise<ReconcileReport
         }
         return;
       }
-      case 'delete': {
-        if (massDelete) return;
-        await store.delete(plan.name);
-        report.deleted.push(plan.name);
-        return;
-      }
     }
+  });
+  await pool(deletions, opts.concurrency ?? 8, async (plan) => {
+    if (massDelete && !moved(plan)) return;
+    await store.delete(plan.name);
+    report.deleted.push(plan.name);
   });
 
   for (const list of [report.uploaded, report.downloaded, report.deleted, report.conflicts]) list.sort();
   return report;
 }
 
+/**
+ * 一個物件名稱的去向。`elsewhere`：本機沒有這個名字，但同一張卡以相同的內容
+ * 在本機的另一個資料夾——搬走之後留下的舊名字。
+ */
 async function decide(
   name: string,
   here: Buffer | null,
   there: StoredObject | null,
   store: CorpusStore,
   history: ReadonlySet<string> | null,
+  elsewhere: boolean,
 ): Promise<Plan | null> {
   if (!there) return here ? { kind: 'upload', name, content: here } : null;
   if (here && md5Base64(here) === there.md5) return null;
@@ -153,11 +185,16 @@ async function decide(
   // 沒有 git：bucket 是唯一的來源。
   if (!history) return { kind: 'download', name, content: null, conflict: false };
 
+  if (!here && elsewhere) return { kind: 'delete', name };
+
   const hereBlob = here ? blobHash(here) : NO_BASE;
   const gitWins: Plan = here ? { kind: 'upload', name, content: here } : { kind: 'delete', name };
 
   if (there.blob !== null && there.base !== null) {
     if (there.base === there.blob) return gitWins;
+    // 本機沒有這個檔：commit 過的內容代表 git 後來把它刪了或搬走了。要排在下一條前面，
+    // 網頁上建立的卡 base 是 none，跟「本機沒有」記成的雜湊一樣（見檔頭）。
+    if (!here && history.has(there.blob)) return gitWins;
     if (there.base === hereBlob) return { kind: 'download', name, content: null, conflict: false };
     if (history.has(there.blob)) return gitWins;
     return { kind: 'download', name, content: null, conflict: history.has(there.base) };
@@ -169,14 +206,12 @@ async function decide(
   return { kind: 'download', name, content, conflict: false };
 }
 
+/** 本機的卡片檔，以物件名稱（相對路徑）為鍵。環境底下的一層也算。 */
 function readLocalCards(corpusPath: string): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
-  const dir = cardsDir(corpusPath);
-  if (!fs.existsSync(dir)) return out;
-  for (const f of fs.readdirSync(dir)) {
-    const name = `cards/${f}`;
-    if (!CARD_OBJECT.test(name)) continue;
-    out.set(name, fs.readFileSync(path.join(dir, f)));
+  for (const f of listCardFiles(corpusPath).files) {
+    if (!CARD_OBJECT.test(f.rel)) continue;
+    out.set(f.rel, fs.readFileSync(path.join(corpusPath, f.rel)));
   }
   return out;
 }

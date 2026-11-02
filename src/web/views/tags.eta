@@ -4,7 +4,7 @@
      換一個角度看同一堆東西。預設是「最近」（v3 §6.2），它的連結不帶 ?sort=。 */%>
 <div class="filters">
   <% it.sorts.forEach(function (s) { %>
-  <a href="/tags<%= s.value === 'recent' ? '' : '?sort=' + s.value %>"
+  <a href="<%= it.base %>/tags<%= s.value === 'recent' ? '' : '?sort=' + s.value %>"
      class="textbtn <%= it.sort === s.value ? 'on' : '' %>"><%= s.label %></a>
   <% }) %>
   <span class="filtercount"><%= it.tags.length %></span>
@@ -20,7 +20,7 @@
        從介面上消失，而那正是它最有用的時候。
        鎖的只是推薦選單，不是這裡（見 store/tags.ts）。 */%>
   <li class="<%= t.locked ? 'locked' : '' %>">
-    <a class="tag" href="/?tag=<%= encodeURIComponent(t.tag) %>">#<%= t.tag %></a>
+    <a class="tag" href="<%= it.base %>/?tag=<%= encodeURIComponent(t.tag) %>">#<%= t.tag %></a>
     <% if (t.locked) { %><span class="lockmark" title="不出現在表單的標籤推薦裡"><%~ include('icon', { name: 'lock' }) %></span><% } %>
     <span class="n"><%= t.n %></span>
   </li>

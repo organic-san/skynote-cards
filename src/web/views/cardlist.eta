@@ -41,7 +41,10 @@
         <%/* U5：型別名固定在第一段，其餘以 · 分隔。 */%>
         <span class="tname"><%= c.typeLabel %></span>
         <% c.meta.forEach(function (m) { %><span class="sep">·</span><span><%= m %></span><% }) %>
-        <% c.tags.forEach(function (t) { %><a class="tag" href="/?tag=<%= encodeURIComponent(t) %>">#<%= t %></a><% }) %>
+        <%/* 別的環境的卡（搜尋「所有環境」時）標出環境名。 */%>
+        <% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %>
+        <%/* 標籤以環境為界，點下去回到這張卡所在的環境（v3.1）。 */%>
+        <% c.tags.forEach(function (t) { %><a class="tag" href="<%= c.base %>/?tag=<%= encodeURIComponent(t) %>">#<%= t %></a><% }) %>
       </p>
     </div>
   </li>

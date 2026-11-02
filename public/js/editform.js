@@ -70,7 +70,8 @@
       fetch('/c/' + del.dataset.id, { method: 'DELETE', headers: { accept: 'application/json' } })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
-          if (res.ok) window.location.href = '/';
+          // 回到它原本所在的環境：首頁 / 可能是另一個環境（v3.1）。
+          if (res.ok) window.location.href = form.dataset.home || '/';
           else fail(res.j.errors || ['沒有刪成功']);
         })
         .catch(function () { fail(['沒有刪成功']); });

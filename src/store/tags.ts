@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { parseList } from './yamllist.ts';
 
 /**
  * 語料庫根目錄的 `tags.yml`：標籤的**呈現層**元資料。
@@ -16,7 +17,7 @@ import path from 'node:path';
  * 不是同一種東西，混進去會讓 rules.ts 開始依賴語料庫裡的一個設定檔。
  *
  * 檔案放在語料庫 repo 裡（跟著卡片一起被版控），但**不由本程式寫入或 commit**——
- * backup.ts 只 add cards/*.md。它是手工編輯的設定，不是卡片。
+ * backup.ts 只 add 卡片與環境的順序（envs.yml）。它是手工編輯的設定，不是卡片。
  * 同樣的理由，它也不進 App Engine 的 bucket：只經 git 進來（clone 與「更新」）。
  * 開機時 clone 失敗的那台機器上就沒有它——鎖定只影響推薦選單，可以接受。
  */
@@ -64,43 +65,7 @@ export function lockedTags(corpusPath: string): ReadonlySet<string> {
   return locked;
 }
 
-/**
- * 逐行解析，不引 YAML 套件。
- *
- * 認得的只有一種寫法：
- *
- * ```yaml
- * locked:
- *   - 匯入
- *   - 待整理
- * ```
- *
- * 只為了一個字串陣列拉進一個 YAML 解析器，是拿一整套語法的維護面
- * 去換這十行。代價講明白：inline 陣列（`locked: [a, b]`）、錨點、多文件
- * 都不支援——寫成那樣會被靜默忽略，而不是報錯。這個檔案是手寫的、
- * 只有一個鍵，那個代價可以接受。
- */
+/** `locked:` 底下的那一串。逐行解析，寫法見 store/yamllist.ts。 */
 export function parseLocked(text: string): Set<string> {
-  const out = new Set<string>();
-  let inside = false;
-  for (const raw of text.split(/\r?\n/)) {
-    // 註解與空行不影響區塊的開闔——區塊由縮排決定。
-    const line = raw.replace(/\s+#.*$/, '').replace(/^#.*$/, '');
-    if (line.trim() === '') continue;
-
-    const item = /^\s+-\s*(.*)$/.exec(line);
-    if (inside && item) {
-      const v = unquote((item[1] ?? '').trim());
-      if (v !== '') out.add(v);
-      continue;
-    }
-    // 回到頂層：這個區塊結束了。
-    inside = /^locked\s*:\s*$/.test(line.trim()) && !/^\s/.test(line);
-  }
-  return out;
-}
-
-function unquote(s: string): string {
-  const m = /^(['"])([\s\S]*)\1$/.exec(s);
-  return m ? (m[2] ?? '') : s;
+  return new Set(parseList(text, 'locked'));
 }

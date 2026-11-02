@@ -128,6 +128,26 @@
   font-size: var(--fs-1);
 }
 
+/* v3.1：新卡落在哪個環境。只有從卡片頁 + 進來、而且不只一個環境時才出現，
+   緊接在型別那一行底下——兩行說的都是「這張卡是什麼、放在哪裡」。 */
+.typefixed:has(+ .envpick) { margin-bottom: var(--sp-3); }
+.envpick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-7);
+  font-size: var(--fs-1);
+  color: var(--text-3);
+}
+.envpick select {
+  font: inherit;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
 .typepick { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-7); }
 .typebtn input { position: absolute; opacity: 0; pointer-events: none; }
 /* 只套按鈕那一層：裡面的色點也是 span，不能跟著長出框線與內距。 */
@@ -420,6 +440,8 @@ main:has(> .split) {
 .pane-form .field.secondary { margin-top: var(--sp-6); }
 .pane-form .formtitle { margin-bottom: var(--sp-5); }
 .pane-form .typefixed { margin-bottom: var(--sp-5); }
+.pane-form .typefixed:has(+ .envpick) { margin-bottom: var(--sp-3); }
+.pane-form .envpick { margin-bottom: var(--sp-5); }
 /* 分欄時垂直空間有限，rows 給的高度會把送出鍵推到捲動之外。
    給的是 height 不是 max-height——手動拖曳仍然要能把它拉大。 */
 .pane-form textarea { height: 40vh; }

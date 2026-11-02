@@ -23,6 +23,9 @@
   // 手動加的空白列從哪一條關係起頭（見 present.ts 的 DEFAULT_REL）。
   var DEFAULTS = JSON.parse(region.dataset.defaultRels || '{}');
   var currentType = function () { return region.dataset.cardType || ''; };
+  // 這張卡所在（或將要落進）的環境。連結可以跨環境，搜尋結果裡這個環境的排前面，
+  // 其他環境的標出環境名（v3.1）。
+  var ENV = region.dataset.env || '';
 
   // 只換 rel-* 那一個 token。整個 className 洗掉會把 fixed 一起帶走，
   // 而那個 class 說的是「這一列不是使用者加的」——跟關係是兩件事。
@@ -139,6 +142,12 @@
       meta.className = 'pid';
       meta.textContent = ' ' + r.type + ' · ' + r.id;
       b.appendChild(meta);
+      if (r.env !== undefined && r.env !== ENV) {
+        var env = document.createElement('span');
+        env.className = 'envmark';
+        env.textContent = r.envLabel;
+        b.appendChild(env);
+      }
       b.addEventListener('click', function () {
         // U15：看得到的是標題，送出去的是 ID。整套設計的目的就是
         // 使用者永遠不必碰 ID——把 18 位數當欄位主值是主次相反。
@@ -177,7 +186,7 @@
       clearTimeout(timers.get(input));
       if (q === '' || /^[0-9]{8,}$/.test(q)) { closePicker(picker); return; }
       timers.set(input, setTimeout(function () {
-        fetch('/api/search?limit=10&q=' + encodeURIComponent(q))
+        fetch('/api/search?limit=10&env=' + encodeURIComponent(ENV) + '&q=' + encodeURIComponent(q))
           .then(function (r) { return r.json(); })
           .then(function (list) { showPicker(picker, input, list); })
           .catch(function () { closePicker(picker); });

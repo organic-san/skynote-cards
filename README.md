@@ -4,13 +4,13 @@
 
 <!-- 文章發佈後在這裡補上連結：開發過程與設計判斷的完整說明見〈文章標題〉。 -->
 
-![首頁：依時間排列的卡片串流，側欄是工作清單與工具](docs/screenshots/feed.png)
+![首頁：一個環境裡依時間排列的卡片串流，側欄是環境清單與工具](docs/screenshots/feed.png)
 
 ![卡片頁：內文下方，往上是這張卡的依據，往下是從它延伸出去的卡片](docs/screenshots/card.png)
 
 <sub>截圖使用示意內容。</sub>
 
-- **規格與設計紀錄**：[spec/](spec/README.md)。從 MVP 到 v3 共八份，也留著當時沒有採納的做法。
+- **規格與設計紀錄**：[spec/](spec/README.md)。從 MVP 到 v3.1 的規格與草案，也留著當時沒有採納的做法。
 - **部署**：[deploy/README.md](deploy/README.md)（App Engine）。放在自己的主機上見 [deploy/vm.md](deploy/vm.md)，踩過的坑也記在那裡。
 
 ---
@@ -18,9 +18,14 @@
 ## 運作方式
 
 ### 檔案與索引
-每張卡片就是 `cards/` 底下的一個 `.md` 檔。SQLite（`index.db`）只拿來做查詢跟全文檢索，隨時砍掉重啟就能從 `.md` 檔重算出來。存檔時只要本機檔案寫好就會回傳，Git commit 跟 push 放在背景慢慢跑。
+每張卡片就是 `cards/` 底下的一個 `.md` 檔（放在環境裡的卡在 `cards/<環境>/` 底下，見下一節）。SQLite（`index.db`）只拿來做查詢跟全文檢索，隨時砍掉重啟就能從 `.md` 檔重算出來。存檔時只要本機檔案寫好就會回傳，Git commit 跟 push 放在背景慢慢跑。
 
 部署在 App Engine 上時，機器的磁碟是暫時的，所以那疊 `.md` 改放在 Cloud Storage：存檔要等 bucket 回應成功才算數，機器上的 `cards/` 是開機時跟 bucket、Git 對帳出來的副本。Git 一樣在背景備份。細節見 [deploy/README.md](deploy/README.md)。
+
+### 環境
+不同的專注脈絡（例如繪圖、學校、專題）各放在一個環境裡。`cards/` 底下的一層資料夾就是一個環境，各有自己的時間軸、標籤、搜尋與隨手記，在一個環境裡看不到其他環境的卡；卡片檔本身不記錄環境，搬資料夾就是搬環境。連結可以跨環境，搜尋也可以切到所有環境。
+
+側欄「環境」右邊的齒輪打開環境面板，在那裡新增、改名，也可以拖曳排順序（滑鼠、觸控、鍵盤的上下鍵都行）。順序記在語料庫的 `envs.yml`，每台裝置看到的一樣；沒排過的環境依最近寫的卡排在後面。直接放在 `cards/` 底下的卡顯示為「（無環境）」，那是搬進環境之前的過渡狀態：搬空了它就不再出現。
 
 ### 連結與定案
 卡片照時間戳發號，連結寫在新卡上，而且只能指向已經存在的舊卡；想把兩張舊卡連起來，做法就是寫一張新卡同時指向它們。
@@ -40,8 +45,8 @@
 - **碎片 (`fleeting`)**：隨手記下的一句話，不帶任何連結。之後如果想展開寫，可以發一張思考並用 `updates` 把它接起來。
 
 ### 寫卡片的入口
-- **右下角隨手記**：打開只有一個文字框，打完送出就是碎片；寫到一半想寫成思考或產出，按「展開」就會把草稿帶進完整表單。
-- **卡片頁的 `+` 按鈕**：讀卡片時直接從右下角的 `+` 衍生新卡，表單會自動帶入這張卡的連結與標籤，左邊也會並排顯示原卡內容方便對照。
+- **右下角隨手記**：打開只有一個文字框，打完送出就是碎片；寫到一半想寫成思考或產出，按「展開」就會把草稿帶進完整表單。寫進目前所在的環境。
+- **卡片頁的 `+` 按鈕**：讀卡片時直接從右下角的 `+` 衍生新卡，表單會自動帶入這張卡的連結與標籤，左邊也會並排顯示原卡內容方便對照。新卡預設放在原卡的環境，表單上可以改選。
 
 ---
 
@@ -58,7 +63,7 @@ npm run dev                     # 開發模式（預設監聽 127.0.0.1:3000）
 
 環境變數（程式不會自己讀 `.env`；要嘛先 export，要嘛用 `node --env-file=.env src/server.ts` 啟動）：
 - `CORPUS_PATH`：語料庫目錄路徑（裡面放 `cards/*.md`，預設 `./corpus-dev`）。
-  - 同一層可以放一個選用的 `tags.yml`（跟著語料庫一起版控），把「匯入」這類出處標記擋在表單推薦與側欄最近標籤外面；標籤頁、搜尋跟手動輸入都不受影響：
+  - 同一層可以放一個選用的 `tags.yml`（跟著語料庫一起版控），把「匯入」這類出處標記擋在表單推薦與側欄最近標籤外面。
     ```yaml
     locked:
       - 匯入
@@ -68,13 +73,13 @@ npm run dev                     # 開發模式（預設監聽 127.0.0.1:3000）
 - `HOST`：監聽位址（預設 `127.0.0.1`，只有本機連得到）。
 - `EDIT_WINDOW_HOURS`：反芻期小時數（預設 `8`）。
 
-App Engine 用的設定（Cloud Storage、GitHub token、IAP）寫在 [`app.yaml`](app.yaml)，說明見 [deploy/README.md](deploy/README.md)。本機不設它們，行為就跟以前一樣：本機檔案是真相。
+App Engine 用的設定（Cloud Storage、GitHub token、IAP）寫在 [`app.yaml`](app.yaml)，說明見 [deploy/README.md](deploy/README.md)。
 
 ---
 
 ## 部署與維運
 
-正式環境在 Google App Engine（`asia-east1`），透過 IAP 只讓自己的 Google 帳號登入。push 到 `main` 之後，GitHub Actions 先跑測試，過了才部署；只改文件不會觸發。從零開始的設定步驟見 [deploy/README.md](deploy/README.md)。
+正式環境在 Google App Engine（`asia-east1`），透過 IAP 只讓自己的 Google 帳號登入。push 到 `main` 之後，GitHub Actions 先跑測試，過了才部署。從零開始的設定步驟見 [deploy/README.md](deploy/README.md)。
 
 ```
 Cloud Storage：<專案 ID>-corpus     ← 卡片的唯一真相
@@ -89,7 +94,6 @@ App Engine 的 /tmp/corpus、index.db ← 開機時對帳出來的副本與索�
 | **換一台機器（等於重開）** | `gcloud app instances delete <ID> --service=default --version=<版本>` |
 | **切回上一版** | `gcloud app services set-traffic default --splits=<上一版>=1` |
 | **取回遠端語料庫並重建索引** | 側欄的「更新」（`POST /update`） |
+| **把卡整批搬進環境** | 在語料庫的 clone 裡 `git mv cards/<id>.md cards/<環境>/`，push 之後按側欄的「更新」 |
 
-如果在別處的 clone 手動改了卡片檔或 `tags.yml` 並 push 上去，按一下側欄的「更新」：系統會先補上還沒 commit 的卡片、跑 `git pull --rebase`、跟 bucket 對帳（取回來的修改傳上 bucket）、把本機領先的 commit 推回去，最後重建索引。遇到衝突就直接放棄這次取回，不會把語料庫弄髒。重建後的報告也會列出有沒有因為手改而違反規則的卡片或壞連結。
-
-想放在自己的機器上（VM、家裡的小主機），照 [deploy/vm.md](deploy/vm.md)：不設 Cloud Storage，本機檔案就是真相，對外改用 Cloudflare Tunnel 與 Access。
+如果在別處的 clone 手動改了卡片檔或 `tags.yml` 並 push 上去，按一下側欄的「更新」：系統會先補上還沒 commit 的卡片（與環境的順序 `envs.yml`）、跑 `git pull --rebase`、跟 bucket 對帳（取回來的修改傳上 bucket）、把本機領先的 commit 推回去，最後重建索引。遇到衝突就直接放棄這次取回，不會把語料庫弄髒。重建後的報告也會列出有沒有因為手改而違反規則的卡片或壞連結。

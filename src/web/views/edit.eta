@@ -7,7 +7,9 @@
      由 editform.js 在請求成功之後自己清（見 js/draft.js）。 */%>
 <%/* data-rev：載入時這張卡的內容。送出時帶回去，伺服器發現別處改過就回 409，
      舊的這一頁不會無聲蓋掉另一頁存下的修改（見 js/editform.js）。 */%>
+<%/* data-home：刪除之後回到這張卡所在環境的首頁（v3.1）。 */%>
 <form class="newform" id="editcard" data-id="<%= it.card.id %>" data-rev="<%= it.rev %>"
+      data-home="<%= it.base %>/"
       data-draft-scope="<%= it.draftScope %>" data-draft-prefilled>
   <p class="cardmeta">
     <span class="rtype rtype-<%= it.card.type %>"><%= it.type_label %></span>
@@ -55,6 +57,7 @@
   <div class="field" id="linksfield"
        data-rels='<%= JSON.stringify(it.rel_table) %>'
        data-default-rels='<%= JSON.stringify(it.default_rels) %>'
+       data-env="<%= it.env %>"
        data-card-type="<%= it.card.type %>">
     <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>

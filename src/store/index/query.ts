@@ -1,10 +1,11 @@
-import { UNWINDOWED_TYPES } from '../../domain/rules.ts';
 import { type IndexDb, ftsQuery, idDesc } from './schema.ts';
 
 /** 索引的讀取面。每一支都是純查詢，不寫入任何東西。 */
 
 export interface CardRow {
   id: string;
+  /** 所在的環境（v3.1），空字串是沒有環境。 */
+  env: string;
   type: string;
   created: string;
   title: string;
@@ -25,6 +26,8 @@ export interface CardRowWithTags extends CardRow {
 export interface LinkRow {
   rel: string;
   id: string;
+  /** 那張卡所在的環境。連結是全域的，另一頭可能在別的環境。target 不存在時 null。 */
+  env: string | null;
   title: string | null;
   type: string | null;
   created: string | null;
@@ -65,25 +68,27 @@ export function typeOf(idx: IndexDb, id: string): string | null {
   return row?.type ?? null;
 }
 
+/** 時間逆序的卡片。`env` 是環境（v3.1）：一個環境裡看不到其他環境的卡。 */
 export function listCards(
   idx: IndexDb,
-  opts: { type?: string; tag?: string; limit: number; offset: number },
+  opts: { env: string; type?: string; tag?: string; limit: number; offset: number },
 ): {
   rows: CardRowWithTags[];
   total: number;
 } {
-  const where: string[] = [];
+  const where: string[] = ['c.env = ?'];
   const params: unknown[] = [];
   let from = 'FROM cards c';
   if (opts.tag) {
     from += ' JOIN tags t ON t.card_id = c.id AND t.tag = ?';
     params.push(opts.tag);
   }
+  params.push(opts.env);
   if (opts.type) {
     where.push('c.type = ?');
     params.push(opts.type);
   }
-  const whereSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+  const whereSql = ` WHERE ${where.join(' AND ')}`;
 
   const total = (
     idx.s(`SELECT COUNT(*) AS n ${from}${whereSql}`).get(...params) as { n: number }
@@ -100,7 +105,7 @@ export function listCards(
 /** 出向連結：這張卡指向誰。target 不存在時 title 為 null。 */
 export function outLinks(idx: IndexDb, id: string): LinkRow[] {
   return idx.s(
-      `SELECT l.rel AS rel, l.target_id AS id,
+      `SELECT l.rel AS rel, l.target_id AS id, c.env AS env,
               c.title AS title, c.type AS type, c.created AS created, c.body AS body
          FROM links l LEFT JOIN cards c ON c.id = l.target_id
         WHERE l.source_id = ?
@@ -116,7 +121,7 @@ export function outLinks(idx: IndexDb, id: string): LinkRow[] {
  */
 export function backLinks(idx: IndexDb, id: string): LinkRow[] {
   return idx.s(
-      `SELECT l.rel AS rel, l.source_id AS id,
+      `SELECT l.rel AS rel, l.source_id AS id, c.env AS env,
               c.title AS title, c.type AS type, c.created AS created, c.body AS body
          FROM links l JOIN cards c ON c.id = l.source_id
         WHERE l.target_id = ?
@@ -149,6 +154,7 @@ export function linkTree(
       return {
         id: r.id,
         rel: r.rel,
+        env: r.env,
         title: r.title,
         type: r.type,
         created: r.created,
@@ -189,74 +195,39 @@ const TAG_ORDER: Record<TagSort, string> = {
 };
 
 /**
- * 標籤的用量。
+ * 一個環境裡的標籤用量。同名的標籤在不同環境各算各的（v3.1）。
  *
  * `last_used` 需要 JOIN 回 cards——tags 表只有 card_id，沒有時間。
  * 這裡不做成一張物化的統計表：標籤表的量級是幾百列，一次 GROUP BY 就夠，
  * 而物化就要在每一次寫入與刪除時維護它，多一個會跟事實分岔的東西。
  */
-export function tagCounts(idx: IndexDb, sort: TagSort = 'count'): TagCount[] {
+export function tagCounts(idx: IndexDb, env: string, sort: TagSort = 'count'): TagCount[] {
   return idx.s(
       `SELECT t.tag AS tag, COUNT(*) AS n, MAX(c.created) AS last_used
          FROM tags t JOIN cards c ON c.id = t.card_id
+        WHERE c.env = ?
         GROUP BY t.tag
         ORDER BY ${TAG_ORDER[sort]}`,
     )
-    .all() as TagCount[];
+    .all(env) as TagCount[];
 }
 
-// -------------------------------------------------------------- 工作狀態清單
-
-/**
- * 沒有人指向它。
- *
- * 三份待辦清單問的是同一個問題：**這張卡有沒有被接住。**
- * 沒有人指向它，就代表沒有人接手，那它就是需要再確認一次的東西。
- * 這不是型別或標籤的羅列，是一次過濾之後剩下的待處理項。
- */
-const NO_INBOUND = 'NOT EXISTS (SELECT 1 FROM links l WHERE l.target_id = c.id)';
-
-function listOf(idx: IndexDb, where: string, params: unknown[] = []): CardRowWithTags[] {
-  const rows = idx.s(
-    `SELECT c.* FROM cards c WHERE ${where} ORDER BY c.created DESC, ${idDesc('c.id')}`,
-  ).all(...params) as CardRow[];
-  return rows.map((r) => ({ ...r, tags: tagsOf(idx, r.id) }));
+export interface EnvStat {
+  env: string;
+  /** 卡片數。 */
+  n: number;
+  /** 最近一張卡的建立時間（UTC ISO）。側欄依它排環境的順序。 */
+  last: string;
 }
 
-/**
- * 待思考：收進來但沒有人接手。
- *
- * 不區分母卡與節錄——兩者都是 original，同一條判準。摘錄不是「還沒消化」，
- * 是把待辦從整篇文章縮小到那幾段：你切開它，代表你讀過並挑出了值得的部分。
- * 代價是先隨手摘一句再回頭細讀時，整篇會提早離開清單。接受。
- *
- * 這是唯一會主動增長的清單——每存一篇文章就多一項。
- */
-const PENDING = `c.type = 'original' AND ${NO_INBOUND}`;
+/** 每個有卡片的環境（含沒有環境）各有幾張、最近一張是什麼時候。空的環境不在這裡。 */
+export function envStats(idx: IndexDb): EnvStat[] {
+  return idx.s(
+    'SELECT env, COUNT(*) AS n, MAX(created) AS last FROM cards GROUP BY env',
+  ).all() as EnvStat[];
+}
 
-/** 碎片：沒有被撿起來用過的隨手記。 */
-const LOOSE_FLEETING = `c.type = 'fleeting' AND ${NO_INBOUND}`;
-
-/**
- * 初步想法：兩頭都懸空的想法。
- *
- * 比另外兩份多一個條件（出向也不能有）：它的問題不只是沒人接手，
- * 是它自己也沒有接住任何東西——一個既沒有依據、也沒有被使用的主張。
- */
-const LOOSE_THINKING = `c.type = 'thinking' AND c.link_count = 0 AND ${NO_INBOUND}`;
-
-/**
- * 沉澱：還在反芻期內、仍然改得動的卡片。界線由呼叫端算好傳進來。
- *
- * 兩個條件都要：時間還沒到（R5），而且還沒有人指向它（R6）。
- * 被指向就定案，那一刻它就不再屬於「還可以動的東西」——
- * 這跟關閉編輯、禁止刪除是同一個判準，只是在這裡寫成 SQL。
- *
- * 沒有反芻期的型別不列（R15）：這份清單是「還在反芻期內」的卡，
- * 產出被引用之前一直改得動，列進來它就永遠不會離開。
- */
-const WINDOWED = `c.type NOT IN (${UNWINDOWED_TYPES.map((t) => `'${t}'`).join(', ')})`;
-const SETTLING = `c.created > ? AND ${NO_INBOUND} AND ${WINDOWED}`;
+// -------------------------------------------------------------- 定案
 
 /**
  * R6：有沒有任何卡片指向它。
@@ -266,22 +237,6 @@ const SETTLING = `c.created > ? AND ${NO_INBOUND} AND ${WINDOWED}`;
  */
 export function isCited(idx: IndexDb, id: string): boolean {
   return idx.s('SELECT 1 FROM links WHERE target_id = ? LIMIT 1').get(id) !== undefined;
-}
-
-export function pending(idx: IndexDb): CardRowWithTags[] {
-  return listOf(idx, PENDING);
-}
-
-export function looseFleeting(idx: IndexDb): CardRowWithTags[] {
-  return listOf(idx, LOOSE_FLEETING);
-}
-
-export function looseThinking(idx: IndexDb): CardRowWithTags[] {
-  return listOf(idx, LOOSE_THINKING);
-}
-
-export function settling(idx: IndexDb, since: string): CardRowWithTags[] {
-  return listOf(idx, SETTLING, [since]);
 }
 
 // -------------------------------------------------------------- 列表項的補充資料
@@ -329,23 +284,31 @@ const SNIPPET_TOKENS = 32;
 export function search(
   idx: IndexDb,
   q: string,
-  opts: { limit?: number; type?: string } = {},
+  opts: { limit?: number; type?: string; env?: string } = {},
 ): SearchRow[] {
   const match = ftsQuery(q);
   if (!match) return [];
   const limit = opts.limit ?? 50;
-  const typed = opts.type !== undefined && opts.type !== '';
+  // env 沒給就是所有環境（v3.1：搜尋頁可以切到「所有環境」）。
+  const where = ['cards_fts MATCH ?'];
+  const params: unknown[] = [match];
+  if (opts.type !== undefined && opts.type !== '') {
+    where.push('c.type = ?');
+    params.push(opts.type);
+  }
+  if (opts.env !== undefined) {
+    where.push('c.env = ?');
+    params.push(opts.env);
+  }
   let rows: (CardRow & { frag: string })[];
   try {
     rows = idx.s(
         `SELECT c.*, snippet(cards_fts, -1, char(2), char(3), '…', ${SNIPPET_TOKENS}) AS frag
            FROM cards_fts JOIN cards c ON c.id = cards_fts.id
-          WHERE cards_fts MATCH ?${typed ? ' AND c.type = ?' : ''}
+          WHERE ${where.join(' AND ')}
           ORDER BY rank LIMIT ?`,
       )
-      .all(...(typed ? [match, opts.type, limit] : [match, limit])) as (CardRow & {
-      frag: string;
-    })[];
+      .all(...params, limit) as (CardRow & { frag: string })[];
   } catch {
     return [];
   }
@@ -356,16 +319,18 @@ export function search(
  * 建立表單的連結選擇器：同時支援貼上 ID 與打字搜尋標題。
  * 走 ID 精確比對加標題子字串比對，不走全文檢索——
  * unicode61 不切中文詞，對標題這種短字串 LIKE 反而準。
+ *
+ * 連結可以跨環境，所以搜的是所有環境；`env`（目前所在的環境）的排在前面（v3.1）。
  */
-export function pickerSearch(idx: IndexDb, q: string, limit = 10): CardRow[] {
+export function pickerSearch(idx: IndexDb, q: string, limit = 10, env = ''): CardRow[] {
   const term = q.trim();
   if (term === '') return [];
   const like = `%${term.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
   return idx.s(
       `SELECT * FROM cards
         WHERE id = ? OR title LIKE ? ESCAPE '\\'
-        ORDER BY (id = ?) DESC, created DESC, ${idDesc('id')}
+        ORDER BY (id = ?) DESC, (env = ?) DESC, created DESC, ${idDesc('id')}
         LIMIT ?`,
     )
-    .all(term, like, term, limit) as CardRow[];
+    .all(term, like, term, env, limit) as CardRow[];
 }
