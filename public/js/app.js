@@ -42,8 +42,19 @@
     if (fabmenu && !fabmenu.hidden && !fabmenu.contains(ev.target)) setMenu(false);
   });
 
+  // 環境面板（popover）開著時，Esc 只關它——瀏覽器自己會關，側欄與選單留著。
+  // 事件送到這裡的時候它還開著：瀏覽器在事件跑完之後才關。
+  var envpanel = document.getElementById('envpanel');
+  function panelOpen() {
+    try {
+      return !!envpanel && envpanel.matches(':popover-open');
+    } catch (e) {
+      return false; // 不認得 :popover-open 的瀏覽器也打不開它。
+    }
+  }
+
   document.addEventListener('keydown', function (ev) {
-    if (ev.key !== 'Escape') return;
+    if (ev.key !== 'Escape' || panelOpen()) return;
     setDrawer(false);
     setMenu(false);
   });

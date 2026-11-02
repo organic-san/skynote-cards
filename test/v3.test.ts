@@ -419,15 +419,6 @@ describe('§3 產出（R15）', () => {
     await createCard(h, { type: 'output', title: '成品 v2', body: 'z', links: [{ rel: 'updates', to: out }] });
   });
 
-  test('沉澱不列產出：它沒有反芻期，列進來就永遠不會離開', async () => {
-    const h = await fresh();
-    await createCard(h, { type: 'output', title: '一份產出', body: 'x' });
-    await createCard(h, { type: 'thinking', title: '一則思考', body: 'x' });
-    const list = main((await h.app.fastify.inject('/settling')).body);
-    assert.ok(list.includes('一則思考'));
-    assert.ok(!list.includes('一份產出'));
-  });
-
   test('列表上：色點、型別名、兩個方向的連結數；篩選列有它', async () => {
     const h = await fresh();
     await createCard(h, { type: 'output', title: '一篇文章', body: '開頭那幾個字' });
@@ -548,7 +539,7 @@ describe('§5 側欄下半依頁面切換', () => {
   test('文章一覽列最近的標籤，不列卡片', async () => {
     const h = await fresh();
     await createCard(h, { type: 'thinking', title: '一張思考', body: '關鍵字', tags: ['主題'] });
-    for (const url of ['/', `/search?q=${encodeURIComponent('關鍵字')}`, '/settling', '/tags']) {
+    for (const url of ['/', `/search?q=${encodeURIComponent('關鍵字')}`, '/tags']) {
       const side = aside((await h.app.fastify.inject(url)).body);
       assert.ok(side.includes('class="sidetags"'), `${url} 要列最近的標籤`);
       assert.ok(!side.includes('class="sidecards"'), `${url} 不列卡片`);

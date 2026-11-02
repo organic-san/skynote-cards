@@ -27,19 +27,22 @@ export function removeCard(idx: IndexDb, id: string): void {
 /**
  * 索引的唯一寫入口。索引是投影，所以這裡只接受已經落地的卡片。
  * 同 ID 先清掉舊的列，所以可重複呼叫。
+ *
+ * `env` 是檔案所在的環境（v3.1）。卡片本身不記錄它，所以由寫入的那一方告訴索引。
  */
-export function putCard(idx: IndexDb, card: Card): void {
+export function putCard(idx: IndexDb, card: Card, env: string): void {
   const tx = idx.db.transaction((c: Card) => {
     purge(idx, c.id);
 
     idx.s(
         `INSERT INTO cards
-           (id, type, created, title, url, provenance, source_author, source_date,
+           (id, env, type, created, title, url, provenance, source_author, source_date,
             revised, body, link_count, tag_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         c.id,
+        env,
         c.type,
         c.created,
         c.title,
@@ -67,4 +70,9 @@ export function putCard(idx: IndexDb, card: Card): void {
       .run(c.id, segmentCjk(c.title), segmentCjk(c.body));
   });
   tx(card);
+}
+
+/** 環境改名（v3.1）：資料夾換了名字，卡片的內容與連結都沒動，只有這一欄要跟著換。 */
+export function renameEnv(idx: IndexDb, from: string, to: string): void {
+  idx.s('UPDATE cards SET env = ? WHERE env = ?').run(to, from);
 }

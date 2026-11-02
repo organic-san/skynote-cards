@@ -735,7 +735,7 @@ describe('Cloud Storage：送出去的請求', () => {
   const gcs = (f: typeof fetch) =>
     new GcsStore({ bucket: 'bk', token: async () => 'tok', fetch: f, retryDelaysMs: [0, 0, 0] });
 
-  test('列出：分頁接起來、只收卡片、metadata 對到 blob 與 base', async () => {
+  test('列出：分頁接起來、只收卡片（含環境底下那一層）、metadata 對到 blob 與 base', async () => {
     const { f, seen } = fakeFetch((_req, n) =>
       Response.json(
         n === 1
@@ -743,6 +743,10 @@ describe('Cloud Storage：送出去的請求', () => {
               items: [
                 { name: 'cards/1.md', md5Hash: 'm1', metadata: { 'skynote-blob': 'b1', 'skynote-base': 'a1' } },
                 { name: 'cards/sub/x.md', md5Hash: 'mx' },
+                // 環境只有一層；更深的、以 . 開頭的資料夾、不是 .md 的都不是卡片。
+                { name: 'cards/sub/deeper/y.md', md5Hash: 'my' },
+                { name: 'cards/.hidden/z.md', md5Hash: 'mz' },
+                { name: 'cards/sub/notes.txt', md5Hash: 'mt' },
               ],
               nextPageToken: 'p2',
             }
@@ -752,6 +756,7 @@ describe('Cloud Storage：送出去的請求', () => {
     const list = await gcs(f).list();
     assert.deepEqual(list, [
       { name: 'cards/1.md', md5: 'm1', blob: 'b1', base: 'a1' },
+      { name: 'cards/sub/x.md', md5: 'mx', blob: null, base: null },
       { name: 'cards/2.md', md5: 'm2', blob: null, base: null },
     ]);
     assert.equal(seen[0]?.headers.authorization, 'Bearer tok');
@@ -851,5 +856,183 @@ describe('設定', () => {
     assert.equal(Buffer.from(value.split(' ').at(-1) ?? '', 'base64').toString(), 'x-access-token:tok');
     useGitToken('https://github.com/o/r.git', 'tok2', env);
     assert.equal(env.GIT_CONFIG_COUNT, '2', '已經有的設定不被蓋掉');
+  });
+});
+
+// ---------------------------------------------------------------- 環境（v3.1）
+
+describe('環境（v3.1）：bucket 的物件名稱就是帶著環境的路徑', () => {
+  const envObj = (env: string, id: string) => `cards/${env}/${id}.md`;
+
+  async function newEnv(h: Harness, name: string) {
+    const res = await json(h, 'POST', '/envs', { name });
+    assert.equal(res.statusCode, 302, res.body);
+  }
+
+  function writeLocalIn(corpus: string, env: string, id: string, text: string): void {
+    fs.mkdirSync(path.join(corpus, 'cards', env), { recursive: true });
+    fs.writeFileSync(path.join(corpus, 'cards', env, `${id}.md`), text);
+  }
+
+  test('寫進環境的卡存在 cards/{環境}/ 底下；刪除刪的是那一個物件', async () => {
+    const store = new FakeStore();
+    const h = await withStore(store);
+    await newEnv(h, '繪圖');
+    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '構圖' });
+    const id = (res.json() as { id: string }).id;
+    assert.ok(store.objects.has(envObj('繪圖', id)));
+    assert.ok(!store.objects.has(obj(id)));
+
+    assert.equal((await json(h, 'DELETE', `/c/${id}`)).statusCode, 200);
+    assert.equal(store.objects.size, 0);
+  });
+
+  test('對帳：本機環境裡的卡傳上去，bucket 上環境裡的卡寫進對應的資料夾', async () => {
+    const corpus = repo();
+    writeLocalIn(corpus, '學校', A, cardText(A, '本機的'));
+    git(corpus, 'add', '-A', 'cards');
+    git(corpus, 'commit', '-q', '-m', 'add A');
+    const store = new FakeStore();
+    store.seed(envObj('專題', B), cardText(B, '只在 bucket'), {
+      blob: blobHash(cardText(B, '只在 bucket')),
+      base: NO_BASE,
+    });
+
+    const r = await runReconcile(corpus, store);
+    assert.deepEqual(r.uploaded, [envObj('學校', A)]);
+    assert.deepEqual(r.downloaded, [envObj('專題', B)]);
+    assert.equal(fs.readFileSync(path.join(corpus, 'cards', '專題', `${B}.md`), 'utf8'), cardText(B, '只在 bucket'));
+  });
+
+  test('整批搬進環境（在別處 git mv）：新名字傳上去、舊名字刪掉，不被「一次刪太多」擋下', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => String(88800000000000200n + BigInt(i)));
+    const corpus = repo(Object.fromEntries(ids.map((id) => [id, cardText(id, `card ${id}`)])));
+    const store = new FakeStore();
+    for (const id of ids) store.seedMirror(obj(id), cardText(id, `card ${id}`));
+
+    fs.mkdirSync(path.join(corpus, 'cards', '雜事與資料'));
+    for (const id of ids) git(corpus, 'mv', `cards/${id}.md`, `cards/雜事與資料/${id}.md`);
+    git(corpus, 'commit', '-q', '-m', 'move');
+
+    const log = quietLogger();
+    const r = await runReconcile(corpus, store, log);
+    assert.equal(r.uploaded.length, 12);
+    assert.equal(r.deleted.length, 12);
+    assert.deepEqual(r.deletionsSkipped, []);
+    assert.deepEqual(log.errors, []);
+    assert.deepEqual([...store.objects.keys()].sort(), ids.map((id) => envObj('雜事與資料', id)).sort());
+  });
+
+  test('先寫後刪：新名字傳不上去，舊名字就留著，不會兩邊都沒有', async () => {
+    class NoUploads extends FakeStore {
+      async put(name: string, content: Buffer | string, opts: PutOptions): Promise<void> {
+        if (name.startsWith('cards/繪圖/')) throw new Error('傳不上去');
+        return super.put(name, content, opts);
+      }
+    }
+    const corpus = repo({ [A]: cardText(A, 'a') });
+    const store = new NoUploads();
+    store.seedMirror(obj(A), cardText(A, 'a'));
+    fs.mkdirSync(path.join(corpus, 'cards', '繪圖'));
+    git(corpus, 'mv', `cards/${A}.md`, `cards/繪圖/${A}.md`);
+    git(corpus, 'commit', '-q', '-m', 'move');
+
+    await assert.rejects(runReconcile(corpus, store), /傳不上去/);
+    assert.ok(store.objects.has(obj(A)), '舊名字還在');
+  });
+
+  test('改名還沒推上 GitHub 就換了機器：推過的卡回到舊資料夾，沒推過的留在新資料夾，一張都不少', async () => {
+    const { remote, other } = bareRemote();
+    const pushed = '88800000000000300';
+    writeLocalIn(other, '繪圖', pushed, cardText(pushed, '推上去過的'));
+    git(other, 'add', '-A', 'cards');
+    git(other, 'commit', '-q', '-m', `add ${pushed}`);
+    git(other, 'push', '-q', 'origin', 'main');
+
+    const store = new FakeStore();
+    const { h } = await bootLikeAppEngine(remote, store);
+    // GitHub 連不上：之後的 commit 都只留在這台機器上。
+    fs.renameSync(remote, `${remote}.off`);
+    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '沒推上去的' });
+    const unpushed = (res.json() as { id: string }).id;
+    await h.app.git.drain();
+    assert.match(git(h.corpus, 'log', '--format=%s', '-1'), new RegExp(`add ${unpushed}`), '本機有 commit');
+
+    assert.equal((await json(h, 'POST', '/envs/rename', { from: '繪圖', name: '插畫' })).statusCode, 302);
+    await h.app.git.drain();
+    assert.deepEqual([...store.objects.keys()].sort(), [envObj('插畫', pushed), envObj('插畫', unpushed)].sort());
+
+    // GitHub 回來了，但上面只有改名之前、推上去過的那一張。換一台機器重新開機。
+    fs.renameSync(`${remote}.off`, remote);
+    const { boot, h: next } = await bootLikeAppEngine(remote, store);
+    assert.deepEqual(boot.report.deleted, [envObj('插畫', pushed)], '新名字那份跟舊資料夾的內容相同，是搬走留下的');
+    assert.deepEqual(boot.report.downloaded, [envObj('插畫', unpushed)], '沒推上去的寫入取回來');
+    assert.deepEqual(
+      [...store.objects.keys()].sort(),
+      [envObj('繪圖', pushed), envObj('插畫', unpushed)].sort(),
+    );
+    assert.equal(next.app.index.getCard(pushed)?.env, '繪圖');
+    assert.equal(next.app.index.getCard(unpushed)?.env, '插畫');
+  });
+
+  test('網頁上建立、推上去過的卡，在別處搬進環境或刪掉：舊名字刪掉，不會被當成新卡取回', async () => {
+    // 網頁建立的卡 base 是 none，跟「本機沒有」的雜湊相同；要先問歷史。
+    const text = cardText(A, '網頁建立的');
+    const moved = repo({ [A]: text });
+    fs.mkdirSync(path.join(moved, 'cards', '雜事'));
+    git(moved, 'mv', `cards/${A}.md`, `cards/雜事/${A}.md`);
+    git(moved, 'commit', '-q', '-m', 'move');
+    const store = new FakeStore();
+    store.seed(obj(A), text, { blob: blobHash(text), base: NO_BASE });
+    const r = await runReconcile(moved, store);
+    assert.deepEqual([r.uploaded, r.downloaded, r.deleted], [[envObj('雜事', A)], [], [obj(A)]]);
+
+    // 搬的時候順便改了內容：舊名字對不上新名字的內容，靠歷史認出它是舊的。
+    const edited = repo({ [A]: text });
+    fs.rmSync(path.join(edited, 'cards', `${A}.md`));
+    writeLocalIn(edited, '雜事', A, cardText(A, '搬的時候改過'));
+    git(edited, 'add', '-A', 'cards');
+    git(edited, 'commit', '-q', '-m', 'move and edit');
+    const store2 = new FakeStore();
+    store2.seed(obj(A), text, { blob: blobHash(text), base: NO_BASE });
+    const r2 = await runReconcile(edited, store2);
+    assert.deepEqual(r2.deleted, [obj(A)]);
+    assert.deepEqual(r2.downloaded, []);
+
+    // 在別處直接刪掉：一樣以 git 為準。
+    const removed = repo({ [A]: text }, { [A]: null });
+    const store3 = new FakeStore();
+    store3.seed(obj(A), text, { blob: blobHash(text), base: NO_BASE });
+    const r3 = await runReconcile(removed, store3);
+    assert.deepEqual([r3.downloaded, r3.deleted], [[], [obj(A)]]);
+  });
+
+  test('改名時舊名字沒刪掉（還沒推上去的卡）：內容跟新名字相同，下次對帳刪掉，不變成第二份', async () => {
+    const ws = makeWorkspace();
+    gitInit(ws.corpus);
+    const text = cardText(A, '剛寫的');
+    writeLocalIn(ws.corpus, '插畫', A, text);
+    const store = new FakeStore();
+    store.seed(envObj('繪圖', A), text, { blob: blobHash(text), base: NO_BASE });
+    store.seed(envObj('插畫', A), text, { blob: blobHash(text), base: NO_BASE });
+    const r = await runReconcile(ws.corpus, store);
+    assert.deepEqual([r.downloaded, r.deleted], [[], [envObj('繪圖', A)]]);
+    assert.ok(!fs.existsSync(path.join(ws.corpus, 'cards', '繪圖')));
+  });
+
+  test('改名時 bucket 存不進去：已經存的收回來，資料夾、索引都不動（503）', async () => {
+    const store = new FakeStore();
+    const h = await withStore(store);
+    await newEnv(h, '繪圖');
+    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '構圖' });
+    const id = (res.json() as { id: string }).id;
+
+    store.down = true;
+    const fail = await json(h, 'POST', '/envs/rename', { from: '繪圖', name: '插畫' });
+    assert.equal(fail.statusCode, 503);
+    store.down = false;
+    assert.ok(fs.existsSync(path.join(h.corpus, 'cards', '繪圖', `${id}.md`)));
+    assert.equal(h.app.index.getCard(id)?.env, '繪圖');
+    assert.deepEqual([...store.objects.keys()], [envObj('繪圖', id)]);
   });
 });

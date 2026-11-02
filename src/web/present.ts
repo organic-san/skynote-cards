@@ -19,6 +19,34 @@ import {
  * 「這一列在畫面上長什麼樣子」的判斷全部集中在這裡。
  */
 
+// ---------------------------------------------------------------- 環境（v3.1）
+
+/**
+ * 沒有環境的卡在介面上叫什麼。括號是為了讓它不像一個真的環境名稱——
+ * 它是過渡的狀態：既有的卡搬進環境之後，它就不再出現。
+ */
+export const ROOT_ENV_LABEL = '（無環境）';
+
+export function envLabel(env: string): string {
+  return env === '' ? ROOT_ENV_LABEL : env;
+}
+
+/**
+ * 一個環境的網址前綴。沒有環境沿用既有的網址（`/`、`/tags`、`/search`……），
+ * 環境加上 `/e/{環境}`，其下是同一組路由。模板拼網址時一律接在它後面：
+ * `${base}/?tag=…`、`${base}/search`。
+ *
+ * 用網址而不用 cookie：網址可以存書籤、兩個分頁可以各看一個環境，伺服器維持無狀態。
+ */
+export function envBase(env: string): string {
+  return env === '' ? '' : `/e/${encodeURIComponent(env)}`;
+}
+
+/** 另一頭在別的環境時要標出的名字；同一個環境就不標。 */
+function otherEnv(env: string | null, here: string): string | null {
+  return env === null || env === here ? null : envLabel(env);
+}
+
 /**
  * 列表上的一項。
  *
@@ -50,6 +78,10 @@ export interface Item {
    */
   meta: string[];
   tags: string[];
+  /** 標籤連結的前綴：標籤以環境為界，點下去要回到這張卡所在的那個環境。 */
+  base: string;
+  /** 這張卡在別的環境時，那個環境的名字（搜尋「所有環境」時才會有）。 */
+  env: string | null;
 }
 
 /**
@@ -165,7 +197,8 @@ export function highlight(frag: string): string {
     .replaceAll(HIT_CLOSE, '</mark>');
 }
 
-export function toItem(row: ListRow): Item {
+/** `here` 是目前所在的環境：別的環境的卡要標出環境名。 */
+export function toItem(row: ListRow, here: string): Item {
   const shape = ITEM_SHAPES[row.type as CardType] ?? ITEM_SHAPES.thinking;
   return {
     id: row.id,
@@ -175,6 +208,8 @@ export function toItem(row: ListRow): Item {
     heading: headingOf(row),
     date: stampShort(row.created),
     tags: row.tags,
+    base: envBase(row.env),
+    env: otherEnv(row.env, here),
     ...shape(row),
   };
 }
@@ -230,6 +265,8 @@ export interface ThreadRow {
   typeLabel: string;
   title: string | null;
   date: Stamp;
+  /** 那張卡在別的環境時，那個環境的名字。連結可以跨環境（v3.1）。 */
+  env: string | null;
   missing: boolean;
   repeated: boolean;
   depth: number;
@@ -271,11 +308,14 @@ interface Walked {
  * 方向另外還決定順序：下游是前序（父在上、子在下），上游是它的**完整反序**。
  * 軌道一律按下游算，上游靠 CSS 把軌道垂直翻一次——反序加上鏡射就是鏡像，
  * 所以不需要第二套判斷。
+ *
+ * `here` 是這張卡所在的環境：串上在別的環境的卡標出環境名。
  */
 export function flattenThread(
   nodes: ThreadNode[],
   openDepth: number,
   direction: 'in' | 'out',
+  here: string,
 ): ThreadRow[] {
   const walked: Walked[] = [];
   const walk = (list: ThreadNode[], depth: number, ancestors: string[]): void => {
@@ -298,6 +338,7 @@ export function flattenThread(
       typeLabel: n.type === null ? '' : (TYPE_LABELS[n.type as CardType] ?? n.type),
       title: n.title,
       date: stampShort(n.created),
+      env: otherEnv(n.env, here),
       missing: n.title === null,
       repeated: n.repeated,
       depth: w.depth,
@@ -510,11 +551,12 @@ export const FORM_SPEC_TABLE = FORM_SPECS;
  * 這張卡的詳細頁上，`+` 選單裡有哪幾顆按鈕。
  * 每一顆都把新卡的型別與那條連結填好，帶著回來這張卡的 ID。
  */
-export function actionsFor(type: string, id: string) {
+export function actionsFor(type: string, id: string, env: string) {
   const actions = CARD_ACTIONS[type as CardType] ?? [];
+  // 表單開在這張卡的環境裡：新卡預設落在同一個環境，表單上可以改選（v3.1）。
   return actions.map((a) => ({
     label: a.label,
-    href: `/new?type=${a.creates}&rel=${encodeURIComponent(a.rel)}&to=${id}`,
+    href: `${envBase(env)}/new?type=${a.creates}&rel=${encodeURIComponent(a.rel)}&to=${id}`,
     rel: a.rel,
   }));
 }

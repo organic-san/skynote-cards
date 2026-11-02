@@ -1,6 +1,17 @@
-<form action="/search" method="get" class="searchpage" role="search">
+<form action="<%= it.base %>/search" method="get" class="searchpage" role="search">
   <input type="search" name="q" value="<%= it.q %>" placeholder="搜尋標題與內文" autofocus autocomplete="off">
+  <%/* 換關鍵字時範圍照樣留著。 */%>
+  <% if (it.all) { %><input type="hidden" name="all" value="1"><% } %>
 </form>
+<%/* v3.1：搜尋的範圍。預設是這個環境，可以切到所有環境；
+     視覺語彙沿用篩選列，做的是同一件事——換一個範圍看同一個問題。
+     只有一個環境時沒有東西可切，不出現。 */%>
+<% if (it.scopes) { %>
+<div class="filters scopes">
+  <a href="<%= it.scopeQuery %>" class="textbtn <%= !it.all ? 'on' : '' %>"><%= it.envName %></a>
+  <a href="<%= it.scopeQuery %>&all=1" class="textbtn <%= it.all ? 'on' : '' %>">所有環境</a>
+</div>
+<% } %>
 <% if (it.searched) { %>
 <%/* 型別篩選。跟首頁同一組 chip：同樣的動作要長得一樣，
      否則使用者得在兩個地方各學一次「怎麼縮小範圍」。

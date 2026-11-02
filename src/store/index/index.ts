@@ -4,12 +4,12 @@ import type Database from 'better-sqlite3';
 import type { Card } from '../../domain/types.ts';
 import { type IndexDb, openDb, replaceFile } from './schema.ts';
 import * as q from './query.ts';
-import { putCard, removeCard } from './write.ts';
+import { putCard, removeCard, renameEnv } from './write.ts';
 import { rebuildInto } from './rebuild.ts';
 
 /**
  * SQLite 索引。這是投影，不是儲存：任何時候刪掉 index.db，
- * rebuild() 都要能從 cards/*.md 產生完全等價的內容。
+ * rebuild() 都要能從 cards/ 底下的 .md（含各環境的資料夾）產生完全等價的內容。
  * 因此這個模組只讀語料庫，從不寫入。
  *
  * 這個類別本身只做三件事：握著 handle、快取 prepared statement、
@@ -19,6 +19,7 @@ import { rebuildInto } from './rebuild.ts';
 export type {
   CardRow,
   CardRowWithTags,
+  EnvStat,
   LinkRow,
   SearchRow,
   TagCount,
@@ -32,6 +33,7 @@ export { HIT_CLOSE, HIT_OPEN, desegment, ftsQuery, segmentCjk, type IndexDb } fr
 import type {
   CardRow,
   CardRowWithTags,
+  EnvStat,
   LinkRow,
   SearchRow,
   TagCount,
@@ -86,14 +88,19 @@ export class CardIndex implements IndexDb {
 
   // -------------------------------------------------------------- 寫入
 
-  /** 把一張卡片寫進索引。同 ID 先清掉舊的列，所以可重複呼叫。 */
+  /** 把一張卡片寫進索引。同 ID 先清掉舊的列，所以可重複呼叫。`env` 是它所在的環境。 */
+  putCard(card: Card, env: string): void {
+    putCard(this, card, env);
+  }
+
   /** R9：把一張卡從索引裡拿掉。 */
   removeCard(id: string): void {
     removeCard(this, id);
   }
 
-  putCard(card: Card): void {
-    putCard(this, card);
+  /** 環境改名（v3.1）：那個環境的卡跟著換到新名字底下。 */
+  renameEnv(from: string, to: string): void {
+    renameEnv(this, from, to);
   }
 
   // -------------------------------------------------------------- 查詢
@@ -114,7 +121,7 @@ export class CardIndex implements IndexDb {
     return q.typeOf(this, id);
   }
 
-  listCards(opts: { type?: string; tag?: string; limit: number; offset: number }): {
+  listCards(opts: { env: string; type?: string; tag?: string; limit: number; offset: number }): {
     rows: CardRowWithTags[];
     total: number;
   } {
@@ -138,26 +145,12 @@ export class CardIndex implements IndexDb {
     return q.linkTree(this, rootId, direction, maxDepth);
   }
 
-  tagCounts(sort: TagSort = 'count'): TagCount[] {
-    return q.tagCounts(this, sort);
+  tagCounts(env: string, sort: TagSort = 'count'): TagCount[] {
+    return q.tagCounts(this, env, sort);
   }
 
-  // ---- 工作狀態清單
-
-  pending(): CardRowWithTags[] {
-    return q.pending(this);
-  }
-
-  looseFleeting(): CardRowWithTags[] {
-    return q.looseFleeting(this);
-  }
-
-  looseThinking(): CardRowWithTags[] {
-    return q.looseThinking(this);
-  }
-
-  settling(since: string): CardRowWithTags[] {
-    return q.settling(this, since);
+  envStats(): EnvStat[] {
+    return q.envStats(this);
   }
 
   inboundBreakdown(id: string): { total: number; restatements: number } {
@@ -168,12 +161,12 @@ export class CardIndex implements IndexDb {
     return q.aboutTarget(this, id);
   }
 
-  search(query: string, opts: { limit?: number; type?: string } = {}): SearchRow[] {
+  search(query: string, opts: { limit?: number; type?: string; env?: string } = {}): SearchRow[] {
     return q.search(this, query, opts);
   }
 
-  pickerSearch(query: string, limit = 10): CardRow[] {
-    return q.pickerSearch(this, query, limit);
+  pickerSearch(query: string, limit = 10, env = ''): CardRow[] {
+    return q.pickerSearch(this, query, limit, env);
   }
 
   // -------------------------------------------------------------- 重建

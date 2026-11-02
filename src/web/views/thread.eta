@@ -28,6 +28,8 @@
       <%~ include('icon', { name: n.rel }) %>
       <span class="noderel"><%= n.relLabel %></span>
       <a class="nodetitle" href="/c/<%= n.id %>"><span class="tname"><%= n.typeLabel %>：</span><%= n.title %></a>
+      <%/* 連結可以跨環境（v3.1）：另一頭在別的環境就標出環境名。 */%>
+      <% if (n.env) { %><span class="envmark"><%= n.env %></span><% } %>
       <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>
       <% if (n.repeated) { %><span class="noderel">上方已展開</span><% } %>
       <% if (n.children) { %>

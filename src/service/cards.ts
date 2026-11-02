@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { Card, CardDraft, CardLink, CardType } from '../domain/types.ts';
 import { isCardType } from '../domain/types.ts';
-import { fileExistsTaken, generateId } from '../domain/id.ts';
+import { generateId } from '../domain/id.ts';
 import { cardText, serializeCard, withCardText } from '../domain/card.ts';
 import {
   LOCKED_MESSAGE,
@@ -20,9 +20,9 @@ import {
 import {
   cardExists,
   cardPath,
-  cardsDir,
   deleteCardFile,
-  readCard,
+  envExists,
+  readCardWithEnv,
   writeCardContent,
 } from '../store/files.ts';
 import type { CardIndex } from '../store/index/index.ts';
@@ -37,6 +37,9 @@ import { withWriteLock } from './lock.ts';
  * 先存進真相（有遠端時是 bucket，沒有時就是本機檔案）、再寫本機檔案、
  * 投影到索引、最後排一次備份。順序與失敗的處理方式只在這裡定義一次，
  * 路由不重複一遍。
+ *
+ * 環境（v3.1）只在這裡出現兩次：建立時決定新卡落在哪個資料夾，
+ * 之後的修改、勾選、刪除先找出它在哪個資料夾。規則那一層不知道環境存在。
  */
 
 export interface CardServiceDeps {
@@ -114,22 +117,36 @@ export type UpdateResult =
   | { ok: true; card: Card }
   | { ok: false; reason: 'locked' | 'invalid' | 'conflict' | 'unavailable'; errors: string[] };
 
+/** 新卡要落進的環境不存在（例如剛被改名）時說的話。 */
+export function noSuchEnvMessage(env: string): string {
+  return `沒有「${env}」這個環境。它可能剛被改名，重新載入之後再送一次。`;
+}
+
 /**
  * 表單送上來、還沒有 ID 的東西經過驗證之後落地。
  * 連結的順序規則需要本卡 ID，所以驗證分兩段，中間夾著發號。
+ *
+ * `env` 是新卡落進的環境（v3.1），空字串是沒有環境。連結可以指向任何環境的卡。
  */
-export function createCard(deps: CardServiceDeps, draft: CardDraft): Promise<CreateResult> {
-  return withWriteLock(deps.corpusPath, () => createNow(deps, draft));
+export function createCard(
+  deps: CardServiceDeps,
+  draft: CardDraft,
+  env = '',
+): Promise<CreateResult> {
+  return withWriteLock(deps.corpusPath, () => createNow(deps, draft, env));
 }
 
-async function createNow(deps: CardServiceDeps, draft: CardDraft): Promise<CreateResult> {
+async function createNow(deps: CardServiceDeps, draft: CardDraft, env: string): Promise<CreateResult> {
+  if (!envExists(deps.corpusPath, env)) return { ok: false, errors: [noSuchEnvMessage(env)] };
+
   const checked = validateDraft(draft, {
     cardExists: (id) => cardExists(deps.corpusPath, id),
     typeOf: (id) => cardTypeOf(deps, id),
   });
   if (!checked.value) return { ok: false, errors: checked.errors };
 
-  const id = generateId(fileExistsTaken(cardsDir(deps.corpusPath)));
+  // ID 全域唯一：發號時的碰撞檢查看過每一個環境的資料夾。
+  const id = generateId((candidate) => cardExists(deps.corpusPath, candidate));
 
   const orderErrors = validateLinkOrder(id, checked.value.links);
   if (orderErrors.length > 0) return { ok: false, errors: orderErrors };
@@ -149,7 +166,7 @@ async function createNow(deps: CardServiceDeps, draft: CardDraft): Promise<Creat
     body: draft.body.replace(/\r\n/g, '\n'),
   };
 
-  if (!(await persist(deps, card, 'add'))) {
+  if (!(await persist(deps, card, 'add', env))) {
     return { ok: false, errors: [STORE_UNAVAILABLE_MESSAGE], unavailable: true };
   }
   return { ok: true, card };
@@ -194,7 +211,7 @@ async function updateNow(
   id: string,
   patch: UpdatePatch,
 ): Promise<UpdateResult> {
-  const existing = readCard(deps.corpusPath, id);
+  const { card: existing, env } = readCardWithEnv(deps.corpusPath, id);
   if (!ruminationFor(deps, existing).open) {
     return { ok: false, reason: 'locked', errors: [LOCKED_MESSAGE] };
   }
@@ -239,7 +256,7 @@ async function updateNow(
     body: (patch.body === undefined ? existing.body : patch.body).replace(/\r\n/g, '\n'),
   };
 
-  if (!(await persist(deps, updated, 'edit'))) {
+  if (!(await persist(deps, updated, 'edit', env))) {
     return { ok: false, reason: 'unavailable', errors: [STORE_UNAVAILABLE_MESSAGE] };
   }
   return { ok: true, card: updated };
@@ -304,19 +321,19 @@ export function deleteCard(deps: CardServiceDeps, id: string): Promise<DeleteRes
 }
 
 async function deleteNow(deps: CardServiceDeps, id: string): Promise<DeleteResult> {
-  const existing = readCard(deps.corpusPath, id);
+  const { card: existing, env } = readCardWithEnv(deps.corpusPath, id);
   if (!ruminationFor(deps, existing).open) {
     return { ok: false, errors: [UNDELETABLE_MESSAGE] };
   }
 
   try {
-    await deps.store.delete(cardObjectName(id));
+    await deps.store.delete(cardObjectName(id, env));
   } catch (err) {
     deps.logger.error(`遠端刪除失敗 ${id}: ${errText(err)}`);
     return { ok: false, errors: [STORE_UNAVAILABLE_MESSAGE], unavailable: true };
   }
 
-  deleteCardFile(deps.corpusPath, id);
+  deleteCardFile(deps.corpusPath, id, env);
   try {
     deps.index.removeCard(id);
   } catch (err) {
@@ -354,7 +371,7 @@ async function toggleNow(
   id: string,
   opts: { at: number; checked: boolean; rev: string },
 ): Promise<ToggleResult> {
-  const existing = readCard(deps.corpusPath, id);
+  const { card: existing, env } = readCardWithEnv(deps.corpusPath, id);
   if (opts.rev !== contentRev(existing)) {
     return { ok: false, reason: 'conflict', errors: [CONFLICT_MESSAGE] };
   }
@@ -365,7 +382,7 @@ async function toggleNow(
   if (after === before) return { ok: true, card: existing, rev: contentRev(existing) };
 
   const updated = withCardText(existing, after);
-  if (!(await persist(deps, updated, 'check'))) {
+  if (!(await persist(deps, updated, 'check', env))) {
     return { ok: false, reason: 'unavailable', errors: [STORE_UNAVAILABLE_MESSAGE] };
   }
   return { ok: true, card: updated, rev: contentRev(updated) };
@@ -388,19 +405,22 @@ function pickUrl(current: string | null, given: string | undefined): string | nu
  * 沒有遠端時，本機檔案就是真相，所以先寫檔——跟以前一樣。
  * 索引寫失敗不往上丟：檔案已經在了，索引隨時可以重建。
  * 備份是 fire-and-forget，不會擋住任何一條寫入路徑。
+ *
+ * `env` 決定檔案在哪個資料夾，bucket 的物件名稱跟著它（git 照 ID 找，見 store/backup.ts）。
  */
 async function persist(
   deps: CardServiceDeps,
   card: Card,
   action: 'add' | 'edit' | 'check',
+  env: string,
 ): Promise<boolean> {
   const content = serializeCard(card);
 
   if (deps.store.kind !== 'none') {
-    const file = cardPath(deps.corpusPath, card.id);
+    const file = cardPath(deps.corpusPath, card.id, env);
     const before = action === 'add' || !fs.existsSync(file) ? null : fs.readFileSync(file);
     try {
-      await deps.store.put(cardObjectName(card.id), content, {
+      await deps.store.put(cardObjectName(card.id, env), content, {
         blob: blobHash(content),
         base: before ? blobHash(before) : NO_BASE,
         ifGenerationMatch: action === 'add' ? 0 : undefined,
@@ -411,9 +431,9 @@ async function persist(
     }
   }
 
-  writeCardContent(deps.corpusPath, card.id, content);
+  writeCardContent(deps.corpusPath, card.id, content, env);
   try {
-    deps.index.putCard(card);
+    deps.index.putCard(card, env);
   } catch (err) {
     deps.logger.error(`索引寫入失敗 ${card.id}: ${errText(err)}`);
   }

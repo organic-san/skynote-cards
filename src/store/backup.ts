@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { simpleGit, type SimpleGit } from 'simple-git';
+import { ENV_ORDER_FILE } from './envorder.ts';
 
 /**
  * 語料庫的 git 備份。
@@ -33,7 +34,7 @@ export const PULL_TIMEOUT_MS = 60 * 1000;
  *
  * - `pulled`：取回了。`commits` 是遠端那一份裡本機原本沒有的 commit，空的就是已是最新。
  * - `conflict`：rebase 有衝突，已經放棄，語料庫回到取回之前。
- * - `failed`：其他失敗——網路、逾時、工作區有卡片以外的變更。
+ * - `failed`：其他失敗——網路、逾時、工作區有卡片與 envs.yml 以外的變更。
  */
 export type PullResult =
   | { kind: 'no-git' }
@@ -58,6 +59,18 @@ export interface GitBackupOptions {
 
 /** 遠端有本機沒有的 commit。被 hook 擋下（`[remote rejected]`）不算，那個取回也沒用。 */
 const NON_FAST_FORWARD = /non-fast-forward|\(fetch first\)/i;
+
+/**
+ * 一張卡的 pathspec：cards/ 底下任何一個資料夾裡的 `{id}.md`（glob 的雙星號也對得到
+ * 零層資料夾，所以沒有環境的那一份也算）。ID 全域唯一，所以只會對到那一張；
+ * 它在哪個環境、有沒有搬過都不必知道。
+ */
+function cardSpec(id: string): string {
+  return `:(glob)cards/**/${id}.md`;
+}
+
+/** 一次 `git add` 帶幾個 pathspec。環境改名時卡片可能有上千張，命令列不能無限長。 */
+const ADD_BATCH = 100;
 
 export class GitBackup {
   private readonly git: SimpleGit | null;
@@ -99,7 +112,7 @@ export class GitBackup {
   }
 
   /**
-   * 啟動時的補救：先把還沒 commit 的卡片檔補上 commit，再 push 一次。
+   * 啟動時的補救：先把還沒 commit 的卡片檔（與環境的順序）補上 commit，再 push 一次。
    * 行程被中斷時，佇列裡還沒輪到的卡片只有檔案、沒有 commit，
    * 沒有這一步它們就再也不會進到備份裡。
    */
@@ -108,7 +121,7 @@ export class GitBackup {
   }
 
   /**
-   * 把還沒 commit 的卡片補上 commit，有領先遠端的 commit 就推上去；做完才回來。
+   * 把還沒 commit 的卡片與環境的順序補上 commit，有領先遠端的 commit 就推上去；做完才回來。
    *
    * 開機時用它，對帳（store/reconcile.ts）把 bucket 上較新的卡寫進本機之後也用它——
    * 那些卡在本機是「有檔案、沒有 commit」，跟行程被中斷時留下的是同一種狀態。
@@ -118,7 +131,7 @@ export class GitBackup {
     return new Promise((resolve) => {
       this.enqueue(async (git) => {
         try {
-          const committed = await this.commitPendingCards(git);
+          const committed = await this.commitPending(git);
           const unpushed = await this.countUnpushed(git);
           if (committed > 0 || unpushed === null || unpushed > 0) {
             await this.push(git);
@@ -146,17 +159,68 @@ export class GitBackup {
    * `rm` 也走這裡：`git add` 對已經從工作區消失的檔案會 stage 那次刪除，
    * 所以每一種動作都是同一條路徑，不需要第二套。`check` 是勾選（R14），
    * 跟 `edit` 分開，翻歷史時才分得出哪些是內容的修訂。
+   *
+   * stage 的是這個 ID 在 cards/ 底下任何一個資料夾的檔（cardSpec），不是排隊時的路徑：
+   * 輪到這一件的時候，環境可能已經改名（v3.1）。照舊路徑 add 只會 stage 一次刪除，
+   * 推上去的 commit 就成了「edit X」卻把 X 刪掉；照 ID 找，舊的刪除與新的位置一起進來。
    */
   commitCard(id: string, action: 'add' | 'edit' | 'check' | 'rm'): void {
     if (!this.git) return;
     this.enqueue(async (git) => {
-      await git.add([path.join('cards', `${id}.md`)]);
+      await git.raw(['add', '-A', '--', cardSpec(id)]);
+      // 內容沒變的搬動，git 報的是 renamed，不在 staged 裡。
       const status = await git.status();
-      if (status.staged.length === 0) {
+      if (status.staged.length === 0 && status.renamed.length === 0) {
         this.logger.warn(`git: ${action} ${id} 沒有任何變更可 commit`);
         return;
       }
       await git.commit(`${action} ${id}`);
+      await this.push(git);
+    });
+  }
+
+  /**
+   * 環境改名（v3.1）：裡面的卡一個 commit，訊息是 `env {舊名} → {新名}`。
+   *
+   * 跟 commitCard 一樣照 ID stage，不照資料夾：輪到這一件時可能又改了一次名，
+   * 照「新名字」的資料夾去 add 會找不到，commit 裡就只剩整個環境的刪除。
+   * 照 ID 找，舊位置的刪除與現在的位置一定一起進同一個 commit，推上去的每一個版本裡
+   * 卡片都在。空的環境沒有 ID；排過序的話，commit 裡只有 envs.yml 換掉的那個名字。
+   */
+  commitEnvRename(from: string, to: string, ids: readonly string[]): void {
+    if (!this.git) return;
+    this.enqueue(async (git) => {
+      for (let i = 0; i < ids.length; i += ADD_BATCH) {
+        const specs = ids.slice(i, i + ADD_BATCH).map(cardSpec);
+        try {
+          await git.raw(['add', '-A', '--', ...specs]);
+        } catch {
+          // 有一張對不到任何檔案（還沒 commit 就被刪了），整批都會被拒絕。逐張再來一次。
+          for (const spec of specs) await git.raw(['add', '-A', '--', spec]).catch(() => {});
+        }
+      }
+      // 從沒排過序就沒有這個檔，git 會說對不到。
+      await git.raw(['add', '-A', '--', ENV_ORDER_FILE]).catch(() => {});
+      const status = await git.status();
+      if (status.staged.length === 0 && status.renamed.length === 0) {
+        this.logger.info(`git: 環境 ${from} → ${to} 沒有任何變更需要 commit`);
+        return;
+      }
+      await git.commit(`env ${from} → ${to}`);
+      await this.push(git);
+    });
+  }
+
+  /**
+   * 環境的順序（v3.1）：envs.yml 一個 commit，訊息是 `env order`。
+   * 連著拖了好幾次，輪到前面那一件時就已經 stage 到最後的內容，後面的沒有東西可 commit。
+   */
+  commitEnvOrder(): void {
+    if (!this.git) return;
+    this.enqueue(async (git) => {
+      await git.raw(['add', '-A', '--', ENV_ORDER_FILE]);
+      if ((await git.status()).staged.length === 0) return;
+      await git.commit('env order');
       await this.push(git);
     });
   }
@@ -212,8 +276,11 @@ export class GitBackup {
   /**
    * 跟 commit 對不上的卡片檔，一張補一個 commit，訊息格式與正常路徑相同。
    * 刪除也算：`git add` 對已經不在工作區的檔案會 stage 那次刪除。
+   *
+   * 環境的順序（envs.yml）也是本程式寫的，同樣補上——它留在工作區沒 commit，
+   * 取回時的 rebase 會拒絕執行。
    */
-  private async commitPendingCards(git: SimpleGit): Promise<number> {
+  private async commitPending(git: SimpleGit): Promise<number> {
     const status = await git.status();
     const isCard = (f: string) => f.startsWith('cards/') && f.endsWith('.md');
     const added = new Set([...status.not_added, ...status.created].filter(isCard));
@@ -233,13 +300,20 @@ export class GitBackup {
         n += 1;
       }
     }
+    const order = [...status.not_added, ...status.created, ...status.modified, ...status.deleted];
+    if (order.includes(ENV_ORDER_FILE)) {
+      await git.raw(['add', '-A', '--', ENV_ORDER_FILE]);
+      await git.commit('env order');
+      this.logger.info('git: 補上未提交的環境順序');
+      n += 1;
+    }
     return n;
   }
 
   /**
    * 取回的步驟。順序有意義：
    *
-   * 1. 先補上只有檔案、沒有 commit 的卡片。工作區不乾淨，rebase 會拒絕執行。
+   * 1. 先補上只有檔案、沒有 commit 的卡片與環境的順序。工作區不乾淨，rebase 會拒絕執行。
    * 2. `pull --rebase`，remote 與分支明寫——還沒建立追蹤關係時也取得回來。
    *    用 rebase 而不是 `--ff-only`：push 失敗時本機會積著還沒推上去的卡片 commit，
    *    `--ff-only` 會在那時候拒絕；rebase 只重寫那幾個還沒推上去的。
@@ -247,7 +321,7 @@ export class GitBackup {
    * 4. 本機有領先遠端的 commit 就推上去。
    */
   private async pullNow(git: SimpleGit, puller: SimpleGit): Promise<PullResult> {
-    await this.commitPendingCards(git);
+    await this.commitPending(git);
 
     const remote = (await git.getRemotes(true))[0];
     if (!remote) return { kind: 'no-remote' };

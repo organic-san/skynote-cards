@@ -479,96 +479,6 @@ describe('兩張表要對得上', () => {
   });
 });
 
-describe('工作狀態的四份清單', () => {
-  test('待思考：沒有人指向的 original，被指向就離開', async () => {
-    const h = await fresh();
-    const a = await createCard(h, { type: 'original', title: '還沒人碰過', body: 'x' });
-    const b = await createCard(h, { type: 'original', title: '已經被重述過', body: 'y' });
-    await createCard(h, {
-      type: 'restatement',
-      title: '重述 b',
-      body: 'z',
-      links: [{ rel: 'about', to: b }],
-    });
-
-    const page = main(await h.app.fastify.inject('/pending'));
-    assert.ok(page.includes('還沒人碰過'));
-    assert.ok(!page.includes('已經被重述過'), '被接住的就不是待辦了');
-    assert.ok(page.includes(`/c/${a}`));
-  });
-
-  test('待思考不區分母卡與節錄：節錄一段，整篇就離開清單', async () => {
-    const h = await fresh();
-    const whole = await createCard(h, { type: 'original', title: '整篇文章', body: 'x' });
-    await createCard(h, {
-      type: 'original',
-      title: '那幾段',
-      body: 'y',
-      links: [{ rel: 'part-of', to: whole }],
-    });
-
-    const page = main(await h.app.fastify.inject('/pending'));
-    assert.ok(!page.includes('整篇文章'), '切開它代表讀過並挑出了值得的部分');
-    assert.ok(page.includes('那幾段'), '待辦責任落到那幾段上');
-  });
-
-  test('碎片：沒被撿起來用過的 fleeting', async () => {
-    const h = await fresh();
-    await createCard(h, { type: 'fleeting', title: '一句還沒用過的話' });
-    const used = await createCard(h, { type: 'fleeting', title: '已經被完整化的話' });
-    await createCard(h, {
-      type: 'thinking',
-      title: '完整化的結果',
-      body: 'x',
-      links: [{ rel: 'updates', to: used }],
-    });
-
-    const page = main(await h.app.fastify.inject('/fleeting'));
-    assert.ok(page.includes('一句還沒用過的話'));
-    assert.ok(!page.includes('已經被完整化的話'));
-  });
-
-  test('初步想法：進出皆空的 thinking，出向有連結就不算', async () => {
-    const h = await fresh();
-    const o = await createCard(h, { type: 'original', title: '原文', body: 'x' });
-    await createCard(h, { type: 'thinking', title: '兩頭都懸空', body: 'y' });
-    await createCard(h, {
-      type: 'thinking',
-      title: '至少接住了原文',
-      body: 'z',
-      links: [{ rel: 'about', to: o }],
-    });
-
-    const page = main(await h.app.fastify.inject('/loose'));
-    assert.ok(page.includes('兩頭都懸空'));
-    assert.ok(!page.includes('至少接住了原文'), '它自己接住了東西，不算懸空');
-  });
-
-  test('沉澱：還改得動的卡片', async () => {
-    const h = await fresh();
-    await createCard(h, { type: 'thinking', title: '剛寫的還改得動', body: 'x' });
-    const page = main(await h.app.fastify.inject('/settling'));
-    assert.ok(page.includes('剛寫的還改得動'));
-  });
-
-  test('四份清單在每一頁的側欄都在', async () => {
-    const h = await fresh();
-    await createCard(h, { type: 'original', title: '一篇沒人接的文章', body: 'x' });
-
-    for (const url of ['/', '/tags', '/pending']) {
-      const body = (await h.app.fastify.inject(url)).body;
-      const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
-      // U8：側欄那項叫「雜筆」——它是「fleeting 且無入向連結」，
-      // 跟首頁篩選列的「碎片」（全部 fleeting）不是同一個集合。
-      for (const name of ['待思考', '初步想法', '雜筆', '沉澱']) {
-        assert.ok(aside.includes(name), `${url} 的側欄缺少「${name}」`);
-      }
-      // U9：不掛數量。那些清單實務上不會歸零，數字提供不了訊號。
-      assert.ok(!aside.includes('wcount'), '側欄不該再有數量');
-    }
-  });
-});
-
 describe('每一型的列表項', () => {
   test('original 顯示作者與年份加引用計數，不顯示內文開頭', async () => {
     const h = await fresh();
@@ -930,7 +840,7 @@ describe('介面', () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'thinking', title: '一', body: 'x' });
 
-    for (const url of ['/', '/tags', '/pending', '/loose', '/fleeting', '/settling', `/c/${id}`]) {
+    for (const url of ['/', '/tags', '/search', `/c/${id}`]) {
       const res = await h.app.fastify.inject(url);
       assert.ok(res.body.includes('id="drawer"'), `${url} 應有左側選單`);
       assert.ok(res.body.includes('id="fab"'), `${url} 應有新增鈕`);
@@ -1050,7 +960,7 @@ describe('介面', () => {
     assert.ok(aside.includes('/new?type=original'));
 
     // original 的表單：url 是主要欄位，不藏在收合區裡。
-    const form = (await h.app.fastify.inject('/new?type=original')).body;
+    const form = main(await h.app.fastify.inject('/new?type=original'));
     const beforeDetails = form.slice(0, form.indexOf('<details'));
     assert.ok(beforeDetails.includes('name="url"'), 'url 應該在收合區之前');
     assert.ok(beforeDetails.includes('name="source_author"'));
@@ -1279,17 +1189,6 @@ describe('記完之後去哪裡、看到什麼', () => {
       assert.ok(edit.includes(label), `編輯頁缺少「${label}」`);
     }
     assert.ok(!edit.includes('>context<'), '不該再有英文欄位名');
-  });
-
-  test('清單頁只有標題與筆數，說明只在空的時候出現', async () => {
-    const h = await fresh();
-    const empty = main(await h.app.fastify.inject('/pending'));
-    assert.ok(empty.includes('沒有任何原始資料是無人指向的'), '空的時候要說剛才問了什麼');
-
-    await createCard(h, { type: 'original', title: '一篇文章', body: 'x' });
-    const filled = main(await h.app.fastify.inject('/pending'));
-    assert.ok(filled.includes('一篇文章'));
-    assert.ok(!filled.includes('沒有任何原始資料'), '有東西的時候，東西本身就是說明');
   });
 
   test('首頁的型別篩選用中文', async () => {
@@ -1587,14 +1486,14 @@ describe('外部 url 的內嵌', () => {
 });
 
 describe('側欄', () => {
-  test('順序是站名、首頁、工作狀態、動作與工具、最近的標籤', async () => {
+  test('順序是站名、首頁、環境、動作與工具、最近的標籤', async () => {
     const h = await fresh();
     await createCard(h, { type: 'thinking', title: '最近寫的一張', body: 'x', tags: ['最近的主題'] });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    // 側欄依序包含：站名、首頁、工作清單、動作與工具、標籤清單。用只出現一次的記號定位。
-    const order = ['drawerbrand', 'icon-home', 'drawernav', 'icon-plus', 'sidetags'];
+    // 側欄依序包含：站名、首頁、環境（v3.1）、動作與工具、標籤清單。用只出現一次的記號定位。
+    const order = ['drawerbrand', 'icon-home', 'drawerenvs', '/new?type=original', 'sidetags'];
     let at = -1;
     for (const cls of order) {
       const next = aside.indexOf(cls);
@@ -1621,7 +1520,10 @@ describe('側欄', () => {
       at = next;
     }
     // 「更新」有副作用，所以是 POST 的按鈕，不是連結。
-    assert.match(tools, /<form method="post" action="\/update">\s*<button type="submit"/);
+    assert.match(
+      tools,
+      /<form method="post" action="\/update">\s*<input type="hidden" name="env" value="">\s*<button type="submit"/,
+    );
     assert.ok(!aside.includes('href="/update"'));
     // 產出沒有側欄入口：沒有來處的產出從隨手記展開（v3 §4.3）。
     assert.ok(!aside.includes('type=output'));

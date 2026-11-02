@@ -37,20 +37,30 @@
   <p class="drawerbrand">Skynote</p>
 
   <%
-    /* 一列要嘛前面帶圖示、要嘛後面帶數字，不會兩者都有。
-       帶數字的是四份待辦清單，帶圖示的是去處與動作。 */
-    /* 側欄工作清單（U9：不帶數量）。 */
-    const lists = it.lists || [];
+    /* 側欄的每一項都指向目前所在的環境（v3.1）：base 是它的網址前綴，
+       沒有環境時是空字串，網址跟以前一樣。 */
+    const base = it.base || '';
+    const envs = it.envs || [];
   %>
   <nav class="drawerwork">
-    <a href="/" class="<%= it.nav === 'feed' ? 'on' : '' %>">
+    <a href="<%= base %>/" class="<%= it.nav === 'feed' ? 'on' : '' %>">
       <%~ include('icon', { name: 'home' }) %><span>首頁</span>
     </a>
   </nav>
 
-  <nav class="drawernav">
-    <% lists.forEach(function (l) { %>
-    <a href="<%= l.href %>" class="<%= it.nav === l.nav ? 'on' : '' %>"><%= l.name %></a>
+  <%/* v3.1：環境。原本四份工作清單（待思考、初步想法、雜筆、沉澱）的位置——
+       實際用到的只剩沉澱，而環境決定了這一欄其他每一項指的是哪裡。
+       清單只拿來切換；新增、排序、改名都在標題右邊的齒輪打開的面板裡（</aside> 後面）。
+       （無環境）是過渡的狀態，搬空了就不列。 */%>
+  <nav class="drawernav drawerenvs" aria-label="環境">
+    <div class="envhead">
+      <p class="indexhead">環境</p>
+      <button type="button" class="envgear" popovertarget="envpanel" aria-label="管理環境"
+              title="新增、排序、改名"><%~ include('icon', { name: 'gear' }) %></button>
+    </div>
+    <% envs.forEach(function (e) { %>
+    <a href="<%= e.href %>" data-env="<%= e.name %>" class="<%= e.on ? 'on' : '' %><%= e.name === '' ? ' envroot' : '' %>"><span
+      class="indextitle"><%= e.label %></span></a>
     <% }) %>
   </nav>
 
@@ -60,18 +70,20 @@
        位置本身足以表達它不是去處。
        產出沒有側欄入口：沒有來處的產出從隨手記「展開」建立（v3 §4.3）。 */%>
   <nav class="drawernav">
-    <a href="/new?type=original" class="<%= it.nav === 'source' ? 'on' : '' %>">
+    <a href="<%= base %>/new?type=original" class="<%= it.nav === 'source' ? 'on' : '' %>">
       <%~ include('icon', { name: 'plus' }) %><span>追加外部資料</span>
     </a>
-    <a href="/search" class="<%= it.nav === 'search' ? 'on' : '' %>">
+    <a href="<%= base %>/search" class="<%= it.nav === 'search' ? 'on' : '' %>">
       <%~ include('icon', { name: 'search' }) %><span>搜尋</span>
     </a>
-    <a href="/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">
+    <a href="<%= base %>/tags" class="<%= it.nav === 'tags' ? 'on' : '' %>">
       <%~ include('icon', { name: 'tag' }) %><span>標籤</span>
     </a>
     <%/* v3 §7：取回語料庫的最新版本。它有副作用，所以是一顆 POST 的按鈕，
-         不是連結；外觀跟旁邊的去處一樣。 */%>
+         不是連結；外觀跟旁邊的去處一樣。取回的是整個語料庫，不分環境；
+         帶著目前的環境只是為了讓結果頁留在這裡。 */%>
     <form method="post" action="/update">
+      <input type="hidden" name="env" value="<%= it.env || '' %>">
       <button type="submit" class="<%= it.nav === 'update' ? 'on' : '' %>">
         <%~ include('icon', { name: 'refresh' }) %><span>更新</span>
       </button>
@@ -79,9 +91,10 @@
   </nav>
 
   <%/* v3 §5：側欄下半跟著頁面換。
-       文章一覽（首頁、搜尋、各份清單）列最近的標籤：在一覽裡找方向時，主題是入口。
+       文章一覽（首頁、搜尋、標籤頁）列最近的標籤：在一覽裡找方向時，主題是入口。
        卡片頁與編輯介面（編輯頁、建立表單）列最近的卡片：寫連結要指向誰，
-       看一眼名字就知道。兩份都只列名稱、不列數量——這一欄要安靜。 */%>
+       看一眼名字就知道。兩份都只列名稱、不列數量——這一欄要安靜。
+       兩份都以目前的環境為界。 */%>
   <% const recent = it.recent || []; const sidetags = it.sidetags || []; %>
   <% if (recent.length) { %>
   <div class="sidecards">
@@ -101,13 +114,55 @@
     <p class="indexhead">最近的標籤</p>
     <ul>
       <% sidetags.forEach(function (t) { %>
-      <li><a href="/?tag=<%= encodeURIComponent(t) %>" class="<%= it.tag === t ? 'on' : '' %>"><span
+      <li><a href="<%= base %>/?tag=<%= encodeURIComponent(t) %>" class="<%= it.tag === t ? 'on' : '' %>"><span
         class="indextitle">#<%= t %></span></a></li>
       <% }) %>
     </ul>
   </div>
   <% } %>
 </aside>
+
+<%/* 環境面板：側欄「環境」右邊的齒輪打開。用瀏覽器內建的 popover——不用 JS 就打得開，
+     Esc 或點外面就關。放在側欄外面：窄螢幕上側欄收起來時，它不該跟著不見。
+     新增與改名是一般的表單，沒有 JS 也能用；拖曳排序要 JS（envs.js），沒有 JS 時把手不畫。
+     每個環境都能改名：每一列都標著名字，不會改錯。
+     （無環境）不在這裡：它不能改名，也不參與排序。 */%>
+<% const named = envs.filter(function (e) { return e.name !== ''; }); %>
+<div class="envpanel" id="envpanel" popover role="dialog" aria-labelledby="envpaneltitle">
+  <div class="envpanelhead">
+    <h2 id="envpaneltitle">環境</h2>
+    <button type="button" class="textbtn" popovertarget="envpanel" popovertargetaction="hide"
+            aria-label="關閉">×</button>
+  </div>
+  <% if (named.length) { %>
+  <ol class="envsort" id="envsort">
+    <% named.forEach(function (e) { %>
+    <li class="envitem" data-env="<%= e.name %>">
+      <button type="button" class="envgrip" aria-label="移動「<%= e.name %>」：拖曳，或按上下鍵"><%~
+        include('icon', { name: 'grip' }) %></button>
+      <span class="envname"><%= e.name %></span>
+      <details class="envedit">
+        <summary aria-label="改名「<%= e.name %>」" title="改名"><%~ include('icon', { name: 'pencil' }) %></summary>
+        <form method="post" action="/envs/rename" class="envform">
+          <input type="hidden" name="from" value="<%= e.name %>">
+          <input type="hidden" name="at" value="<%= it.env || '' %>">
+          <input type="text" name="name" value="<%= e.name %>" required maxlength="40"
+                 autocomplete="off" spellcheck="false" aria-label="新的名稱">
+          <button type="submit" class="textbtn">改名</button>
+        </form>
+      </details>
+    </li>
+    <% }) %>
+  </ol>
+  <% } %>
+  <form method="post" action="/envs" class="envform envnew">
+    <input type="hidden" name="from" value="<%= it.env || '' %>">
+    <input type="text" name="name" required maxlength="40" autocomplete="off" spellcheck="false"
+           placeholder="新的環境名稱" aria-label="新的環境名稱">
+    <button type="submit" class="textbtn">建立</button>
+  </form>
+  <p class="envnote" id="envnote" role="status"></p>
+</div>
 
 <main>
 <%~ it.body %>
@@ -130,11 +185,11 @@
 <% } else { %>
 <%/* 其他地方：隨手記。一個文字框加一個送出鍵，只寫碎片（v3 §4.3）。
       要記成思考或產出就按「展開」，在完整表單上選：思考需要標籤（R11），
-      標籤欄在那裡。 */%>
+      標籤欄在那裡。寫進目前所在的環境（v3.1）。 */%>
 <%
-  /* ?tag= 篩選生效時，隨手記記的就是那一堆底下的東西。槽名也跟著分開：
-     切換標籤等於換一張表單，兩份草稿不該互相覆蓋。 */
-  const quickScope = it.tag ? 'quick:tag:' + it.tag : 'quick';
+  /* 槽名由伺服器算好（見 routes 的 shell）：帶著環境與 ?tag= 篩選，
+     切換環境或標籤等於換一張表單，兩份草稿不該互相覆蓋。 */
+  const quickScope = it.quickScope || 'quick';
 %>
 <div class="quick" id="fabmenu" hidden>
   <%/* 「展開」跟「隨手記」同一排，右對齊。它不是送出的替代方案，是
@@ -152,7 +207,7 @@
       <span>展開</span><%~ include('icon', { name: 'expand' }) %>
     </button>
   </p>
-  <form method="post" action="/quick" id="quickform" data-draft-scope="<%= quickScope %>">
+  <form method="post" action="<%= base %>/quick" id="quickform" data-draft-scope="<%= quickScope %>">
     <%/* 槽名跟著送出去，伺服器原樣掛回導向的 ?d=——建立成功才清除，
          驗證失敗那條路不會經過導向，草稿因此自動留著。 */%>
     <input type="hidden" name="draft_scope" value="<%= quickScope %>">
@@ -166,6 +221,7 @@
 <% } %>
 
 <script src="/static/js/app.js" defer></script>
+<script src="/static/js/envs.js" defer></script>
 <%/* 草稿暫存掛在最後：它要對已經由 typefields.js 開關過的欄位取快照，
      順序錯了會把關掉的欄位一起存進去。 */%>
 <script src="/static/js/draft.js" defer></script>

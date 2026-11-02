@@ -157,7 +157,7 @@ corpus=/tmp/corpus index=/tmp/index.db store=gs://<專案 ID>-corpus iap=require
 - 無痕視窗開 App Engine 網址（`gcloud app describe --format='value(defaultHostname)'`）：先跳 Google 登入，用 `$GMAIL` 登入後看到卡片列表；換另一個 Google 帳號則顯示 `You don't have access`。
 - 登入狀態下開 `/_health`：`store` 是 `gs://…`、`git.enabled` 是 `true`、`unpushed_commits` 是 `0`、`cards_files` 等於 `cards_indexed`。
 - 寫一張測試卡再刪掉：GitHub 語料庫 repo 依序出現 `add <id>` 與 `rm <id>` 的 commit。
-- `gcloud storage ls gs://$PROJECT-corpus/cards/ | wc -l` 等於卡片數。
+- `gcloud storage ls 'gs://$PROJECT-corpus/cards/**' | wc -l` 等於卡片數（`**` 連環境的資料夾 `cards/<環境>/` 一起列）。
 - 刪掉現有執行個體測試換機（`gcloud app instances list` 查 ID，再 `gcloud app instances delete <ID> --service=default --version=<版本>`）：新機器起來後卡片都在，開機對帳為 `上傳 0、下載 0`。
 
 ## 7. 自動部署（GitHub Actions）
@@ -269,4 +269,6 @@ gcloud artifacts repositories set-cleanup-policies gae-standard --location=$REGI
 | `unpushed_commits` 持續增加 | token 過期或權限有誤；更新 secret 後換一台機器 |
 | 寫入回 503「暫時存不進去」 | Cloud Storage 寫入失敗，日誌搜「遠端寫入失敗」檢查 bucket 名稱或權限（第 3 節） |
 | 「更新」頁出現「兩邊都改過，以網頁那份為準」 | 同一張卡在網頁改過尚未 push，又在別處修改並 push；被覆蓋的內容仍留在 git 歷史中 |
-| 日誌「看起來不對（remote 設錯了？），這次一個都不刪」 | 對帳算出要刪除 bucket 上大量卡片而中止，先確認 `CORPUS_REMOTE` 是否指對 repo |
+| 日誌「看起來不對（remote 設錯了？），這次一個都不刪」 | 對帳算出要刪除 bucket 上大量卡片而中止，先確認 `CORPUS_REMOTE` 是否指對 repo。卡片搬進環境的資料夾（同一個 ID 換了路徑）不算刪除，不會觸發這一條 |
+| 「更新」頁的讀不出來的檔案出現「ID 跟 … 重複」 | 同一張卡在兩個資料夾各有一份（在別處搬檔時留下了舊的那份，或環境改名還沒推上去就換了機器）；在 clone 裡刪掉多的那份、push，再按「更新」 |
+| 拖曳排好的環境順序，換了機器之後回到上一版 | 順序（語料庫的 `envs.yml`）只經 git 保存、不進 bucket；push 失敗時又剛好換了機器，最後一次排序就沒留下。先照 `unpushed_commits` 那一列處理 push，再重新拖一次；卡片不受影響 |

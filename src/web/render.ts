@@ -139,6 +139,16 @@ export function safeHref(url: string | null): string | null {
   }
 }
 
+/** 側欄的一個環境。 */
+export interface EnvNav {
+  /** 空字串是沒有環境。 */
+  name: string;
+  label: string;
+  href: string;
+  /** 目前所在的就是它。 */
+  on: boolean;
+}
+
 export interface PageOptions {
   title: string;
   nav?: string;
@@ -150,8 +160,17 @@ export interface PageOptions {
    * 兩者都在右下，但問的是完全不同的問題。
    */
   fab?: false | { actions?: { label: string; href: string; rel: string }[] };
-  /** 側欄的工作狀態清單。由路由填，模板只 forEach。 */
-  lists?: { nav: string; href: string; name: string }[];
+  /**
+   * 目前所在的環境（v3.1），空字串是沒有環境。側欄的每一項、隨手記、
+   * 標籤連結都以它為準；卡片頁的外殼以那張卡所屬的環境為準。
+   */
+  env?: string;
+  /** 目前環境的網址前綴（present.ts 的 envBase）。模板拼網址時接在它後面。 */
+  base?: string;
+  /** 側欄的環境清單，已經排好順序。由路由填，模板只 forEach。 */
+  envs?: EnvNav[];
+  /** 隨手記的草稿槽。槽名帶著環境與標籤篩選，兩個環境的隨手記不共用一格。 */
+  quickScope?: string;
   /**
    * 側欄下半列什麼（v3 §5）：文章一覽列最近的標籤（預設）；卡片頁與編輯介面
    * （編輯頁、建立表單）列最近的卡片。路由只說要哪一種，清單由 shell 填。

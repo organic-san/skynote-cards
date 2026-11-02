@@ -33,7 +33,7 @@
 <section class="<%= it.source ? 'pane pane-form' : '' %>">
 
 <% if (it.expand) { %>
-<p class="back"><a class="textbtn" href="/">← 返回</a></p>
+<p class="back"><a class="textbtn" href="<%= it.base %>/">← 返回</a></p>
 <% } %>
 
 <% if (it.errors.length) { %>
@@ -44,7 +44,7 @@
 
 <h1 class="formtitle"><%= it.action %></h1>
 
-<form method="post" action="/new" class="newform" id="newform"
+<form method="post" action="<%= it.base %>/new" class="newform" id="newform"
       data-specs='<%= JSON.stringify(it.specs) %>'
       data-draft-scope="<%= it.draftScope %>"
       <% if (it.draftClear) { %>data-draft-clear="<%= it.draftClear %>"<% } %>
@@ -77,6 +77,20 @@
     </label>
     <% }) %>
   </div>
+  <% } %>
+
+  <%/* v3.1：新卡落在哪個環境。只有從卡片頁 + 進來、而且不只一個環境時才問：
+       預設是來源卡的環境，可以改選——跨環境衍生是明確的需求。
+       其他入口（隨手記、追加外部資料、裸的 /new）落在目前所在的環境，由網址決定。 */%>
+  <% if (it.envs.length) { %>
+  <label class="envpick">
+    <span>環境</span>
+    <select name="env">
+      <% it.envs.forEach(function (e) { %>
+      <option value="<%= e.name %>" <%= e.name === it.values.env ? 'selected' : '' %>><%= e.label %></option>
+      <% }) %>
+    </select>
+  </label>
   <% } %>
 
   <%/* 碎片只有一個大文字框，不區分標題與內文。那段話會存進 title，
@@ -135,6 +149,7 @@
   <div class="field<%= it.spec.links ? '' : ' off' %>" id="linksfield"
        data-rels='<%= JSON.stringify(it.relTable) %>'
        data-default-rels='<%= JSON.stringify(it.default_rels) %>'
+       data-env="<%= it.values.env %>"
        data-card-type="<%= it.values.type %>">
     <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>

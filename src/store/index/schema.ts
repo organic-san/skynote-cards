@@ -21,11 +21,16 @@ export interface IndexDb {
  * schema 改版就換這個號碼。索引只是投影，發現版本不合就整個丟掉重建，
  * 不需要也不應該寫遷移腳本。
  */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
+/*
+  env 是卡片所在的環境（v3.1），也就是 cards/ 底下那一層資料夾的名字；
+  空字串是沒有環境。卡片檔裡沒有這個欄位，它是從路徑投影來的。
+*/
 const SCHEMA = `
 CREATE TABLE cards (
   id          TEXT PRIMARY KEY,
+  env         TEXT NOT NULL DEFAULT '',
   type        TEXT NOT NULL,
   created     TEXT NOT NULL,
   title       TEXT NOT NULL,
@@ -55,6 +60,7 @@ CREATE INDEX idx_links_source ON links(source_id);
 CREATE INDEX idx_tags_tag     ON tags(tag);
 CREATE INDEX idx_cards_type   ON cards(type);
 CREATE INDEX idx_cards_created ON cards(created);
+CREATE INDEX idx_cards_env    ON cards(env, created);
 
 CREATE VIRTUAL TABLE cards_fts USING fts5(
   id UNINDEXED, title, body, tokenize='unicode61'

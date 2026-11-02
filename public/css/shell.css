@@ -81,7 +81,7 @@ body:has(.drawer.open) .menubtn {
 }
 
 /*
-  側欄分三段：首頁、四份工作清單、動作與工具。
+  側欄分三段：首頁、環境（v3.1，原本是四份工作清單）、動作與工具。
   分隔線畫在 .drawernav 的上緣，所以每多一個 .drawernav 就多一條線——
   三段之間因此有兩條線，不必另外標記段落。
 */
@@ -172,19 +172,168 @@ body:has(.drawer.open) .menubtn {
 .sidetags a.on { background: var(--selected-bg); color: var(--text); }
 
 /*
-  U19：內容欄靠左對齊，距側欄右緣一個固定間距。
-  置中會讓整個版面右漂、側欄與內容看起來不屬於同一個版面。
+  環境（v3.1）：原本四份工作清單的位置。清單只拿來切換：每一項跟上下的去處同一種樣式，
+  目前所在的那一個用 U32 的 selected 底色標起來。（無環境）是過渡的狀態，字退一階。
 */
-@media (min-width: 60rem) {
-  .menubtn, .drawerclose, .scrim { display: none; }
-  .drawer { transform: none; }
-  /* 側欄是 fixed，用 body 的左內距把它的寬度讓出來。 */
-  body { padding-left: var(--drawer-w); }
+.drawerenvs a.envroot:not(.on) { color: var(--text-3); }
+
+/* 標題那一排：左邊是「環境」，右邊是打開面板的齒輪。
+   選擇器帶著 .drawernav，才蓋得過「更新」那顆按鈕撐滿整列的那一套。 */
+.envhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 var(--sp-1);
+}
+.envhead .indexhead { margin: 0; }
+.drawernav .envgear {
+  width: auto;
+  padding: var(--sp-1);
+  color: var(--text-3);
+}
+.drawernav .envgear:hover { color: var(--text); }
+.drawernav .envgear .icon { width: var(--sp-4); height: var(--sp-4); color: inherit; }
+
+/*
+  環境面板：新增、排序、改名。瀏覽器內建的 popover，預設就在畫面正中央；
+  外觀跟右下的隨手記同一套浮層。
+*/
+.envpanel {
+  width: min(var(--envpanel-w), calc(100vw - var(--sp-7)));
+  max-height: calc(100vh - var(--sp-8));
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-float);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-float);
+  animation: pop var(--motion-dur) var(--motion-ease);
+}
+.envpanel::backdrop { background: var(--scrim); }
+
+.envpanelhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 var(--sp-2);
+}
+.envpanelhead h2 { margin: 0; font-size: var(--fs-2); font-weight: 500; }
+.envpanelhead .textbtn { font-size: var(--fs-3); line-height: 1; color: var(--text-3); }
+
+/* 每一列：把手、名稱，右緣是改名鈕。改名鈕疊在那一列的右上角，
+   打開之後表單排在那一列底下：details 自己佔一整行，關著時沒有高度。 */
+.envsort { list-style: none; margin: 0; padding: 0; }
+.envitem {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+}
+/* 名稱的截斷停在改名鈕之前。 */
+.envname {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-right: var(--sp-7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-2);
+}
+.envitem .envedit { flex: 1 0 100%; }
+
+/* 把手。觸控時拖的是這一列，不是捲動整個面板（touch-action）。
+   沒有 JS 就拖不動、只有一個環境就沒有東西可排：都不畫，但留著位置，名稱才對得齊。 */
+.envgrip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sp-6);
+  height: var(--sp-7);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-field);
+  background: none;
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.envgrip:hover { background: var(--hover-bg); color: var(--text-2); }
+.envgrip .icon { width: var(--sp-4); height: var(--sp-4); }
+html:not(.js) .envgrip,
+.envitem:only-child .envgrip { visibility: hidden; }
+
+/* 拿起來的那一列浮在其他列上面，跟著指標走（位移由 envs.js 給）。 */
+.envitem.dragging { z-index: 1; box-shadow: var(--shadow-float); }
+.envitem.dragging .envgrip { cursor: grabbing; }
+
+.envedit > summary {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: var(--sp-7);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-field);
+  color: var(--text-3);
+  cursor: pointer;
+  list-style: none;
+}
+.envedit > summary::-webkit-details-marker { display: none; }
+.envedit > summary:hover,
+.envedit[open] > summary { background: var(--hover-bg); color: var(--text); }
+.envedit .icon { width: var(--sp-4); height: var(--sp-4); }
+
+/* 名稱欄加一顆送出鈕。改名的表單對齊名稱；新增的在清單底下另起一段。 */
+.envform { display: flex; gap: var(--sp-1); }
+.envedit .envform { margin: 0 0 var(--sp-2) var(--sp-6); }
+.envsort + .envnew { margin-top: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.envform input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--surface-raised);
+  font: inherit;
+  font-size: var(--fs-2);
+  color: var(--text);
+}
+.envform .textbtn { flex: 0 0 auto; }
+
+/* 拖曳的順序沒存成功時的說明。 */
+.envnote { margin: var(--sp-2) 0 0; font-size: var(--fs-1); color: var(--alert); }
+.envnote:empty { display: none; }
+
+/*
+  側欄常駐（v3.1）。
+
+  原本 60rem 以上才常駐。1080 寬的直立螢幕在系統縮放之下（125% 只剩 864px）
+  會落在這條線之下：側欄收起來，內容欄又靠左，右邊空一大片。
+  現在 45rem（720px）起就常駐：扣掉側欄還有 480px，內容欄的左右留白降一階就排得下。
+
+  有來源面板的分欄頁（從卡片頁 + 進來的表單）維持 60rem：那一頁 50rem 起左右分欄，
+  側欄要是在 45–60rem 之間常駐，兩欄就各剩不到 300px。
+*/
+@media (min-width: 45rem) {
+  body:not(:has(.split)) { padding-left: var(--drawer-w); }
+  body:not(:has(.split)) :is(.menubtn, .drawerclose, .scrim) { display: none; }
+  body:not(:has(.split)) .drawer { transform: none; }
+  /* 內容欄在側欄右邊那塊區域裡置中（置中本身寫在 base.css 的 main）。 */
   main {
-    max-width: calc(var(--content-w) + var(--content-gap) * 2);
-    margin-inline: auto;
+    --main-gap: var(--sp-5);
+    max-width: calc(var(--content-w) + var(--main-gap) * 2);
     padding-top: var(--page-top);
-    padding-inline: var(--content-gap);
+    padding-inline: var(--main-gap);
   }
+}
+@media (min-width: 60rem) {
+  body:has(.split) { padding-left: var(--drawer-w); }
+  body:has(.split) :is(.menubtn, .drawerclose, .scrim) { display: none; }
+  body:has(.split) .drawer { transform: none; }
+  main { --main-gap: var(--content-gap); }
 }
 }

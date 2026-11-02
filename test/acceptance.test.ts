@@ -166,7 +166,7 @@ describe('驗收條件', () => {
       feed: (await h.app.fastify.inject('/')).body,
       card: (await h.app.fastify.inject(`/c/${a}`)).body,
       tags: (await h.app.fastify.inject('/tags')).body,
-      pending: (await h.app.fastify.inject('/pending')).body,
+      search: (await h.app.fastify.inject(`/search?q=${encodeURIComponent('內文')}`)).body,
     });
     const before = await snapshot(first);
     await first.close();
@@ -288,15 +288,6 @@ describe('驗收條件', () => {
     const page = (await h.app.fastify.inject(`/c/${a}`)).body;
     assert.ok(!page.includes(`/c/${a}/edit`), '編輯按鈕要收起來');
     assert.ok(!page.includes('尚可編輯'), '定案的卡片不掛反芻狀態');
-
-    // 同一個判準也把它移出「沉澱」清單。
-    const page2 = (await h.app.fastify.inject('/settling')).body;
-    // 側欄每一頁都在，也會列出東西（最近的標籤或卡片）——要看的是清單本身。
-    const settling = page2.slice(page2.indexOf('<main'), page2.indexOf('</main>'));
-    // 用 ID 而不是標題來判斷：B 的 meta 行會把 about 目標（也就是 A）的標題
-    // 印出來，拿標題比對會誤判成「A 還在清單裡」。
-    assert.ok(!settling.includes(`/c/${a}`), '定案的卡片不再是「還可以動的東西」');
-    assert.ok(settling.includes('B 重述 A'), '還沒被指向的 B 仍在清單裡');
   });
 
   test('9. 反芻期內、沒被指向的卡片可以刪除，其餘都不行', async () => {
