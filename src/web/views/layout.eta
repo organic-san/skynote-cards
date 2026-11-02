@@ -14,13 +14,15 @@
 <link rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap">
 <%/* 樣式依職責分檔，順序由 tokens.css 裡的 @layer 宣告保證，不靠這裡的先後。
-     沒有打包步驟——改完存檔就生效，這是單人開發時很值錢的性質。 */%>
-<link rel="stylesheet" href="/static/css/tokens.css">
-<link rel="stylesheet" href="/static/css/base.css">
-<link rel="stylesheet" href="/static/css/shell.css">
-<link rel="stylesheet" href="/static/css/list.css">
-<link rel="stylesheet" href="/static/css/card.css">
-<link rel="stylesheet" href="/static/css/form.css">
+     沒有打包步驟——改完存檔就生效，這是單人開發時很值錢的性質。
+     網址經過 it.asset，帶著內容的版本，瀏覽器可以長期快取：換頁時不必等 CSS
+     回伺服器驗證，包在 Ferdium 這類 webview 裡才不會閃一下（web/assets.ts）。 */%>
+<link rel="stylesheet" href="<%= it.asset('/static/css/tokens.css') %>">
+<link rel="stylesheet" href="<%= it.asset('/static/css/base.css') %>">
+<link rel="stylesheet" href="<%= it.asset('/static/css/shell.css') %>">
+<link rel="stylesheet" href="<%= it.asset('/static/css/list.css') %>">
+<link rel="stylesheet" href="<%= it.asset('/static/css/card.css') %>">
+<link rel="stylesheet" href="<%= it.asset('/static/css/form.css') %>">
 </head>
 <body>
 
@@ -220,10 +222,10 @@
 <% } %>
 <% } %>
 
-<script src="/static/js/app.js" defer></script>
-<script src="/static/js/envs.js" defer></script>
+<script src="<%= it.asset('/static/js/app.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/envs.js') %>" defer></script>
 <%/* 草稿暫存掛在最後：它要對已經由 typefields.js 開關過的欄位取快照，
      順序錯了會把關掉的欄位一起存進去。 */%>
-<script src="/static/js/draft.js" defer></script>
+<script src="<%= it.asset('/static/js/draft.js') %>" defer></script>
 </body>
 </html>

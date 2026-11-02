@@ -78,9 +78,9 @@
   <% } %>
 </article>
 
-<script src="/static/js/copy.js" defer></script>
-<script src="/static/js/download.js" defer></script>
-<script src="/static/js/tasks.js" defer></script>
+<script src="<%= it.asset('/static/js/copy.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/download.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/tasks.js') %>" defer></script>
 
 <%/* U13：關聯區塊維持縱向的體感式結構。上游在上、下游在下，
      中間是「你在這裡」，方向由**空間位置**表達而不是由文字說明表達。

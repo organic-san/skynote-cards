@@ -2,12 +2,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 import MarkdownIt from 'markdown-it';
+import { assetUrl } from './assets.ts';
 
 /** 伺服器端渲染：模板、Markdown、以及少數輸出用的小工具。 */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const VIEWS_DIR = path.join(here, 'views');
-export const PUBLIC_DIR = path.join(here, '..', '..', 'public');
 
 export const eta = new Eta({ views: VIEWS_DIR, cache: process.env.NODE_ENV === 'production' });
 
@@ -192,8 +192,12 @@ export interface PageOptions {
   tag?: string;
 }
 
+/**
+ * 頁面與外框都拿得到 `asset`：模板裡的 CSS 與 JS 一律寫成
+ * `<%= it.asset('/static/…') %>`，網址才帶著版本、可以長期快取（web/assets.ts）。
+ */
 export function renderPage(view: string, data: Record<string, unknown>, opts: PageOptions): string {
-  const body = eta.render(view, data);
+  const body = eta.render(view, { ...data, asset: assetUrl });
   const fab = opts.fab === false ? null : (opts.fab ?? {});
-  return eta.render('layout', { ...opts, fab, body });
+  return eta.render('layout', { ...opts, fab, body, asset: assetUrl });
 }
