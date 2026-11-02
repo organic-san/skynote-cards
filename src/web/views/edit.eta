@@ -97,9 +97,9 @@
 
 <%/* 連結列跟建立頁共用同一支——收窄關係、搜尋目標、加一列，
      那是同一件事，不該有兩份會慢慢長歪的實作。 */%>
-<script src="/static/js/links.js" defer></script>
-<script src="/static/js/tags.js" defer></script>
-<script src="/static/js/editform.js" defer></script>
+<script src="<%= it.asset('/static/js/links.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/tags.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/editform.js') %>" defer></script>
 
 <%/* 新增的那幾列長什麼樣。跟建立頁同一份結構，選項由 links.js 畫。 */%>
 <template id="linkrowtpl">

@@ -222,7 +222,7 @@
   </div>
 </template>
 
-<script src="/static/js/links.js" defer></script>
-<script src="/static/js/tags.js" defer></script>
-<script src="/static/js/typefields.js" defer></script>
-<script src="/static/js/sourcepane.js" defer></script>
+<script src="<%= it.asset('/static/js/links.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/tags.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/typefields.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/sourcepane.js') %>" defer></script>

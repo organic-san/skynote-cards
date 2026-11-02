@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { cardExists, findCard, readCard } from '../src/store/files.ts';
 import { formatEnvOrder, readEnvOrder } from '../src/store/envorder.ts';
 import { parseList } from '../src/store/yamllist.ts';
 import { checkEnvName, ENV_NAME_MAX } from '../src/service/envs.ts';
+import { IMMUTABLE, staticCacheControl, versionOf } from '../src/web/assets.ts';
 import { createCard, gitInit, makeWorkspace, start, type Harness } from './helpers.ts';
 
 /** v3.1 規格（spec/Append_cards_v3.1_spec.md）：環境，以及同批的介面調整。 */
@@ -427,7 +429,7 @@ describe('§2.3–2.5、§2.8 網址、各功能的範圍與側欄', () => {
     assert.ok(p.includes('<input type="hidden" name="at" value="繪圖">'), '沒改成時留在這個環境');
     assert.ok(!p.includes('（無環境）'));
     assert.ok(p.includes('<form method="post" action="/envs" class="envform envnew">'));
-    assert.ok(page.includes('<script src="/static/js/envs.js" defer></script>'));
+    assert.match(page, /<script src="\/static\/js\/envs\.js\?v=[0-9a-f]{10}" defer><\/script>/);
 
     // 還沒有任何環境：面板裡只有新增。
     const empty = await fresh();
@@ -909,6 +911,50 @@ describe('§3 側欄移除四份工作清單', () => {
 });
 
 // ---------------------------------------------------------------- 介面調整
+
+describe('§4.3 換頁不閃：CSS 與 JS 帶著版本，可以長期快取', () => {
+  test('頁面上的 CSS 與 JS 帶著內容的版本；版本對得上才長期快取，其他照舊 no-cache', async () => {
+    const h = await fresh();
+    await createCard(h, { type: 'original', title: '一張' });
+    const pages = [(await h.app.fastify.inject('/')).body, (await h.app.fastify.inject('/new?type=original')).body];
+    const urls = new Set(pages.flatMap((p) => [...p.matchAll(/(?:href|src)="(\/static\/(?:css|js)\/[^"]+)"/g)].map((m) => m[1] as string)));
+    assert.ok(urls.size >= 12, [...urls].join(' '));
+    for (const url of urls) {
+      const m = /^\/static\/(.+)\?v=([0-9a-f]{10})$/.exec(url);
+      assert.ok(m, `${url} 沒有帶版本`);
+      const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join('public', m[1] as string))).digest('hex');
+      assert.equal(m[2], sha.slice(0, 10), url);
+      const res = await h.app.fastify.inject(url);
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.headers['cache-control'], IMMUTABLE, url);
+    }
+    // 不帶版本、版本對不上（部署時舊機器接到新頁面發出的請求）：照舊每次回來驗證。
+    for (const url of ['/static/css/base.css', '/static/css/base.css?v=0000000000']) {
+      assert.equal((await h.app.fastify.inject(url)).headers['cache-control'], 'no-cache', url);
+    }
+  });
+
+  test('檔案一改，版本跟著換；舊版本不再長期快取', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'append-cards-assets-'));
+    const file = path.join(dir, 'a.css');
+    fs.writeFileSync(file, 'a { color: red; }');
+    const before = versionOf(file);
+    fs.writeFileSync(file, 'a { color: blue; padding: 0; }');
+    const after = versionOf(file);
+    assert.ok(before && after && before !== after);
+    assert.equal(staticCacheControl(`/static/a.css?v=${before}`, file), 'no-cache');
+    assert.equal(staticCacheControl(`/static/a.css?v=${after}`, file), IMMUTABLE);
+    assert.equal(versionOf(path.join(dir, 'missing.css')), null);
+  });
+
+  test('模板裡的 CSS 與 JS 都經過 it.asset：漏掉的那一支，每換一頁就要回伺服器驗證一次', () => {
+    const dir = path.join('src', 'web', 'views');
+    for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.eta'))) {
+      const bare = fs.readFileSync(path.join(dir, name), 'utf8').match(/(?:src|href)="\/static\/(?:css|js)\//g) ?? [];
+      assert.deepEqual(bare, [], name);
+    }
+  });
+});
 
 describe('§4 版面與配色', () => {
   const css = (name: string) => fs.readFileSync(path.join('public', 'css', `${name}.css`), 'utf8');

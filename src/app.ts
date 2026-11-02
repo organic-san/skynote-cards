@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import type { ServerResponse } from 'node:http';
 import Fastify, { type FastifyInstance } from 'fastify';
 import formbody from '@fastify/formbody';
 import fstatic from '@fastify/static';
@@ -10,7 +11,7 @@ import { GitBackup, ensureCorpusRepo } from './store/backup.ts';
 import { NO_STORE, type CorpusStore } from './store/remote.ts';
 import { updateCorpus, type UpdateOutcome } from './service/update.ts';
 import { IAP_HEADER, type IapVerifier } from './web/iap.ts';
-import { PUBLIC_DIR } from './web/render.ts';
+import { PUBLIC_DIR, staticCacheControl } from './web/assets.ts';
 import { WARMUP_PATH, registerRoutes } from './web/routes.ts';
 
 /** 組裝根：把設定、索引、備份、路由接在一起，其他什麼都不做。 */
@@ -65,13 +66,16 @@ export function createApp(opts: AppOptions = {}): App {
   // public/css/*.css 與那幾支 js 是直接從 public/ 讀的，改完不需要重新建置。
   // 但只要中間有任何一層（瀏覽器、Cloudflare 邊緣）把舊版留著，改了就看不到，
   // 而且症狀是「版面沒變」這種很難聯想到快取的樣子。
-  // no-cache 不是不存，是每次都要回來驗證：沒變就回 304，幾乎不花流量，
-  // 但永遠不會拿到舊的。
+  // 模板裡的網址帶著內容的版本（web/assets.ts）：版本對得上才長期快取，
+  // 換頁時 CSS 不必回來驗證，包在 webview 裡也不會閃。其他一律 no-cache——
+  // 不是不存，是每次都要回來驗證：沒變就回 304，幾乎不花流量，但永遠不會拿到舊的。
   fastify.register(fstatic, {
     root: PUBLIC_DIR,
     prefix: '/static/',
     cacheControl: false,
-    setHeaders: (res) => res.setHeader('cache-control', 'no-cache'),
+    // 拿到的是 reply.raw（Node 的 ServerResponse，帶著請求），型別只宣告了幾個方法。
+    setHeaders: (res, file) =>
+      res.setHeader('cache-control', staticCacheControl((res as unknown as ServerResponse).req.url, file)),
   });
 
   // 索引不存在，或索引筆數跟卡片檔案數對不上，就整個重建。
