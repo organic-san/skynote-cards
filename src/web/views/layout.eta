@@ -15,14 +15,14 @@
       href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap">
 <%/* 樣式依職責分檔，順序由 tokens.css 裡的 @layer 宣告保證，不靠這裡的先後。
      沒有打包步驟——改完存檔就生效，這是單人開發時很值錢的性質。
-     網址經過 it.asset，帶著內容的版本，瀏覽器可以長期快取：換頁時不必等 CSS
-     回伺服器驗證，包在 Ferdium 這類 webview 裡才不會閃一下（web/assets.ts）。 */%>
-<link rel="stylesheet" href="<%= it.asset('/static/css/tokens.css') %>">
-<link rel="stylesheet" href="<%= it.asset('/static/css/base.css') %>">
-<link rel="stylesheet" href="<%= it.asset('/static/css/shell.css') %>">
-<link rel="stylesheet" href="<%= it.asset('/static/css/list.css') %>">
-<link rel="stylesheet" href="<%= it.asset('/static/css/card.css') %>">
-<link rel="stylesheet" href="<%= it.asset('/static/css/form.css') %>">
+     內容直接嵌進每一頁，不另外請求：正式環境的 IAP 讓每個 CSS 請求都得回伺服器
+     驗證，包在 Ferdium 這類 webview 裡，那一來一回就是換頁時的一閃（web/assets.ts）。 */%>
+<style><%~ it.inlineCss('/static/css/tokens.css') %></style>
+<style><%~ it.inlineCss('/static/css/base.css') %></style>
+<style><%~ it.inlineCss('/static/css/shell.css') %></style>
+<style><%~ it.inlineCss('/static/css/list.css') %></style>
+<style><%~ it.inlineCss('/static/css/card.css') %></style>
+<style><%~ it.inlineCss('/static/css/form.css') %></style>
 </head>
 <body>
 

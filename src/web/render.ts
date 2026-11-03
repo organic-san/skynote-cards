@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 import MarkdownIt from 'markdown-it';
-import { assetUrl } from './assets.ts';
+import { assetUrl, inlineCss } from './assets.ts';
 
 /** 伺服器端渲染：模板、Markdown、以及少數輸出用的小工具。 */
 
@@ -193,11 +193,12 @@ export interface PageOptions {
 }
 
 /**
- * 頁面與外框都拿得到 `asset`：模板裡的 CSS 與 JS 一律寫成
- * `<%= it.asset('/static/…') %>`，網址才帶著版本、可以長期快取（web/assets.ts）。
+ * 頁面與外框都拿得到 `asset` 與 `inlineCss`（web/assets.ts）：CSS 嵌進頁面，
+ * JS 寫成 `<%= it.asset('/static/js/…') %>`，網址帶著版本。
  */
 export function renderPage(view: string, data: Record<string, unknown>, opts: PageOptions): string {
-  const body = eta.render(view, { ...data, asset: assetUrl });
+  const helpers = { asset: assetUrl, inlineCss };
+  const body = eta.render(view, { ...data, ...helpers });
   const fab = opts.fab === false ? null : (opts.fab ?? {});
-  return eta.render('layout', { ...opts, fab, body, asset: assetUrl });
+  return eta.render('layout', { ...opts, fab, body, ...helpers });
 }

@@ -66,9 +66,10 @@ export function createApp(opts: AppOptions = {}): App {
   // public/css/*.css 與那幾支 js 是直接從 public/ 讀的，改完不需要重新建置。
   // 但只要中間有任何一層（瀏覽器、Cloudflare 邊緣）把舊版留著，改了就看不到，
   // 而且症狀是「版面沒變」這種很難聯想到快取的樣子。
-  // 模板裡的網址帶著內容的版本（web/assets.ts）：版本對得上才長期快取，
-  // 換頁時 CSS 不必回來驗證，包在 webview 裡也不會閃。其他一律 no-cache——
-  // 不是不存，是每次都要回來驗證：沒變就回 304，幾乎不花流量，但永遠不會拿到舊的。
+  // CSS 已經嵌進頁面；JS 的網址帶著內容的版本（web/assets.ts），版本對得上才長期快取。
+  // 其他一律 no-cache——不是不存，是每次都要回來驗證：沒變就回 304，幾乎不花流量，
+  // 但永遠不會拿到舊的。正式環境的 IAP 會把這裡給的快取標頭都蓋成 no-cache，長期快取
+  // 只在沒有 IAP 的部署（本機、VM）有效；CSS 改成嵌進頁面就是為了這個。
   fastify.register(fstatic, {
     root: PUBLIC_DIR,
     prefix: '/static/',

@@ -912,13 +912,29 @@ describe('§3 側欄移除四份工作清單', () => {
 
 // ---------------------------------------------------------------- 介面調整
 
-describe('§4.3 換頁不閃：CSS 與 JS 帶著版本，可以長期快取', () => {
-  test('頁面上的 CSS 與 JS 帶著內容的版本；版本對得上才長期快取，其他照舊 no-cache', async () => {
+describe('§4.3 換頁不閃：CSS 嵌進頁面，JS 帶著版本', () => {
+  test('CSS 嵌進每一頁、去掉註解，順序跟原本的六支一樣；頁面不再另外請求 CSS', async () => {
+    const h = await fresh();
+    const page = (await h.app.fastify.inject('/')).body;
+    const head = page.slice(0, page.indexOf('</head>'));
+    assert.ok(!/<link rel="stylesheet" href="\/static\//.test(head), '沒有另外請求的 CSS');
+    const styles = [...head.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1] as string);
+    assert.equal(styles.length, 6);
+    assert.match(styles[0] as string, /@layer tokens, base, shell, components;/, 'tokens.css 在最前面，層的順序才宣告得到');
+    for (const css of styles) assert.ok(!css.includes('/*'), '註解去掉了');
+    const strip = (name: string) =>
+      fs.readFileSync(path.join('public', 'css', `${name}.css`), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.deepEqual(styles, ['tokens', 'base', 'shell', 'list', 'card', 'form'].map(strip));
+    // 獨立的檔案照樣拿得到（直接開來看、或別的工具要讀）。
+    assert.equal((await h.app.fastify.inject('/static/css/base.css')).statusCode, 200);
+  });
+
+  test('JS 帶著內容的版本；版本對得上才長期快取，其他照舊 no-cache', async () => {
     const h = await fresh();
     await createCard(h, { type: 'original', title: '一張' });
     const pages = [(await h.app.fastify.inject('/')).body, (await h.app.fastify.inject('/new?type=original')).body];
-    const urls = new Set(pages.flatMap((p) => [...p.matchAll(/(?:href|src)="(\/static\/(?:css|js)\/[^"]+)"/g)].map((m) => m[1] as string)));
-    assert.ok(urls.size >= 12, [...urls].join(' '));
+    const urls = new Set(pages.flatMap((p) => [...p.matchAll(/src="(\/static\/js\/[^"]+)"/g)].map((m) => m[1] as string)));
+    assert.ok(urls.size >= 6, [...urls].join(' '));
     for (const url of urls) {
       const m = /^\/static\/(.+)\?v=([0-9a-f]{10})$/.exec(url);
       assert.ok(m, `${url} 沒有帶版本`);
@@ -929,7 +945,7 @@ describe('§4.3 換頁不閃：CSS 與 JS 帶著版本，可以長期快取', ()
       assert.equal(res.headers['cache-control'], IMMUTABLE, url);
     }
     // 不帶版本、版本對不上（部署時舊機器接到新頁面發出的請求）：照舊每次回來驗證。
-    for (const url of ['/static/css/base.css', '/static/css/base.css?v=0000000000']) {
+    for (const url of ['/static/js/app.js', '/static/js/app.js?v=0000000000']) {
       assert.equal((await h.app.fastify.inject(url)).headers['cache-control'], 'no-cache', url);
     }
   });
@@ -947,11 +963,12 @@ describe('§4.3 換頁不閃：CSS 與 JS 帶著版本，可以長期快取', ()
     assert.equal(versionOf(path.join(dir, 'missing.css')), null);
   });
 
-  test('模板裡的 CSS 與 JS 都經過 it.asset：漏掉的那一支，每換一頁就要回伺服器驗證一次', () => {
+  test('模板裡沒有另外請求的 CSS，JS 都經過 it.asset：IAP 後面每一個擋住第一格的請求都是一閃', () => {
     const dir = path.join('src', 'web', 'views');
     for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.eta'))) {
-      const bare = fs.readFileSync(path.join(dir, name), 'utf8').match(/(?:src|href)="\/static\/(?:css|js)\//g) ?? [];
-      assert.deepEqual(bare, [], name);
+      const text = fs.readFileSync(path.join(dir, name), 'utf8');
+      assert.deepEqual(text.match(/<link rel="stylesheet" href="(?!https:)/g) ?? [], [], `${name}：CSS 要嵌進頁面`);
+      assert.deepEqual(text.match(/src="\/static\/js\//g) ?? [], [], `${name}：JS 要經過 it.asset`);
     }
   });
 });

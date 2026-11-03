@@ -902,7 +902,7 @@ describe('介面', () => {
     assert.match(res.body, /name="title" autocomplete="off" value=""/, '標題留給完整表單去填');
 
     // 思考與產出的欄位一樣，所以展開之後二選一（v3 §4.3），預設思考。
-    assert.ok(!res.body.includes('typefixed'), '不鎖型別');
+    assert.ok(!res.body.includes('class="typefixed"'), '不鎖型別');
     const pick = res.body.slice(res.body.indexOf('class="typepick"'), res.body.indexOf('</div>', res.body.indexOf('class="typepick"')));
     assert.deepEqual([...pick.matchAll(/name="type" value="(\w+)"/g)].map((m) => m[1]), ['thinking', 'output']);
     assert.match(pick, /value="thinking" required checked/, '預設是思考');
@@ -1146,7 +1146,7 @@ describe('介面', () => {
 
     const page = (await h.app.fastify.inject(`/c/${c}`)).body;
     // U12：關聯區塊在內文之後，所以上游那一疊要從 .links 裡面找。
-    const refs = page.slice(page.indexOf('class="stream up"'), page.indexOf('youarehere'));
+    const refs = page.slice(page.indexOf('class="stream up"'), page.indexOf('class="youarehere"'));
     assert.ok(refs.includes('B 重述 A'));
     assert.ok(refs.includes('A 原文'), '依賴鏈要能一路追到底');
   });
@@ -1289,7 +1289,7 @@ describe('關係怎麼讀', () => {
 
     // B --about--> A。在 B 上，A 是上游：「關聯自 A」
     const onB = (await h.app.fastify.inject(`/c/${b}`)).body;
-    const up = onB.slice(onB.indexOf('class="stream up"'), onB.indexOf('youarehere'));
+    const up = onB.slice(onB.indexOf('class="stream up"'), onB.indexOf('class="youarehere"'));
     assert.ok(up.includes('關聯自'), '上游用「自」那一套說法');
     assert.ok(!up.includes('關聯出'));
     assert.ok(
@@ -1316,7 +1316,7 @@ describe('關係怎麼讀', () => {
     });
 
     const onR = (await h.app.fastify.inject(`/c/${r}`)).body;
-    const up = onR.slice(onR.indexOf('class="stream up"'), onR.indexOf('youarehere'));
+    const up = onR.slice(onR.indexOf('class="stream up"'), onR.indexOf('class="youarehere"'));
     assert.ok(up.includes('反駁') && !up.includes('被反駁'), '這張是反駁方');
 
     const onT = (await h.app.fastify.inject(`/c/${t}`)).body;
@@ -1353,7 +1353,7 @@ describe('關係怎麼讀', () => {
 
     // 上游：整個翻過來，離卡片近的（B）在下，遠的（A）在上。
     const onC = (await h.app.fastify.inject(`/c/${c}`)).body;
-    const up = onC.slice(onC.indexOf('class="stream up"'), onC.indexOf('youarehere'));
+    const up = onC.slice(onC.indexOf('class="stream up"'), onC.indexOf('class="youarehere"'));
     assert.ok(up.indexOf('A 原文') < up.indexOf('B 重述 A'), '上游由遠而近往下長');
 
     // 軌道跟著鏡射一次，轉角才會翻到正確的一側。
@@ -1803,7 +1803,7 @@ describe('卡片頁的方向', () => {
     const page = (await h.app.fastify.inject(`/c/${b}`)).body;
     const card = page.indexOf('<article');
     const up = page.indexOf('class="stream up"');
-    const here = page.indexOf('youarehere');
+    const here = page.indexOf('class="youarehere"');
     const down = page.indexOf('class="stream down"');
 
     assert.ok(card > -1 && up > -1 && here > -1 && down > -1, '四塊都要在');
@@ -2014,7 +2014,7 @@ describe('碎片沒有標題', () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'fleeting', title: '值得再想的一句', body: '' });
     const page = (await h.app.fastify.inject(`/new?to=${id}&type=thinking&rel=updates`)).body;
-    const pane = page.slice(page.indexOf('pane-source'), page.indexOf('quotebar'));
+    const pane = page.slice(page.indexOf('class="pane pane-source"'), page.indexOf('class="quotebar"'));
 
     assert.ok(!pane.includes('<h1'), '來源面板也不該把碎片印成標題');
     assert.ok(pane.includes('值得再想的一句'), '那段話要在面板的內文裡');
