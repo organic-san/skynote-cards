@@ -6,6 +6,21 @@
 html { -webkit-text-size-adjust: 100%; }
 
 /*
+  換頁時舊畫面留著等下一頁（nav.js），等超過 0.4 秒才標上 aria-busy：頂端一條細線、游標轉圈。
+  少了它，網路慢的時候按下去像是沒反應（瀏覽器自己的讀取進度不會出現，因為沒有換文件）。
+  不動（U33），也不在快的換頁出現：一閃而過的線本身就是一閃。
+*/
+html[aria-busy="true"] { cursor: progress; }
+html[aria-busy="true"]::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--text-3);
+  z-index: 100;
+}
+
+/*
   U25：介面用黑體。卡片標題與內文另外指定宋體（見 card.css / list.css），
   所以「這裡是文件、那裡是工具」在畫面上是一眼可分的兩種材質。
 

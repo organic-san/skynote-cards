@@ -20,6 +20,12 @@
     box.hidden = false;
   }
 
+  // 存好、刪好之後的換頁也不換文件（nav.js），沒有它就一般地換。
+  function go(url) {
+    if (window.skynoteNav) window.skynoteNav.visit(url);
+    else window.location.href = url;
+  }
+
   // 只收還沒送出的那幾列。既有的連結不在 #linkrows 裡，它們是一份唯讀清單，
   // 所以「不小心把既有的一起送上去」這件事不可能發生。
   function newLinks() {
@@ -56,7 +62,7 @@
         if (!res.ok) { fail(res.j.errors || ['沒有存成功']); return; }
         // 存進去了，草稿就沒有意義了。這一頁沒有導向可以掛 ?d=，所以自己清。
         if (window.skynoteDraft) window.skynoteDraft.clear(form.dataset.draftScope);
-        window.location.href = '/c/' + id;
+        go('/c/' + id);
       })
       .catch(function () { fail(['沒有存成功']); });
   });
@@ -71,7 +77,7 @@
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
           // 回到它原本所在的環境：首頁 / 可能是另一個環境（v3.1）。
-          if (res.ok) window.location.href = form.dataset.home || '/';
+          if (res.ok) go(form.dataset.home || '/');
           else fail(res.j.errors || ['沒有刪成功']);
         })
         .catch(function () { fail(['沒有刪成功']); });
