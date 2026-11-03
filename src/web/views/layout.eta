@@ -26,6 +26,10 @@
 <style><%~ it.inlineCss('/static/css/list.css') %></style>
 <style><%~ it.inlineCss('/static/css/card.css') %></style>
 <style><%~ it.inlineCss('/static/css/form.css') %></style>
+<%/* 換頁不換文件（nav.js）：Ferdium 的 webview 裡，只要換文件就有一段露出底色的空檔。
+     放在 head：defer 腳本照文件順序執行，它得比 body 裡每一支都早，才記得到它們掛的監聽。
+     body 裡的腳本換頁時會重新跑一次，所以只能放在 body；head 裡的不會。 */%>
+<script src="<%= it.asset('/static/js/nav.js') %>" defer></script>
 </head>
 <body>
 

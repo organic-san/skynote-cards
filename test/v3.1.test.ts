@@ -976,6 +976,51 @@ describe('§4.3 換頁不閃：CSS 嵌進頁面，JS 帶著版本', () => {
   });
 });
 
+describe('§4.4 換頁不換文件（nav.js）', () => {
+  // nav.js 換頁時只換 body、重新跑 body 裡的腳本；head 裡的不會再跑。
+  test('每一頁的 head 裡只有 nav.js 一支外部腳本，而且排在所有腳本前面；其他的都在 body', async () => {
+    const h = await fresh();
+    const id = await createCard(h, { type: 'original', title: '一張' });
+    const urls = ['/', `/c/${id}`, `/c/${id}/edit`, '/new?type=original', `/search?q=${enc('一')}`, '/tags', '/nope'];
+    for (const url of urls) {
+      const res = await h.app.fastify.inject(url);
+      const page = res.headers.location ? (await h.app.fastify.inject(String(res.headers.location))).body : res.body;
+      const head = page.slice(0, page.indexOf('</head>'));
+      const body = page.slice(page.indexOf('<body'));
+      const inHead = [...head.matchAll(/<script src="([^"]+)"( defer)?><\/script>/g)];
+      assert.equal(inHead.length, 1, url);
+      assert.match(inHead[0]?.[1] as string, /^\/static\/js\/nav\.js\?v=[0-9a-f]{10}$/, url);
+      assert.equal(inHead[0]?.[2], ' defer', `${url}：defer 腳本照文件順序跑，它要比 body 裡的每一支都早`);
+      assert.ok([...body.matchAll(/<script src="/g)].length >= 1, `${url}：其他腳本在 body`);
+      assert.ok(!body.includes('nav.js'), url);
+    }
+  });
+
+  test('nav.js 認得 head 裡的自己（換頁前比對版本），樣式還在 head 裡給它比對', () => {
+    const nav = fs.readFileSync(path.join('public', 'js', 'nav.js'), 'utf8');
+    assert.ok(nav.includes(`'head script[src^="/static/js/nav.js"]'`));
+    const layout = fs.readFileSync(path.join('src', 'web', 'views', 'layout.eta'), 'utf8');
+    const head = layout.slice(0, layout.indexOf('</head>'));
+    assert.ok(head.includes(`it.asset('/static/js/nav.js')`));
+    assert.equal([...head.matchAll(/<style>/g)].length, 6);
+  });
+
+  test('模板裡沒有 <noscript>、沒有寫在屬性上的事件：DOMParser 不跑腳本，換上的內容會把 <noscript> 當成一般元素畫出來', () => {
+    const dir = path.join('src', 'web', 'views');
+    for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.eta'))) {
+      const text = fs.readFileSync(path.join(dir, name), 'utf8');
+      assert.ok(!/<noscript/i.test(text), name);
+      assert.ok(!/\son[a-z]+="/i.test(text), name);
+    }
+  });
+
+  test('腳本自己換頁時經過 nav.js（editform.js 存好、刪好之後）', () => {
+    const js = fs.readFileSync(path.join('public', 'js', 'editform.js'), 'utf8');
+    assert.equal(js.match(/window\.location\.href =/g)?.length, 1, '只剩沒有 nav.js 時的那一條');
+    assert.match(js, /window\.skynoteNav\.visit\(url\)/);
+  });
+});
+
 describe('§4 版面與配色', () => {
   const css = (name: string) => fs.readFileSync(path.join('public', 'css', `${name}.css`), 'utf8');
 
