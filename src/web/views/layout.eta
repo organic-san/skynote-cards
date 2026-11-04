@@ -8,14 +8,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= it.title %> | Skynote</title>
 <link rel="icon" href="/static/favicon.ico" sizes="any">
-<%/* 網路字型只給觸控裝置（手機）。連不上時頁面照常可讀，只是換成系統字體。
-     電腦上不載：Noto Sans TC 切成十幾個字檔，每換一頁都要在畫第一格之前重新解碼，
-     包在 Ferdium 裡那段空檔就是一閃。Windows 11 本身裝著 Noto Sans TC（可變字重），
-     tokens.css 的字體堆疊排在第一個，看起來一樣。media 對不上的樣式表不擋繪製。 */%>
+<%/* 網路字型每一種裝置都載（v3.2 §3）：全局一致的行為，比電腦上少一點閃更要緊。
+     連不上時頁面照常可讀，只是換成系統字體。
+     v3.1 §4.3 曾經用 media="(pointer: coarse)" 只給手機：Noto Sans TC 切成十幾個字檔，
+     每換一頁都要在畫第一格之前重新解碼，包在 Ferdium 裡那段空檔是一閃的來源之一。 */%>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" media="(pointer: coarse)"
-      href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap">
 <%/* 樣式依職責分檔，順序由 tokens.css 裡的 @layer 宣告保證，不靠這裡的先後。
      沒有打包步驟——改完存檔就生效，這是單人開發時很值錢的性質。
      內容直接嵌進每一頁，不另外請求：正式環境的 IAP 讓每個 CSS 請求都得回伺服器

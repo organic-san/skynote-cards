@@ -32,6 +32,7 @@ import {
   relOptions,
   stampFull,
   stampShort,
+  supersededNotice,
   toItem,
   updateView,
 } from './present.ts';
@@ -377,14 +378,17 @@ export function registerRoutes(
 
   scoped('GET', '/', async (req, reply, env) => {
     const q = req.query as Record<string, string | undefined>;
-    const type = CARD_TYPES.includes(q.type as CardType) ? q.type : undefined;
+    // 「已隱藏」跟型別是同一排互斥的篩選（v3.2 §2.3），所以兩個都帶時只認它。
+    const hidden = q.hidden === '1';
+    const type = !hidden && CARD_TYPES.includes(q.type as CardType) ? q.type : undefined;
     const tag = q.tag && q.tag !== '' ? q.tag : undefined;
     const page = Math.max(1, Number(q.page ?? 1) || 1);
 
-    const { rows, total, pages } = lists.feed(index, { env, type, tag, page });
+    const { rows, total, pages, hidden: hiddenCount } = lists.feed(index, { env, type, tag, hidden, page });
 
     const base = envBase(env);
     const parts: string[] = [];
+    if (hidden) parts.push('hidden=1');
     if (type) parts.push(`type=${encodeURIComponent(type)}`);
     if (tag) parts.push(`tag=${encodeURIComponent(tag)}`);
     const baseQuery = `${base}/?${parts.length ? `${parts.join('&')}&` : ''}`;
@@ -398,6 +402,8 @@ export function registerRoutes(
           total,
           type,
           tag,
+          hidden,
+          hiddenCount,
           types: CARD_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })),
           tagQuery: tag ? `&tag=${encodeURIComponent(tag)}` : '',
           baseQuery,
@@ -753,6 +759,7 @@ export function registerRoutes(
     if (!card) return notFound(req, reply);
 
     const out = index.outLinks(id);
+    const back = index.backLinks(id);
     const fromId = (req.query as Record<string, string | undefined>).from;
     const raw = fromId && isValidIdFormat(fromId) ? index.getCard(fromId) : null;
     // 「已從 X 建立」是一句話，所以 X 在這裡截（見 present.ts 的 clip）。
@@ -813,7 +820,9 @@ export function registerRoutes(
           downstream,
           has_toggles,
           upstream_count: out.length,
-          downstream_count: index.backLinks(id).length,
+          downstream_count: back.length,
+          // 已被更新或反駁時，頂端那一塊淺紅色的提示（v3.2 §2.5）。
+          superseded: supersededNotice(card.type, back, env),
           type_label: TYPE_LABELS[card.type as CardType] ?? card.type,
           from: from ? { id: from.id, title: from.title } : null,
           editable: rumination.open,

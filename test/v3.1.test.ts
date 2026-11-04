@@ -963,13 +963,14 @@ describe('§4.3 換頁不閃：CSS 嵌進頁面，JS 帶著版本', () => {
     assert.equal(versionOf(path.join(dir, 'missing.css')), null);
   });
 
-  test('模板裡沒有擋住電腦第一格的樣式表，JS 都經過 it.asset：每一個擋住第一格的請求、每一份要解碼的網路字型都是一閃', () => {
+  test('模板裡的樣式表只有網路字型，而且每一種裝置都載；JS 都經過 it.asset', () => {
     const dir = path.join('src', 'web', 'views');
     for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.eta'))) {
       const text = fs.readFileSync(path.join(dir, name), 'utf8');
       for (const link of text.match(/<link rel="stylesheet"[^>]*>/g) ?? []) {
         assert.match(link, /href="https:\/\/fonts\.googleapis\.com\//, `${name}：自己的 CSS 要嵌進頁面`);
-        assert.match(link, /media="\(pointer: coarse\)"/, `${name}：網路字型只給觸控裝置，電腦用本機的 Noto Sans TC`);
+        // v3.2 §3 推翻了 v3.1 §4.3 的「只給觸控裝置」：為了全局一致的行為。
+        assert.doesNotMatch(link, /media=/, `${name}：網路字型每一種裝置都載`);
       }
       assert.deepEqual(text.match(/src="\/static\/js\//g) ?? [], [], `${name}：JS 要經過 it.asset`);
     }

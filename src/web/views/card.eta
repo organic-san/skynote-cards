@@ -8,6 +8,15 @@
      先前把關聯樹放在標題之上，一進頁面先讀到後設資料，而且標題的垂直位置
      隨連結多寡浮動，頁面沒有固定落點。 */%>
 <article class="card">
+  <%/* v3.2 §2.5：已被更新或反駁的卡，第一眼就要知道它不再成立。
+       這不是卡片的內容（舊卡已定案，寫不進去），是從反向連結算出來的。 */%>
+  <% if (it.superseded.length) { %>
+  <div class="superseded">
+    <% it.superseded.forEach(function (line) { %>
+    <p><strong><%= line.label %></strong>：<% line.cards.forEach(function (c, i) { %><%= i ? '、' : '' %><a href="/c/<%= c.id %>"><%= c.title %></a><% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %><% }) %></p>
+    <% }) %>
+  </div>
+  <% } %>
   <%/* 碎片沒有標題，那段話在下面的 .body 裡當內文排。 */%>
   <% if (it.heading) { %>
   <%/* 長到不像標題時降一階視覺重量：不截斷（這是唯一看得到完整標題的地方），

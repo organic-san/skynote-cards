@@ -24,26 +24,39 @@ export interface FeedResult {
   rows: CardRowWithTags[];
   total: number;
   pages: number;
+  /** 這個環境（與標籤）裡已被取代、沒有列在時間軸上的卡有幾張。篩選列的「已隱藏」用。 */
+  hidden: number;
 }
 
-/** 時間逆序的卡片流，可依 type / tag 篩選。 */
+/**
+ * 時間逆序的卡片流，可依 type / tag 篩選。
+ *
+ * 已被更新或反駁的卡不列（v3.2 §2）：時間軸列的是目前還成立的東西。
+ * `hidden` 為真時反過來，只列那些卡；這時 type 不作用——「已隱藏」跟型別是
+ * 同一排互斥的篩選。兩種都以 tag 為界。
+ */
 export function feed(
   index: CardIndex,
-  opts: { env: string; type?: string; tag?: string; page: number },
+  opts: { env: string; type?: string; tag?: string; hidden?: boolean; page: number },
 ): FeedResult {
   const { rows, total } = index.listCards({
     env: opts.env,
-    type: opts.type,
+    type: opts.hidden ? undefined : opts.type,
     tag: opts.tag,
+    superseded: opts.hidden ? 'only' : 'hide',
     limit: PAGE_SIZE,
     offset: (opts.page - 1) * PAGE_SIZE,
   });
-  return { rows, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  const hidden = opts.hidden
+    ? total
+    : index.listCards({ env: opts.env, tag: opts.tag, superseded: 'only', limit: 0, offset: 0 })
+        .total;
+  return { rows, total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), hidden };
 }
 
-/** 卡片頁與編輯介面的側欄帶著這一份（v3 §5）。 */
+/** 卡片頁與編輯介面的側欄帶著這一份（v3 §5）。跟時間軸一樣不列已被取代的卡。 */
 export function recent(index: CardIndex, env: string): CardRowWithTags[] {
-  return index.listCards({ env, limit: RECENT_LIMIT, offset: 0 }).rows;
+  return index.listCards({ env, superseded: 'hide', limit: RECENT_LIMIT, offset: 0 }).rows;
 }
 
 // ---------------------------------------------------------------- 列表項的補充資料

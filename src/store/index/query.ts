@@ -1,3 +1,4 @@
+import { SUPERSEDING_RELS } from '../../domain/types.ts';
 import { type IndexDb, ftsQuery, idDesc } from './schema.ts';
 
 /** 索引的讀取面。每一支都是純查詢，不寫入任何東西。 */
@@ -68,10 +69,23 @@ export function typeOf(idx: IndexDb, id: string): string | null {
   return row?.type ?? null;
 }
 
+/**
+ * 已被取代的卡怎麼處理（v3.2 §2）。`hide` 不列、`only` 只列它們，沒給就全部列。
+ * 「已被取代」是有任何一條 SUPERSEDING_RELS 指向它。
+ */
+export type SupersededFilter = 'hide' | 'only';
+
 /** 時間逆序的卡片。`env` 是環境（v3.1）：一個環境裡看不到其他環境的卡。 */
 export function listCards(
   idx: IndexDb,
-  opts: { env: string; type?: string; tag?: string; limit: number; offset: number },
+  opts: {
+    env: string;
+    type?: string;
+    tag?: string;
+    superseded?: SupersededFilter;
+    limit: number;
+    offset: number;
+  },
 ): {
   rows: CardRowWithTags[];
   total: number;
@@ -87,6 +101,15 @@ export function listCards(
   if (opts.type) {
     where.push('c.type = ?');
     params.push(opts.type);
+  }
+  if (opts.superseded) {
+    // 走 idx_links_target，一列一次點查。
+    const marks = SUPERSEDING_RELS.map(() => '?').join(', ');
+    where.push(
+      `${opts.superseded === 'hide' ? 'NOT ' : ''}EXISTS ` +
+        `(SELECT 1 FROM links s WHERE s.target_id = c.id AND s.rel IN (${marks}))`,
+    );
+    params.push(...SUPERSEDING_RELS);
   }
   const whereSql = ` WHERE ${where.join(' AND ')}`;
 

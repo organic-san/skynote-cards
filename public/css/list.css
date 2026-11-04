@@ -27,6 +27,26 @@
   background: var(--selected-bg);
   color: var(--text);
 }
+/*
+  已隱藏（v3.2 §2.3）：色點的位置換成一個 ×。
+  叉只畫在 viewBox 中間（7–17 / 24，見 icon.eta），四周約各留 1/4 的空白。圖示取 16px，
+  叉本身約 8px，跟 --dot 一樣大；左右各收回那 4px 的空白，叉到文字的距離才跟
+  色點到文字一樣，都是 .textbtn 的 gap。
+*/
+.hiddentab .icon {
+  width: var(--sp-4);
+  height: var(--sp-4);
+  margin: 0 calc(var(--sp-1) * -1);
+  color: var(--text-3);
+}
+
+/* 記號對齊字面中心，而不是行框中心（見 tokens.css 的 --filter-mark-nudge）。
+   用 top 而不用 transform：位移落在整數的裝置像素上，色點的邊不會糊。 */
+.filters .dot,
+.hiddentab .icon {
+  position: relative;
+  top: var(--filter-mark-nudge);
+}
 .filtertag { color: var(--text-2); }
 .filtercount { margin-left: auto; color: var(--text-3); }
 
@@ -147,11 +167,20 @@
   font-size: var(--fs-2);
   line-height: var(--lh-2);
   color: var(--text-2);
-  /* U34：前兩行截斷。 */
+  /* U34：前兩行截斷。搜尋的命中片段照這一條。 */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/*
+  時間軸的內文開頭（v3.2 §1）：保留原文的換行。伺服器已經取到前 5 行、300 字，
+  這裡的 8 行是畫面上的兜底——一行長段落在窄的欄裡會折成好幾行。
+*/
+.rowlines {
+  white-space: pre-line;
+  -webkit-line-clamp: 8;
 }
 
 /*

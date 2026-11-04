@@ -121,7 +121,7 @@ export class CardIndex implements IndexDb {
     return q.typeOf(this, id);
   }
 
-  listCards(opts: { env: string; type?: string; tag?: string; limit: number; offset: number }): {
+  listCards(opts: Parameters<typeof q.listCards>[1]): {
     rows: CardRowWithTags[];
     total: number;
   } {
