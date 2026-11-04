@@ -1987,7 +1987,7 @@ describe('碎片沒有標題', () => {
     const head = row.slice(headAt, row.indexOf('</p>', headAt));
     assert.ok(head.includes('<time'), '列首要有日期');
     // 沒有標題的話，內文自己得是連結，否則這一列點不進去。
-    assert.match(row, /<a class="rowtext rowbody" href="\/c\/[^"]+">隨手記的一句<\/a>/);
+    assert.match(row, /<a class="rowtext rowbody rowlines" href="\/c\/[^"]+">隨手記的一句<\/a>/);
 
     const css = readCss();
     assert.match(css, /\.rowbody::after\s*\{[^}]*inset:\s*0/);

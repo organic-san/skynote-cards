@@ -7,6 +7,7 @@ import {
   REL_LABELS,
   REL_LABELS_BACK,
   REL_MATRIX,
+  SUPERSEDING_RELS,
   TYPE_LABELS,
   type CardType,
   type Rel,
@@ -145,12 +146,12 @@ const ITEM_SHAPES: Record<CardType, Shape> = {
       (x): x is string => x !== null,
     ),
   }),
-  /** 重述：標題加內文前兩行，以及它在講哪一份資料。 */
+  /** 重述：標題加內文開頭，以及它在講哪一份資料。 */
   restatement: (row) => ({
     excerpt: excerpt(row.body),
     meta: row.about ? [row.about.title] : [],
   }),
-  /** 思考：標題加內文前兩行，以及兩個方向的連結數。 */
+  /** 思考：標題加內文開頭，以及兩個方向的連結數。 */
   thinking: (row) => ({
     excerpt: excerpt(row.body),
     meta: [`出向 ${row.link_count} · 入向 ${row.inbound}`],
@@ -162,7 +163,7 @@ const ITEM_SHAPES: Record<CardType, Shape> = {
   }),
   /**
    * 碎片：那段話就是內容，所以它走**內文**的位置，不走標題的位置。
-   * 印成標題會得到一面粗體的牆；印在內文位置則自動吃到 .rowtext 的兩行截斷。
+   * 印成標題會得到一面粗體的牆；印在內文位置則自動吃到 excerpt 的行數與字數上限。
    * meta 沒有別的欄位——型別籤已經說完了。
    */
   fleeting: (row) => ({ excerpt: excerpt(row.title), meta: [] }),
@@ -359,6 +360,37 @@ export function flattenThread(
   return direction === 'out' ? rows.reverse() : rows;
 }
 
+// ---------------------------------------------------------------- 已被取代（v3.2 §2）
+
+/**
+ * 卡片頁頂端的提示：這張卡已被哪幾張更新或反駁。
+ *
+ * 寫不進卡片檔——舊卡被新卡指著，R6 已經把它鎖住。所以每次渲染時從反向連結算。
+ * 只列直接指過來的那幾張，不追到鏈尾：A ← B ← C 時 A 指 B，B 的頁面再指 C。
+ */
+export interface SupersededLine {
+  rel: Rel;
+  /** 「本文已被更新」「本文已被反駁」；碎片被完整化時是「已完整化」。 */
+  label: string;
+  cards: { id: string; title: string; env: string | null }[];
+}
+
+export function supersededNotice(
+  type: string,
+  back: readonly { rel: string; id: string; env: string | null; title: string | null }[],
+  here: string,
+): SupersededLine[] {
+  return SUPERSEDING_RELS.map((rel): SupersededLine => ({
+    rel,
+    label:
+      rel === 'refutes' ? '本文已被反駁' : type === 'fleeting' ? '已完整化' : '本文已被更新',
+    cards: back
+      .filter((b) => b.rel === rel)
+      // 提示是一句話，標題在這裡截（見 clip 的說明）。
+      .map((b) => ({ id: b.id, title: clip(b.title ?? b.id, 24), env: otherEnv(b.env, here) })),
+  })).filter((line) => line.cards.length > 0);
+}
+
 // ---------------------------------------------------------------- 格式化
 
 /**
@@ -446,20 +478,50 @@ export function fmtDate(iso: string | null): string {
   return Number.isNaN(t) ? iso : new Date(t).toISOString().slice(0, 10);
 }
 
+/** 列表上的內文開頭最多幾行（原文的行，空行不算）與幾個字（v3.2 §1）。 */
+export const EXCERPT_LINES = 5;
+export const EXCERPT_CHARS = 300;
+
 /**
- * 內文開頭的一小段，給列表與引用串用。
- * 只剝掉會在單行裡變成雜訊的 markdown 記號，不做完整解析。
+ * 內文開頭的一段，給列表用（時間軸；搜尋結果有命中片段時用片段）。
+ *
+ * 保留原文的換行、去掉空行：條列與分段是內容的一部分，壓成一行就認不出來了。
+ * 行數與字數兩道上限都是原文的量；畫面上一行長段落會折成好幾行，
+ * 那一道由 CSS 的行數截斷兜底（list.css 的 .rowlines）。
+ *
+ * 只剝掉會在列表上變成雜訊的 markdown 記號，不做完整解析，也不渲染：
+ * 條列符號換成「・」，分隔線與表格的對齊列整行拿掉。
  */
-export function excerpt(body: string | null, max = 90): string {
+export function excerpt(
+  body: string | null,
+  maxLines = EXCERPT_LINES,
+  maxChars = EXCERPT_CHARS,
+): string {
   if (!body) return '';
-  const flat = body
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/^\s*[#>\-*+]+\s*/gm, '')
-    .replace(/[*_`~]/g, '')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+  const lines = body
+    .replace(/```[\s\S]*?```/g, '\n')
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^\s*>+\s*/, '')
+        .replace(/^\s*#+\s+/, '')
+        .replace(/^\s*[-*+]\s+(\[[ xX]\]\s+)?/, '・')
+        .replace(/[*_`~]/g, '')
+        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    // 分隔線（---、***、___ 剝完記號之後剩空字串）與表格的對齊列（|---|:--|）。
+    .filter((line) => line !== '' && !/^[|:\- ]+$/.test(line));
+
+  let text = lines.slice(0, maxLines).join('\n');
+  let cut = lines.length > maxLines;
+  const chars = [...text];
+  if (chars.length > maxChars) {
+    text = chars.slice(0, maxChars).join('').trimEnd();
+    cut = true;
+  }
+  return cut ? `${text}…` : text;
 }
 
 // ---------------------------------------------------------------- 建立表單

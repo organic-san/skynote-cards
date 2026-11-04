@@ -30,11 +30,13 @@
         <a class="rowtext rowbody" href="/c/<%= c.id %>"><%~ c.frag %></a>
         <% } %>
       <% } else if (c.excerpt) { %>
+        <%/* excerpt 保留換行（v3.2 §1），由 .rowlines 的 pre-line 排出來。
+             所以標籤與 excerpt 之間不能有空白或換行——會被當成內文排出來。 */%>
         <% if (c.heading) { %>
-        <p class="rowtext"><%= c.excerpt %></p>
+        <p class="rowtext rowlines"><%= c.excerpt %></p>
         <% } else { %>
         <%/* 沒有標題時，內文自己就是那條連結——否則這一列點不進去。 */%>
-        <a class="rowtext rowbody" href="/c/<%= c.id %>"><%= c.excerpt %></a>
+        <a class="rowtext rowbody rowlines" href="/c/<%= c.id %>"><%= c.excerpt %></a>
         <% } %>
       <% } %>
       <p class="rowmeta">

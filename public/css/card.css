@@ -21,6 +21,24 @@
 .tags { margin: 0 0 var(--sp-5); display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
 /*
+  已被更新或反駁（v3.2 §2.5）。排在標題之上，是這一頁的第一行：
+  讀到內文之前就要知道它不再成立。底色向左右溢出，跟 hover 底色同一個做法，
+  文字的左緣因此仍對齊標題。
+*/
+.superseded {
+  margin: 0 calc(var(--hover-bleed) * -1) var(--sp-5);
+  padding: var(--sp-3) var(--hover-bleed);
+  border-radius: var(--radius-field);
+  background: var(--superseded-bg);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+}
+.superseded p { margin: 0; }
+.superseded strong { color: var(--alert); font-weight: 600; }
+.superseded a { text-decoration: underline; text-underline-offset: 2px; }
+.superseded .envmark { margin-left: var(--sp-1); }
+
+/*
   內文的複製鈕與下載鈕（v3 §6.1）。
 
   置於時間與 meta 行末（.cardmeta），每張卡片皆有固定錨點，避免覆蓋在第一行內文上造成閱讀與選取衝突。

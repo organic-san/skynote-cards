@@ -86,6 +86,15 @@ export const REL_LABELS_BACK: Record<Rel, string> = {
   updates: '更新出',
 };
 
+/**
+ * 被這兩條指到的卡已經被取代（v3.2 §2）：時間軸不列，卡片頁頂端標出來。
+ *
+ * 只看有沒有被指到，不往回推：A 被 B 反駁、B 又被 C 反駁，A 不會因此回來——
+ * 系統判斷不了 C 推翻的是 B 的哪一部分。`contradicts` 不算，它是還沒裁決的牴觸。
+ * 碎片的「完整化」走的也是 `updates`，所以完整化過的碎片一樣算。
+ */
+export const SUPERSEDING_RELS: readonly Rel[] = ['updates', 'refutes'];
+
 /** 只有 original 類型可填。 */
 export const PROVENANCES = ['default', 'translated', 'AI-summarized'] as const;
 export type Provenance = (typeof PROVENANCES)[number];

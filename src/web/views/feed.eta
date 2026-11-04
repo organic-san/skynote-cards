@@ -1,10 +1,17 @@
 <div class="filters">
-  <a href="<%= it.base %>/" class="textbtn <%= !it.type ? 'on' : '' %>">全部</a>
+  <%/* 「全部」不含已隱藏的卡，名字照舊（v3.2 §2.3）。 */%>
+  <a href="<%= it.base %>/" class="textbtn <%= !it.type && !it.hidden ? 'on' : '' %>">全部</a>
   <%/* U7：篩選列各項前方也放同一顆色點——這是使用者學會色彩對應的唯一場所。 */%>
   <% it.types.forEach(function (t) { %>
   <a href="<%= it.base %>/?type=<%= t.value %><%= it.tagQuery %>" class="textbtn <%= it.type === t.value ? 'on' : '' %>">
     <span class="dot dot-<%= t.value %>"></span><%= t.label %></a>
   <% }) %>
+  <%/* 已被更新或反駁、不列在時間軸上的卡。沒有就不出現。
+       型別前面是色點，這一格前面是一個 ×。 */%>
+  <% if (it.hiddenCount > 0 || it.hidden) { %>
+  <a href="<%= it.base %>/?hidden=1<%= it.tagQuery %>" class="textbtn hiddentab <%= it.hidden ? 'on' : '' %>">
+    <%~ include('icon', { name: 'x' }) %>已隱藏</a>
+  <% } %>
   <% if (it.tag) { %><span class="filtertag">#<%= it.tag %></span><% } %>
   <span class="filtercount"><%= it.total %></span>
 </div>
