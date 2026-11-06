@@ -19,6 +19,7 @@ import {
   EXPAND_TYPES,
   FORM_SPEC_TABLE,
   actionsFor,
+  carryLinks,
   envBase,
   envLabel,
   formTitle,
@@ -531,6 +532,9 @@ export function registerRoutes(
         specs: FORM_SPEC_TABLE,
         relTable: Object.fromEntries(CARD_TYPES.map((t) => [t, relOptions(t)])),
         default_rels: DEFAULT_REL,
+        // 「帶入原卡的連結」那顆按鈕要加的列（v3.2 §5）。驗證失敗退回時也要在：
+        // 來源跟著回來了，按鈕就該跟著回來。已經在表單上的那幾條由 links.js 扣掉。
+        carry: opts.source ? carryLinks(values.type ?? '', index.outLinks(opts.source.id)) : [],
         provenances: PROVENANCES,
         // 標籤推薦：直接嵌在頁面裡，不開端點——標籤表很小，沒有網路往返的必要。
         // 推薦的是新卡要落進的那個環境用過的標籤。

@@ -1,4 +1,4 @@
-import { HIT_CLOSE, HIT_OPEN, desegment, type ThreadNode } from '../store/index/index.ts';
+import { HIT_CLOSE, HIT_OPEN, desegment, type LinkRow, type ThreadNode } from '../store/index/index.ts';
 import type { Rumination } from '../domain/rules.ts';
 import type { ListRow } from '../service/lists.ts';
 import type { UpdateOutcome } from '../service/update.ts';
@@ -670,6 +670,53 @@ export function relOptions(type: string, targetType?: string | null): RelOption[
       label: REL_LABELS[s.rel],
       targets: [...s.targets],
     }));
+}
+
+/** 「帶入原卡的連結」要加的一列（v3.2 §5）。 */
+export interface CarryLink {
+  rel: string;
+  to: string;
+  title: string;
+  targetType: string;
+}
+
+/**
+ * 從卡片頁 `+` 進來時，原卡的哪些連結能一鍵帶進新卡，各用哪一條關係（v3.2 §5）。
+ *
+ * 不帶的三種：
+ * - 原卡的 `updates`／`refutes`。那一頭已經被原卡取代了，新卡再蓋一次章沒有意義，
+ *   「誰取代了誰」由新卡指向原卡的那一條接著講。
+ * - 找不到的目標。帶進來只是一條送不出去的列。
+ * - 新卡的型別根本連不到的目標（例如重述連不到思考）。
+ *
+ * 關係沿用原卡的那一條；新卡的型別不允許時退到 DEFAULT_REL，再不行才取第一個合法的。
+ * 退的方向跟 DEFAULT_REL 同一個理由：替使用者選一條有承諾的關係，是做了他還沒做的判斷。
+ * 取代類的關係不在退路裡——帶入不該暗地裡讓任何一張卡從時間軸消失。
+ *
+ * 同一個目標只帶一次：原卡可能用兩條不同的關係指向同一張，換成新卡的型別之後
+ * 可能落在同一條上，那就是規則擋下的重複。
+ */
+export function carryLinks(type: string, out: LinkRow[]): CarryLink[] {
+  const seen = new Set<string>();
+  const result: CarryLink[] = [];
+  for (const l of out) {
+    if (l.title === null || l.type === null || seen.has(l.id)) continue;
+    if ((SUPERSEDING_RELS as readonly string[]).includes(l.rel)) continue;
+    const options = relOptions(type, l.type)
+      .map((o) => o.value)
+      .filter((r) => !(SUPERSEDING_RELS as readonly string[]).includes(r));
+    const [first] = options;
+    if (first === undefined) continue;
+    const fallback = DEFAULT_REL[type as CardType];
+    const rel = options.includes(l.rel)
+      ? l.rel
+      : fallback && options.includes(fallback)
+        ? fallback
+        : first;
+    seen.add(l.id);
+    result.push({ rel, to: l.id, title: l.title, targetType: l.type });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------- 更新（v3 §7）

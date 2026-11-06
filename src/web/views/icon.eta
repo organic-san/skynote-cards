@@ -23,6 +23,18 @@ const paths = {
   // 拖曳的把手：六個點，跟「可以抓起來」的慣例一致。
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
 
+  // Markdown 工具列（v3.2 §4）。待辦的兩格跟卡片頁上的核取方塊同一個形：方框，勾了就多一筆勾。
+  'md-task': '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/>',
+  'md-done': '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="m8.4 12.3 2.6 2.6 4.8-5.4"/>',
+  'md-bullet': '<g fill="currentColor" stroke="none"><circle cx="5" cy="6.5" r="1.4"/><circle cx="5" cy="12" r="1.4"/><circle cx="5" cy="17.5" r="1.4"/></g><path d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"/>',
+  'md-ordered': '<path d="M4 5.6 5.6 4.5v5"/><path d="M3.9 15a1.6 1.6 0 0 1 3.1.5c0 .8-.7 1.3-3.1 3.9H7"/><path d="M10.5 7h9M10.5 17h9"/>',
+  'md-quote': '<path d="M5 5v14"/><path d="M9.5 8h10M9.5 12h10M9.5 16h6"/>',
+  // 粗體、斜體畫成圖示而不是打字：黑體的斜 I 只是一道斜線，看起來像「/」。
+  'md-bold': '<path d="M7 4.5h5.8a3.6 3.6 0 0 1 0 7.2H7z"/><path d="M7 11.7h6.8a3.9 3.9 0 0 1 0 7.8H7z"/>',
+  'md-italic': '<path d="M11 4.5h7.5"/><path d="M5.5 19.5H13"/><path d="m14.8 4.5-5.6 15"/>',
+  'md-code': '<path d="m8.5 7-5 5 5 5"/><path d="m15.5 7 5 5-5 5"/>',
+  'md-link': '<path d="M10.6 13.4a3.8 3.8 0 0 0 5.4 0l3-3a3.8 3.8 0 0 0-5.4-5.4l-1.2 1.2"/><path d="M13.4 10.6a3.8 3.8 0 0 0-5.4 0l-3 3a3.8 3.8 0 0 0 5.4 5.4l1.2-1.2"/>',
+
   // 七種關係
   'part-of': '<path d="M7.5 3.5H4v17h3.5"/><path d="M16.5 3.5H20v17h-3.5"/><rect x="9" y="9.2" width="6" height="5.6" rx="1.2" fill="currentColor" stroke="none"/>',
   about: '<path d="M3.5 12h11.5"/><path d="m10.8 7.8 4.2 4.2-4.2 4.2"/><path d="M19.5 4.5v15"/>',

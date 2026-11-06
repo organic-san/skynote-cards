@@ -172,7 +172,8 @@
   欄位之間反而失去關聯。所以節奏的比例保留，絕對值在分欄時收緊（見下方）。
 */
 .field { display: block; margin-bottom: var(--sp-6); }
-.field > span, .fieldhead { display: block; margin-bottom: var(--sp-2); font-size: var(--fs-1); color: var(--text-2); }
+/* 有工具列的文字框，外層是 div、名字是一個 <label for>（見 mdbar.eta），長得跟 span 一樣。 */
+.field > span, .field > label, .fieldhead { display: block; margin-bottom: var(--sp-2); font-size: var(--fs-1); color: var(--text-2); }
 .field input, .field textarea, .field select {
   width: 100%;
   font: inherit;
@@ -200,6 +201,37 @@
   overflow-anchor: none;
 }
 
+/*
+  Markdown 工具列（v3.2 §4）：貼在文字框上緣的一排小按鈕。
+
+  按鈕跟卡片頁的複製、下載（card.css 的 .toolbtn）同一個重量：沒有框、淡色，
+  滑過去才浮起來。它們是寫作時順手按的捷徑，不該比文字框本身搶眼。
+  按鈕之間不留間距：32px 見方已經夠手指按，九顆加兩道分隔線在 360px 寬的手機上仍然排得進一列。
+*/
+.mdbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: var(--sp-1);
+}
+.mdbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--sp-6);
+  height: var(--sp-6);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-field);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.mdbtn:hover, .mdbtn:focus-visible { color: var(--text); background: var(--hover-bg); }
+.mdsep { width: 1px; height: var(--sp-4); margin: 0 var(--sp-1); background: var(--line); }
+/* 沒有 JS 就沒有人接這些按鈕。 */
+html:not(.js) .mdbar { display: none; }
+
 /* original 依主次分兩段：主群組（標題／網址／內文）與次群組，中間留一段。 */
 .field.secondary { margin-top: var(--sp-7); }
 .fieldpair { display: flex; gap: var(--sp-3); }
@@ -213,6 +245,8 @@
 .optional .field { margin: var(--sp-3) 0 0; }
 
 .fieldhead { display: flex; align-items: center; gap: var(--sp-2); }
+/* 「帶入原卡的連結」（v3.2 §5）只有 links.js 接得住。 */
+html:not(.js) .carrylinks { display: none; }
 
 /*
   R7：既有的連結是一份唯讀清單，不是表單列。

@@ -1,0 +1,19 @@
+<%/* Markdown 工具列（v3.2 §4）。按鈕只是插語法的捷徑，送出去的仍然是那個文字框裡的原文。
+
+     放在 <label> 外面：label 的文字會成為文字框的名稱，按鈕放進去會一起被念出來；
+     沒有 for 的 label 對應的還是它裡面第一個按鈕，點「內文」兩個字就等於按下它。
+
+     動作由 js/mdbar.js 接上。沒有 JS 就什麼都不會發生，所以那時整列藏起來（form.css）。 */%>
+<div class="mdbar" role="toolbar" aria-label="Markdown" aria-controls="<%= it.for %>">
+  <button type="button" class="mdbtn" data-md="task" title="待辦  - [ ]" aria-label="待辦"><%~ include('icon', { name: 'md-task' }) %></button>
+  <button type="button" class="mdbtn" data-md="done" title="已完成  - [x]" aria-label="已完成"><%~ include('icon', { name: 'md-done' }) %></button>
+  <span class="mdsep" aria-hidden="true"></span>
+  <button type="button" class="mdbtn" data-md="bullet" title="清單  -" aria-label="清單"><%~ include('icon', { name: 'md-bullet' }) %></button>
+  <button type="button" class="mdbtn" data-md="ordered" title="編號清單  1." aria-label="編號清單"><%~ include('icon', { name: 'md-ordered' }) %></button>
+  <button type="button" class="mdbtn" data-md="quote" title="引用  >" aria-label="引用"><%~ include('icon', { name: 'md-quote' }) %></button>
+  <span class="mdsep" aria-hidden="true"></span>
+  <button type="button" class="mdbtn" data-md="bold" title="粗體  **" aria-label="粗體"><%~ include('icon', { name: 'md-bold' }) %></button>
+  <button type="button" class="mdbtn" data-md="italic" title="斜體  *" aria-label="斜體"><%~ include('icon', { name: 'md-italic' }) %></button>
+  <button type="button" class="mdbtn" data-md="code" title="程式碼  `" aria-label="程式碼"><%~ include('icon', { name: 'md-code' }) %></button>
+  <button type="button" class="mdbtn" data-md="link" title="連結  [](網址)" aria-label="連結"><%~ include('icon', { name: 'md-link' }) %></button>
+</div>
