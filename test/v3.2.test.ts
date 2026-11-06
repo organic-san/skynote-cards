@@ -534,9 +534,9 @@ describe('§5 帶入原卡的連結', () => {
 
   test('新卡的型別不允許那條關係時，退到 DEFAULT_REL；取代類的關係不在退路裡', () => {
     // 產出不能 supports：退到 related。
-    assert.equal(carryLinks('output', [link('supports', '1', 'restatement')])[0].rel, 'related');
+    assert.equal(carryLinks('output', [link('supports', '1', 'restatement')])[0]?.rel, 'related');
     // 思考指向資料時 about 排在矩陣的第一個，但退路是弱的那一端。
-    assert.equal(carryLinks('thinking', [link('part-of', '2', 'original')])[0].rel, 'related');
+    assert.equal(carryLinks('thinking', [link('part-of', '2', 'original')])[0]?.rel, 'related');
     // 重述指向重述只剩 updates 合法：不帶，而不是暗地裡讓它從時間軸消失。
     assert.deepEqual(carryLinks('restatement', [link('about', '3', 'restatement')]), []);
   });
@@ -551,8 +551,8 @@ describe('§5 帶入原卡的連結', () => {
 
   /** 表單上那顆按鈕帶的列；沒有按鈕就是 null。 */
   const carryOf = (html: string) => {
-    const m = html.match(/id="carrylinks"\s+data-links='([^']*)'/);
-    return m ? (JSON.parse(unescape(m[1])) as { rel: string; to: string; title: string }[]) : null;
+    const raw = html.match(/id="carrylinks"\s+data-links='([^']*)'/)?.[1];
+    return raw === undefined ? null : (JSON.parse(unescape(raw)) as { rel: string; to: string; title: string }[]);
   };
 
   /** 截圖裡的情境：今天的 todo 從昨天那張「更新」出來，昨天那張連著進行中的事。 */
