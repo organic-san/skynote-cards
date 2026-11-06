@@ -28,19 +28,22 @@
   <%/* 碎片只有一個大文字框，跟建立表單一致（見 new.eta 的 #singlefield）。
        那段話存在 title 裡，但照欄位印進單行的標題欄，換行會被瀏覽器丟掉，
        一存檔就壓成一行。欄位名也沿用 quick_body，反轉由伺服器做。 */%>
-  <label class="field">
-    <textarea name="quick_body" rows="10" spellcheck="false" required><%= it.single_text %></textarea>
-  </label>
+  <%/* 工具列不能放進 <label>（見 mdbar.eta），所以文字框的外層是 div。 */%>
+  <div class="field">
+    <%~ include('mdbar', { for: 'singletext' }) %>
+    <textarea name="quick_body" id="singletext" rows="10" spellcheck="false" required data-mdbar><%= it.single_text %></textarea>
+  </div>
   <% } else { %>
   <label class="field">
     <span>標題</span>
     <input type="text" name="title" required autocomplete="off" value="<%= it.card.title %>">
   </label>
 
-  <label class="field">
-    <span>內文</span>
-    <textarea name="body" rows="14" spellcheck="false"><%= it.card.body %></textarea>
-  </label>
+  <div class="field">
+    <label for="bodytext">內文</label>
+    <%~ include('mdbar', { for: 'bodytext' }) %>
+    <textarea name="body" id="bodytext" rows="14" spellcheck="false" data-mdbar><%= it.card.body %></textarea>
+  </div>
   <% } %>
 
   <%/* 標籤用空白分隔（不是逗號），推薦面板見 js/tags.js。 */%>
@@ -100,6 +103,7 @@
 <script src="<%= it.asset('/static/js/links.js') %>" defer></script>
 <script src="<%= it.asset('/static/js/tags.js') %>" defer></script>
 <script src="<%= it.asset('/static/js/editform.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/mdbar.js') %>" defer></script>
 
 <%/* 新增的那幾列長什麼樣。跟建立頁同一份結構，選項由 links.js 畫。 */%>
 <template id="linkrowtpl">

@@ -95,10 +95,13 @@
 
   <%/* 碎片只有一個大文字框，不區分標題與內文。那段話會存進 title，
        但介面上不呈現這個區分（見 domain/card.ts 的 fleetingText）。 */%>
-  <label class="field<%= it.spec.single ? '' : ' off' %>" id="singlefield">
-    <textarea name="quick_body" rows="10" spellcheck="false" placeholder="寫下那句話"
+  <%/* 碎片的那段話也渲染成 Markdown、待辦一樣能勾，所以工具列兩個文字框都有（v3.2 §4）。
+       工具列不能放進 <label>（見 mdbar.eta），所以這兩格的外層是 div。 */%>
+  <div class="field<%= it.spec.single ? '' : ' off' %>" id="singlefield">
+    <%~ include('mdbar', { for: 'singletext' }) %>
+    <textarea name="quick_body" id="singletext" rows="10" spellcheck="false" placeholder="寫下那句話" data-mdbar
               <%= it.spec.single ? 'required' : 'disabled' %>><%= it.spec.single ? it.values.title : '' %></textarea>
-  </label>
+  </div>
 
   <label class="field<%= it.spec.single ? ' off' : '' %>" id="titlefield">
     <span>標題</span>
@@ -113,10 +116,11 @@
            placeholder="選填">
   </label>
 
-  <label class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
-    <span>內文</span>
-    <textarea name="body" rows="14" spellcheck="false"><%= it.values.body %></textarea>
-  </label>
+  <div class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
+    <label for="bodytext">內文</label>
+    <%~ include('mdbar', { for: 'bodytext' }) %>
+    <textarea name="body" id="bodytext" rows="14" spellcheck="false" data-mdbar><%= it.values.body %></textarea>
+  </div>
 
   <div class="field secondary<%= it.spec.source ? '' : ' off' %>" id="sourcefields">
     <div class="fieldpair">
@@ -153,6 +157,12 @@
        data-card-type="<%= it.values.type %>">
     <span class="fieldhead">連結
       <button type="button" class="ghost addlink" id="addlink">＋</button>
+      <%/* v3.2 §5：原卡的連結一次全部帶進來，不要的用 − 拿掉。
+           漏連比多連傷：沒連上的那件事，從新卡的上游串上就看不到了。 */%>
+      <% if (it.carry.length) { %>
+      <button type="button" class="ghost carrylinks" id="carrylinks"
+              data-links='<%= JSON.stringify(it.carry) %>'>帶入原卡的 <span data-count><%= it.carry.length %></span> 條連結</button>
+      <% } %>
     </span>
     <div id="linkrows">
       <% it.links.forEach(function (l, i) { %>
@@ -226,3 +236,4 @@
 <script src="<%= it.asset('/static/js/tags.js') %>" defer></script>
 <script src="<%= it.asset('/static/js/typefields.js') %>" defer></script>
 <script src="<%= it.asset('/static/js/sourcepane.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/mdbar.js') %>" defer></script>

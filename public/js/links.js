@@ -1,10 +1,11 @@
-// 連結列：關係的收窄、目標的標題搜尋、加一列與去掉一列。
+// 連結列：關係的收窄、目標的標題搜尋、加一列與去掉一列、帶入原卡的連結。
 //
 // 建立頁與編輯頁共用。這支檔案不知道自己在哪一頁，它只認得一個區塊：
 //
 //   #linksfield[data-rels][data-card-type]   關係表與「這張卡是什麼型別」
 //     #linkrows                              列的容器
 //     #addlink                               加一列
+//     #carrylinks[data-links]                帶入原卡的連結（只有從卡片頁 + 進來才有）
 //   #linkrowtpl                              一列長什麼樣（<template>）
 //
 // 型別會不會變是別人的事：建立頁的型別由 typefields.js 換，換完就改寫
@@ -199,6 +200,60 @@
       if (!p.parentNode.contains(ev.target)) closePicker(p);
     });
   });
+
+  // ---------------------------------------------------------------- 帶入原卡的連結（v3.2 §5）
+
+  // 原卡的連結一次全部帶進來，不要的用 − 拿掉。漏連比多連傷，所以是全帶再刪，
+  // 不是一條一條挑。關係由伺服器依新卡的型別挑好了（見 present.ts 的 carryLinks）。
+  //
+  // 已經在表單上的目標不再帶一次：驗證失敗退回的表單、手動先加過的。
+  // 拿掉一列之後按鈕會回來，數字是還沒帶進來的那幾條。
+  var carry = document.getElementById('carrylinks');
+  if (carry && rows && tpl) {
+    var CARRY = JSON.parse(carry.dataset.links || '[]');
+    var count = carry.querySelector('[data-count]');
+
+    var missing = function () {
+      var have = {};
+      Array.prototype.forEach.call(rows.querySelectorAll('input[name=link_to]'), function (h) {
+        have[h.value] = true;
+      });
+      return CARRY.filter(function (l) { return !have[l.to]; });
+    };
+
+    var refresh = function () {
+      var left = missing();
+      carry.hidden = left.length === 0;
+      if (count) count.textContent = String(left.length);
+    };
+
+    carry.addEventListener('click', function () {
+      missing().forEach(function (l) {
+        rows.appendChild(tpl.content.cloneNode(true));
+        var row = rows.lastElementChild;
+        // 不是空白列：關係已經挑好了，不從 DEFAULT_REL 起頭。
+        row.removeAttribute('data-blank');
+        var input = row.querySelector('.linkto');
+        input.value = l.title;
+        input.dataset.targetType = l.targetType;
+        setTarget(input, l.to);
+        // paintRow 保留選單當下的值，所以先放一個選項讓它留住。
+        var sel = row.querySelector('select[name=link_rel]');
+        var opt = document.createElement('option');
+        opt.value = l.rel;
+        sel.appendChild(opt);
+        sel.value = l.rel;
+        paintRow(row);
+      });
+      refresh();
+    });
+
+    // 去掉一列、從選單挑了目標、手打改了目標，都會改變「還有哪幾條沒帶」。
+    // 這兩個監聽登記在上面那幾個之後，跑的時候列已經增刪、hidden 已經寫好了。
+    rows.addEventListener('click', refresh);
+    rows.addEventListener('input', refresh);
+    refresh();
+  }
 
   paintAll();
 })();
