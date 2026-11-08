@@ -70,7 +70,7 @@ body:has(.drawer.open) .menubtn {
   cursor: pointer;
 }
 
-/* 站名是標題，不是連結。回首頁靠環境清單（見 layout.eta）。 */
+/* 站名是標題，不是連結——手會先落在下面第一列，回首頁那件事交給它。 */
 .drawerbrand {
   flex: 0 0 auto;
   margin: 0;
@@ -81,10 +81,11 @@ body:has(.drawer.open) .menubtn {
 }
 
 /*
-  側欄分兩段：環境（v3.1，原本是四份工作清單）、動作與工具。
-  分隔線畫在 .drawernav 的上緣，所以每多一個 .drawernav 就多一條線，
-  不必另外標記段落。原本最上面還有一段「首頁」，v3.3 §4 拿掉了。
+  側欄分三段：首頁、環境（v3.1，原本是四份工作清單）、動作與工具。
+  分隔線畫在 .drawernav 的上緣，所以每多一個 .drawernav 就多一條線——
+  三段之間因此有兩條線，不必另外標記段落。
 */
+.drawerwork,
 .drawernav { display: flex; flex-direction: column; gap: 2px; }
 .drawernav { padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 
@@ -100,6 +101,7 @@ body:has(.drawer.open) .menubtn {
   cursor: pointer;
 }
 
+.drawerwork a,
 .drawernav a,
 .drawernav button {
   display: flex;
@@ -110,13 +112,16 @@ body:has(.drawer.open) .menubtn {
   font-size: var(--fs-2);
   color: var(--text-2);
 }
+.drawerwork a:hover,
 .drawernav a:hover,
 .drawernav button:hover { background: var(--hover-bg); text-decoration: none; }
 
 /* U32 selected：底色塊，字重不變。 */
+.drawerwork a.on,
 .drawernav a.on,
 .drawernav button.on { background: var(--selected-bg); color: var(--text); }
 
+.drawerwork .icon,
 .drawernav .icon { flex: 0 0 auto; color: var(--text-3); }
 
 /*

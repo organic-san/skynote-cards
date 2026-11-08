@@ -40,9 +40,8 @@
 <aside class="drawer" id="drawer">
   <button class="drawerclose" id="drawerclose" aria-label="關閉">×</button>
 
-  <%/* 站名是標題，不是連結。回首頁靠下面的環境清單：每一列都連到那個環境的首頁，
-       所在的那一列亮著。原本另有一列「首頁」，跟所在環境那一列連到同一個地方，
-       v3.3 §4 拿掉了。 */%>
+  <%/* 站名是標題，不是連結——回首頁那件事由下面第一列負責，
+       因為手會先落在那裡。 */%>
   <p class="drawerbrand">Skynote</p>
 
   <%
@@ -51,6 +50,11 @@
     const base = it.base || '';
     const envs = it.envs || [];
   %>
+  <nav class="drawerwork">
+    <a href="<%= base %>/" class="<%= it.nav === 'feed' ? 'on' : '' %>">
+      <%~ include('icon', { name: 'home' }) %><span>首頁</span>
+    </a>
+  </nav>
 
   <%/* v3.1：環境。原本四份工作清單（待思考、初步想法、雜筆、沉澱）的位置——
        實際用到的只剩沉澱，而環境決定了這一欄其他每一項指的是哪裡。

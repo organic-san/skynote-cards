@@ -413,7 +413,7 @@ export function registerRoutes(
         },
         // tag 一路帶到 layout：右下的隨手記要說出「現在記的是哪一堆」，
         // 並在送出時自動帶上那個標籤（見 layout.eta 與 POST /quick）。
-        { title: tag ? `#${tag}` : env === '' ? 'cards' : env, tag, env },
+        { title: tag ? `#${tag}` : env === '' ? 'cards' : env, nav: 'feed', tag, env },
       ),
     );
   });

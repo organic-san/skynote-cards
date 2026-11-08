@@ -1486,15 +1486,15 @@ describe('外部 url 的內嵌', () => {
 });
 
 describe('側欄', () => {
-  test('順序是站名、環境、動作與工具、最近的標籤', async () => {
+  test('順序是站名、首頁、環境、動作與工具、最近的標籤', async () => {
     const h = await fresh();
     await createCard(h, { type: 'thinking', title: '最近寫的一張', body: 'x', tags: ['最近的主題'] });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    // 側欄依序包含：站名、環境（v3.1）、動作與工具、標籤清單。用只出現一次的記號定位。
-    // 原本站名下面還有一列「首頁」，v3.3 §4 拿掉了。
-    const order = ['drawerbrand', 'drawerenvs', '/new?type=original', 'sidetags'];
+    // 側欄依序包含：站名、首頁、環境（v3.1）、動作與工具、標籤清單。用只出現一次的記號定位。
+    // 「首頁」在 v3.3 拿掉過又補回來（v3.3 §4）：它在固定的位置，不必先找所在的環境是哪一列。
+    const order = ['drawerbrand', 'icon-home', 'drawerenvs', '/new?type=original', 'sidetags'];
     let at = -1;
     for (const cls of order) {
       const next = aside.indexOf(cls);
@@ -1530,16 +1530,13 @@ describe('側欄', () => {
     assert.ok(!aside.includes('type=output'));
   });
 
-  test('站名不可點；沒有「首頁」那一列，回首頁靠環境清單（v3.3 §4）', async () => {
+  test('站名不可點，第一列是首頁', async () => {
     const h = await fresh();
-    await createCard(h, { type: 'fleeting', title: '有一張卡，（無環境）才會列出來' });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
     assert.ok(aside.includes('<p class="drawerbrand">Skynote</p>'), '站名是標題不是連結');
-    assert.ok(!aside.includes('drawerwork'), '「首頁」那一段拿掉了');
-    assert.ok(!aside.includes('首頁'));
-    // 所在環境那一列連到它的首頁，而且亮著。
-    assert.match(aside, /<a href="\/" data-env="" class="on/);
+    const top = aside.slice(aside.indexOf('drawerwork'));
+    assert.ok(top.slice(0, top.indexOf('</nav>')).includes('首頁'));
   });
 
   test('U10：追加外部資料與標籤、搜尋同格式', async () => {
@@ -1547,14 +1544,15 @@ describe('側欄', () => {
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    for (const name of ['plus', 'tag', 'search']) {
+    for (const name of ['home', 'plus', 'tag', 'search']) {
       assert.ok(aside.includes(`icon-${name}`), `側欄缺少 ${name} 圖示`);
     }
     // 動作與工具區項目不使用專屬格式。
     assert.ok(!aside.includes('draweraction'), '不該再有專屬格式');
 
-    // U9：側欄的項目不掛數量。
-    assert.ok(!aside.includes('wcount'));
+    // U9：工作狀態那幾項不掛數量。
+    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('/new?type=original'));
+    assert.ok(!work.includes('wcount'));
   });
 
   test('側欄的標籤：最近使用的排前面，不列鎖定的，有小標', async () => {
