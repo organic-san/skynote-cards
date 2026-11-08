@@ -215,7 +215,7 @@ describe('寫入：先存進 bucket，成功了才算數', () => {
     const form = await h.app.fastify.inject({
       method: 'POST',
       url: '/new',
-      payload: 'type=original&title=%E5%AD%98%E4%B8%8D%E9%80%B2%E5%8E%BB&draft_scope=new',
+      payload: 'type=original&title=%E5%AD%98%E4%B8%8D%E9%80%B2%E5%8E%BB&body=x&draft_scope=new',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
     });
     assert.equal(form.statusCode, 503);
@@ -878,7 +878,7 @@ describe('環境（v3.1）：bucket 的物件名稱就是帶著環境的路徑',
     const store = new FakeStore();
     const h = await withStore(store);
     await newEnv(h, '繪圖');
-    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '構圖' });
+    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '構圖', body: '原文' });
     const id = (res.json() as { id: string }).id;
     assert.ok(store.objects.has(envObj('繪圖', id)));
     assert.ok(!store.objects.has(obj(id)));
@@ -953,7 +953,7 @@ describe('環境（v3.1）：bucket 的物件名稱就是帶著環境的路徑',
     const { h } = await bootLikeAppEngine(remote, store);
     // GitHub 連不上：之後的 commit 都只留在這台機器上。
     fs.renameSync(remote, `${remote}.off`);
-    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '沒推上去的' });
+    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '沒推上去的', body: '原文' });
     const unpushed = (res.json() as { id: string }).id;
     await h.app.git.drain();
     assert.match(git(h.corpus, 'log', '--format=%s', '-1'), new RegExp(`add ${unpushed}`), '本機有 commit');
@@ -1024,7 +1024,7 @@ describe('環境（v3.1）：bucket 的物件名稱就是帶著環境的路徑',
     const store = new FakeStore();
     const h = await withStore(store);
     await newEnv(h, '繪圖');
-    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '構圖' });
+    const res = await json(h, 'POST', `/e/${encodeURIComponent('繪圖')}/new`, { type: 'original', title: '構圖', body: '原文' });
     const id = (res.json() as { id: string }).id;
 
     store.down = true;

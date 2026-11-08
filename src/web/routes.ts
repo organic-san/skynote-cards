@@ -47,7 +47,7 @@ import {
   type CardDraft,
   type CardType,
 } from '../domain/types.ts';
-import { cardText, fleetingDraft, fleetingText } from '../domain/card.ts';
+import { cardText, fleetingDraft, fleetingText, formFields } from '../domain/card.ts';
 import { LOCKED_MESSAGE } from '../domain/rules.ts';
 import {
   contentRev,
@@ -413,7 +413,7 @@ export function registerRoutes(
         },
         // tag 一路帶到 layout：右下的隨手記要說出「現在記的是哪一堆」，
         // 並在送出時自動帶上那個標籤（見 layout.eta 與 POST /quick）。
-        { title: tag ? `#${tag}` : env === '' ? 'cards' : env, nav: 'feed', tag, env },
+        { title: tag ? `#${tag}` : env === '' ? 'cards' : env, tag, env },
       ),
     );
   });
@@ -567,22 +567,33 @@ export function registerRoutes(
         ? [{ rel, to: target.id, title: target.title, targetType: target.type, fixed: true }]
         : [];
 
-    // 完整化：把碎片那段文字帶進新卡的內文（A.5 的欄位反轉在這裡收尾）。
-    const body =
-      target && rel === 'updates' && target.type === 'fleeting' ? fleetingText(target) : '';
+    /*
+      更新（v3.3 §2）：新版本從舊版本改起，標題、內文、網址照原卡帶入。
+      連結不帶——新版本可能正是要換掉依據；要的話按「帶入原卡的連結」（v3.2 §5）。
+      完整化也走 updates，但碎片沒有標題，那段話帶進內文（A.5 的欄位反轉在這裡收尾）。
+      沒有標題的資料同理：標題欄空著，那段文字帶進內文（formFields，v3.3 §6）。
+      矩陣裡 updates 只有完整化是跨型別的，其餘新舊兩張必定同型。
+    */
+    const updating = target && rel === 'updates' ? target : null;
+    const revision: Record<string, string> =
+      updating === null
+        ? {}
+        : updating.type === 'fleeting'
+          ? { body: fleetingText(updating) }
+          : { ...formFields(updating), url: updating.url ?? '' };
 
     // 基於既有卡片建立時（在卡片頁按下 +），自動帶入原卡片的標籤。
     const tags = target ? target.tags.join(' ') : '';
 
-    // 節錄：從外部資料節錄時，自動帶入母卡的網址、作者、原始年份、來源標記（標籤由上方統一帶入）。
+    // 節錄與更新外部資料：帶入母卡的網址、作者、原始年份、來源標記（標籤由上方統一帶入）。
     const values: Record<string, string> = {
       type,
-      body,
       rel: rel ?? '',
       tags,
       // 從卡片頁 + 進來的，新卡預設落在來源卡的環境（v3.1）。
       env: target ? target.env : env,
-      ...(target && rel === 'part-of' && target.type === 'original'
+      ...revision,
+      ...(target && (rel === 'part-of' || rel === 'updates') && target.type === 'original'
         ? {
             url: target.url ?? '',
             source_author: target.source_author ?? '',
@@ -916,6 +927,9 @@ export function registerRoutes(
           // 碎片只給一個大文字框，那段話從 fleetingText 拿（A.5 的欄位反轉）。
           single: formSpec(card.type).single,
           single_text: fleetingText(card),
+          // 其他型別的標題與內文照表單上的樣子印：沒有標題的資料，那段文字回到內文欄（v3.3 §6）。
+          fields: formFields(card),
+          optional_title: formSpec(card.type).optionalTitle,
           // links.js 讀的是一張「型別 → 可用關係」的表。這一頁型別是固定的，
           // 所以表裡只有一格。
           rel_table: { [card.type]: relOptions(card.type) },

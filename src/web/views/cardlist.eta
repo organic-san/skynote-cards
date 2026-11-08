@@ -12,8 +12,17 @@
       <%/* 碎片沒有標題，這一行就只剩日期——那也正是它的識別方式：
            一則隨手記靠「什麼時候寫的」認，不靠名字。 */%>
       <p class="rowhead">
+        <%/* 標記排在標題前面：「已被更新」、環境名、標題（v3.3 §5）。
+             搜尋結果與「已隱藏」那一頁才會有「已被更新」；環境名只在搜尋「所有環境」時有。
+
+             有標題時，標記跟標題包在同一段文字裡（.rowheading）：標題接在標記後面，
+             排不下就逐字換到下一行，不是整個標題跳到下一行（v3.3 §5.4）。
+             碎片沒有標題，標記就排在日期前面。 */%>
         <% if (c.heading) { %>
-        <a class="rowtitle" href="/c/<%= c.id %>"><%= c.heading.text %></a>
+        <span class="rowheading"><% c.marks.forEach(function (m) { %><span class="supmark"><%= m %></span><% }) %><% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %><a class="rowtitle" href="/c/<%= c.id %>"><%= c.heading.text %></a></span>
+        <% } else { %>
+        <% c.marks.forEach(function (m) { %><span class="supmark"><%= m %></span><% }) %>
+        <% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %>
         <% } %>
         <%/* datetime 是 UTC 真值，內容是保底文字；app.js 依瀏覽器時區改寫（U4）。
              時刻由腳本填，沒有 JS 時那一格是空的，不佔位。 */%>
@@ -43,8 +52,7 @@
         <%/* U5：型別名固定在第一段，其餘以 · 分隔。 */%>
         <span class="tname"><%= c.typeLabel %></span>
         <% c.meta.forEach(function (m) { %><span class="sep">·</span><span><%= m %></span><% }) %>
-        <%/* 別的環境的卡（搜尋「所有環境」時）標出環境名。 */%>
-        <% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %>
+        <%/* 別的環境的卡（搜尋「所有環境」時）的環境名移到標題前面了（v3.3 §5）。 */%>
         <%/* 標籤以環境為界，點下去回到這張卡所在的環境（v3.1）。 */%>
         <% c.tags.forEach(function (t) { %><a class="tag" href="<%= c.base %>/?tag=<%= encodeURIComponent(t) %>">#<%= t %></a><% }) %>
       </p>

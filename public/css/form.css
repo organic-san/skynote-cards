@@ -336,6 +336,7 @@ html:not(.js) .carrylinks { display: none; }
 }
 .picker button:hover { background: var(--hover-bg); }
 .picker .pid { color: var(--text-3); font-size: var(--fs-1); }
+.picker .envmark { margin-right: var(--sp-1); }
 
 /* ---------------------------------------------------------- 按鈕 */
 
@@ -513,6 +514,17 @@ main:has(> .split) {
   卡片頁的 meta 行只說靜態的狀態，會跳的數字只留在你正在跟時間賽跑的地方。
 */
 .lock { margin-left: auto; color: var(--text-2); }
+
+/* 倒數後面接著複製與下載（v3.3 §1），兩者綁成一段推到行末（見 edit.eta）。
+   窄螢幕上整段一起折到下一行、靠右，跟卡片頁的按鈕落在同一側。 */
+.metaend {
+  margin-left: auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
 
 /*
   R9 的刪除。它跟「儲存／取消」不是同一類動作：那兩個都可以再按一次改回來，

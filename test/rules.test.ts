@@ -160,7 +160,7 @@ describe('第四型與來源欄位', () => {
     };
     const draft = {
       title: 't',
-      body: '',
+      body: '原文',
       tags: [],
       url: null,
       provenance: null,
@@ -194,7 +194,7 @@ describe('第四型與來源欄位', () => {
       {
         type: 'original',
         title: 't',
-        body: '',
+        body: '原文',
         tags: [],
         url: null,
         provenance: null,
@@ -257,7 +257,7 @@ describe('驗證規則', () => {
     assert.equal(other.value?.provenance, null, 'provenance 不該寫進非 original 的卡片');
 
     const ok = validateDraft(
-      { type: 'original', title: 't', body: '', tags: [], url: null, provenance: null, links: [] },
+      { type: 'original', title: 't', body: '原文', tags: [], url: null, provenance: null, links: [] },
       deps,
     );
     assert.equal(ok.value?.provenance, 'default');
@@ -1486,14 +1486,15 @@ describe('外部 url 的內嵌', () => {
 });
 
 describe('側欄', () => {
-  test('順序是站名、首頁、環境、動作與工具、最近的標籤', async () => {
+  test('順序是站名、環境、動作與工具、最近的標籤', async () => {
     const h = await fresh();
     await createCard(h, { type: 'thinking', title: '最近寫的一張', body: 'x', tags: ['最近的主題'] });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    // 側欄依序包含：站名、首頁、環境（v3.1）、動作與工具、標籤清單。用只出現一次的記號定位。
-    const order = ['drawerbrand', 'icon-home', 'drawerenvs', '/new?type=original', 'sidetags'];
+    // 側欄依序包含：站名、環境（v3.1）、動作與工具、標籤清單。用只出現一次的記號定位。
+    // 原本站名下面還有一列「首頁」，v3.3 §4 拿掉了。
+    const order = ['drawerbrand', 'drawerenvs', '/new?type=original', 'sidetags'];
     let at = -1;
     for (const cls of order) {
       const next = aside.indexOf(cls);
@@ -1529,13 +1530,16 @@ describe('側欄', () => {
     assert.ok(!aside.includes('type=output'));
   });
 
-  test('站名不可點，第一列是首頁', async () => {
+  test('站名不可點；沒有「首頁」那一列，回首頁靠環境清單（v3.3 §4）', async () => {
     const h = await fresh();
+    await createCard(h, { type: 'fleeting', title: '有一張卡，（無環境）才會列出來' });
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
     assert.ok(aside.includes('<p class="drawerbrand">Skynote</p>'), '站名是標題不是連結');
-    const top = aside.slice(aside.indexOf('drawerwork'));
-    assert.ok(top.slice(0, top.indexOf('</nav>')).includes('首頁'));
+    assert.ok(!aside.includes('drawerwork'), '「首頁」那一段拿掉了');
+    assert.ok(!aside.includes('首頁'));
+    // 所在環境那一列連到它的首頁，而且亮著。
+    assert.match(aside, /<a href="\/" data-env="" class="on/);
   });
 
   test('U10：追加外部資料與標籤、搜尋同格式', async () => {
@@ -1543,15 +1547,14 @@ describe('側欄', () => {
     const body = (await h.app.fastify.inject('/')).body;
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
-    for (const name of ['home', 'plus', 'tag', 'search']) {
+    for (const name of ['plus', 'tag', 'search']) {
       assert.ok(aside.includes(`icon-${name}`), `側欄缺少 ${name} 圖示`);
     }
     // 動作與工具區項目不使用專屬格式。
     assert.ok(!aside.includes('draweraction'), '不該再有專屬格式');
 
-    // U9：工作狀態那幾項不掛數量。
-    const work = aside.slice(aside.indexOf('drawerwork'), aside.indexOf('/new?type=original'));
-    assert.ok(!work.includes('wcount'));
+    // U9：側欄的項目不掛數量。
+    assert.ok(!aside.includes('wcount'));
   });
 
   test('側欄的標籤：最近使用的排前面，不列鎖定的，有小標', async () => {
@@ -2096,7 +2099,7 @@ describe('標題沒有長度上限', () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'original', title: LONG, body: 'x', url: '' });
 
-    // 列表：完整標題照樣送出去，由 .rowtitle 截兩行。
+    // 列表：完整標題照樣送出去，由包著它的 .rowheading 截兩行（v3.3 §5.4）。
     const feed = (await h.app.fastify.inject('/')).body;
     assert.ok(feed.includes(LONG), '伺服器不截，能排幾個字是版面決定的');
 
@@ -2105,7 +2108,7 @@ describe('標題沒有長度上限', () => {
     assert.match(form, /<span class="linktarget" title="[^"]*一個很長的標題/);
 
     const css = readCss();
-    assert.match(css, /\.rowtitle\s*\{[^}]*-webkit-line-clamp:\s*2/);
+    assert.match(css, /\.rowheading\s*\{[^}]*-webkit-line-clamp:\s*2/);
     assert.match(css, /\.linktarget\s*\{[^}]*text-overflow:\s*ellipsis/);
   });
 });

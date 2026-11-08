@@ -27,9 +27,16 @@
       <span class="dot dot-<%= n.type %>"></span>
       <%~ include('icon', { name: n.rel }) %>
       <span class="noderel"><%= n.relLabel %></span>
-      <a class="nodetitle" href="/c/<%= n.id %>"><span class="tname"><%= n.typeLabel %>：</span><%= n.title %></a>
+      <%/* 標記排在標題前面，順序是「已被更新」、環境名、標題（v3.3 §5）。
+           標題會被截斷，排在後面的東西會跟著被擠掉；排在前面就一定看得到。 */%>
+      <%/* v3.3 §3：那張卡已被更新或反駁。只標記，點進去頂端的提示連得到新卡。 */%>
+      <% n.marks.forEach(function (m) { %><span class="supmark"><%= m %></span><% }) %>
       <%/* 連結可以跨環境（v3.1）：另一頭在別的環境就標出環境名。 */%>
       <% if (n.env) { %><span class="envmark"><%= n.env %></span><% } %>
+      <%/* 型別名在連結外面：窄螢幕上標題自己換到第二行，型別名留在第一行（v3.3 §5.4）。
+           寬螢幕上的「：」由 CSS 補，窄螢幕上它是一枚獨立的標籤，不帶冒號。 */%>
+      <span class="tname"><%= n.typeLabel %></span>
+      <a class="nodetitle" href="/c/<%= n.id %>"><%= n.title %></a>
       <%/* 同一張卡會從不同分支被走到，只有第一次完整展開。 */%>
       <% if (n.repeated) { %><span class="noderel">上方已展開</span><% } %>
       <% if (n.children) { %>

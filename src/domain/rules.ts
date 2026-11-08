@@ -45,9 +45,10 @@ export function validateDraft(draft: CardDraft, deps: ValidateDeps): ValidationR
     errors.push('未選類型');
   }
 
-  // 標題
+  // 標題。資料例外（R16）：標題選填，內文必填。
   const title = (draft.title ?? '').trim();
-  if (title === '') errors.push('標題不得為空');
+  if (draft.type === 'original') errors.push(...checkOriginalHasBody(draft.body ?? ''));
+  else if (title === '') errors.push('標題不得為空');
 
   // 標籤：每一項 trim 後非空、不含逗號，去重
   const tagsBefore = errors.length;
@@ -240,6 +241,24 @@ export function checkRelMatrix(
     }
   }
   return errors;
+}
+
+// ---------------------------------------------------------------- 資料的標題與內文
+
+/**
+ * R16：original 的內文必填，標題選填（v3.3 §6）。
+ *
+ * 追加外部資料最常見的是「貼上一段文字」：一段摘下來的原文、一則看到的情報。
+ * 要先想好標題才存得進去，那一步就把東西擋在外面了。外來的東西本身就是那段文字，
+ * 所以必填的是內文；標題有就填，沒有就照碎片的方式顯示（domain/card.ts 的 isUntitled）。
+ *
+ * 內文必填也是那個判斷成立的前提：有標題的資料一定有內文，
+ * 所以「內文空著的資料」只會是沒有標題、文字存進 title 的那一種。
+ *
+ * 這一條檢查的是表單上的欄位，必須在欄位反轉（sourceFields）之前問——反轉之後 body 本來就是空的。
+ */
+export function checkOriginalHasBody(body: string): string[] {
+  return body.trim() === '' ? ['資料的內文不得為空'] : [];
 }
 
 // ---------------------------------------------------------------- 型別對標籤的約束

@@ -99,14 +99,24 @@ export interface NewCardPayload {
  */
 export const DEFAULT_THINKING_TAG = '測試';
 
+/**
+ * R16：資料的內文必填（v3.3 §6）。理由同上：多數測試在意的不是內文，沒帶的時候補這一段；
+ * 要測內文本身的測試會自己帶（帶空字串就是真的沒有內文）。
+ */
+export const DEFAULT_ORIGINAL_BODY = '原文';
+
 export async function postCard(h: Harness, payload: NewCardPayload) {
+  let sent: NewCardPayload = payload;
+  if (payload.type === 'thinking' && payload.tags === undefined) {
+    sent = { ...sent, tags: [DEFAULT_THINKING_TAG] };
+  }
+  if (payload.type === 'original' && payload.body === undefined) {
+    sent = { ...sent, body: DEFAULT_ORIGINAL_BODY };
+  }
   const res = await h.app.fastify.inject({
     method: 'POST',
     url: '/new',
-    payload:
-      payload.type === 'thinking' && payload.tags === undefined
-        ? { ...payload, tags: [DEFAULT_THINKING_TAG] }
-        : payload,
+    payload: sent,
     headers: { 'content-type': 'application/json', accept: 'application/json' },
   });
   return res;

@@ -1,5 +1,6 @@
 import { HIT_CLOSE, HIT_OPEN, desegment, type LinkRow, type ThreadNode } from '../store/index/index.ts';
 import type { Rumination } from '../domain/rules.ts';
+import { isUntitled } from '../domain/card.ts';
 import type { ListRow } from '../service/lists.ts';
 import type { UpdateOutcome } from '../service/update.ts';
 import {
@@ -83,13 +84,15 @@ export interface Item {
   base: string;
   /** 這張卡在別的環境時，那個環境的名字（搜尋「所有環境」時才會有）。 */
   env: string | null;
+  /** 「已被更新」「已被反駁」（v3.3 §5）。搜尋結果與「已隱藏」那一頁才會有。 */
+  marks: string[];
 }
 
 /**
  * 標題在畫面上的呈現。
  *
- * `null` 表示這一型**沒有標題**——目前只有碎片。碎片的整段話存在 `title`
- * 欄位裡（見 domain/card.ts 的欄位反轉），但那是儲存上的權宜，不是說它
+ * `null` 表示這張卡**沒有標題**：碎片，以及沒填標題的資料（v3.3 §6，見 domain/card.ts 的
+ * isUntitled）。它們的整段話存在 `title` 欄位裡（欄位反轉），但那是儲存上的權宜，不是說它
  * 真的有一個名字。把它印成標題就會得到一面粗體的牆。
  *
  * `long` 是「這個標題長到不像標題」。標題沒有長度上限，而版面的每一處都
@@ -104,9 +107,9 @@ export interface Heading {
 /** 超過這個字數就算長。以碼位算，中文一個字算一個。 */
 export const TITLE_LONG = 40;
 
-/** 碎片沒有標題這件事，只在這裡判斷一次。 */
-export function headingOf(card: { type: string; title: string }): Heading | null {
-  if (card.type === 'fleeting') return null;
+/** 沒有標題的卡，標題那一格是 null。判斷本身在 isUntitled。 */
+export function headingOf(card: { type: string; title: string; body: string }): Heading | null {
+  if (isUntitled(card)) return null;
   return { text: card.title, long: [...card.title].length > TITLE_LONG };
 }
 
@@ -139,9 +142,12 @@ const ITEM_SHAPES: Record<CardType, Shape> = {
    * 資料：作者與原始年份，加上被接住的次數。不顯示內文開頭——
    * 這張卡最要緊的事實是它從哪裡來，不是它自己說了什麼。
    * 作者或年份缺漏整段略過（U5）。
+   *
+   * 沒有標題的資料（v3.3 §6）例外：它沒有名字可以列，那段話就是它的內容，
+   * 照碎片的方式走內文的位置。
    */
   original: (row) => ({
-    excerpt: null,
+    excerpt: isUntitled(row) ? excerpt(row.title) : null,
     meta: [sourceLine(row.source_author, row.source_date), citeLine(row)].filter(
       (x): x is string => x !== null,
     ),
@@ -211,6 +217,7 @@ export function toItem(row: ListRow, here: string): Item {
     tags: row.tags,
     base: envBase(row.env),
     env: otherEnv(row.env, here),
+    marks: supersededMarks(row.type, row.superseded),
     ...shape(row),
   };
 }
@@ -270,6 +277,8 @@ export interface ThreadRow {
   env: string | null;
   missing: boolean;
   repeated: boolean;
+  /** 「已被更新」「已被反駁」「已完整化」（v3.3 §3）。沒被取代是空陣列。 */
+  marks: string[];
   depth: number;
   /**
    * 縮排軌道。第 j 格對應深度 j 的那一層：畫線表示那一層的祖先後面還有兄弟，
@@ -342,6 +351,7 @@ export function flattenThread(
       env: otherEnv(n.env, here),
       missing: n.title === null,
       repeated: n.repeated,
+      marks: supersededMarks(n.type, n.superseded),
       depth: w.depth,
       // 自己那一格是分枝，其餘才是祖先的直線。
       rails: w.ancestors
@@ -389,6 +399,23 @@ export function supersededNotice(
       // 提示是一句話，標題在這裡截（見 clip 的說明）。
       .map((b) => ({ id: b.id, title: clip(b.title ?? b.id, 24), env: otherEnv(b.env, here) })),
   })).filter((line) => line.cards.length > 0);
+}
+
+/**
+ * 標記（v3.3 §3、§5）：卡片頁頂端那句提示的短說法，掛在引用串、搜尋結果與
+ * 「已隱藏」那一頁的那一列上，排在標題前面。
+ *
+ * 讀 B 時看到「關聯自 A」，不點進 A 就不會知道 A 已經被取代，而 B 已定案、
+ * 改不了指向。跟頂端的提示一樣不寫進卡片，渲染時從反向連結算。
+ * 只標記、不連到新卡：點進那一列，頂端的提示就連得過去。
+ *
+ * 說法用被動（使用者裁決）：「已被更新」「已被反駁」，跟頂端的「本文已被更新」同一個語態。
+ * 碎片被完整化沿用頂端的「已完整化」。
+ */
+export function supersededMarks(type: string | null, rels: readonly string[]): string[] {
+  return SUPERSEDING_RELS.filter((r) => rels.includes(r)).map((r) =>
+    r === 'refutes' ? '已被反駁' : type === 'fleeting' ? '已完整化' : '已被更新',
+  );
 }
 
 // ---------------------------------------------------------------- 格式化
@@ -539,16 +566,18 @@ export interface FormSpec {
   url: boolean;
   /** provenance 與 source_author / source_date，original 專屬。 */
   source: boolean;
+  /** 標題選填、內文必填（R16，v3.3 §6）。original 專屬：只貼一段文字就能存。 */
+  optionalTitle: boolean;
   /** 能不能加連結。碎片不行（R2）。 */
   links: boolean;
 }
 
 const FORM_SPECS: Record<CardType, FormSpec> = {
-  original: { single: false, url: true, source: true, links: true },
-  restatement: { single: false, url: false, source: false, links: true },
-  thinking: { single: false, url: false, source: false, links: true },
-  output: { single: false, url: false, source: false, links: true },
-  fleeting: { single: true, url: false, source: false, links: false },
+  original: { single: false, url: true, source: true, optionalTitle: true, links: true },
+  restatement: { single: false, url: false, source: false, optionalTitle: false, links: true },
+  thinking: { single: false, url: false, source: false, optionalTitle: false, links: true },
+  output: { single: false, url: false, source: false, optionalTitle: false, links: true },
+  fleeting: { single: true, url: false, source: false, optionalTitle: false, links: false },
 };
 
 /**
@@ -603,7 +632,15 @@ export function formTitle(
  * 列得出來——這時候給一個空的下拉選單，比不給更糟：它看起來就是壞的。
  */
 export function formSpec(type: string): FormSpec {
-  return FORM_SPECS[type as CardType] ?? { single: false, url: false, source: false, links: false };
+  return (
+    FORM_SPECS[type as CardType] ?? {
+      single: false,
+      url: false,
+      source: false,
+      optionalTitle: false,
+      links: false,
+    }
+  );
 }
 
 /** 整張表送給前端，讓它換型別時不必自己知道規則。 */

@@ -17,11 +17,28 @@
     <%/* 倒數只出現在這一頁。卡片頁是拿來讀的，一個每秒跳一次的數字
          放在內文上方是干擾；在這裡你就是在跟那段時間賽跑。
          沒有期限的（產出，R15）沒有賽跑，只說一次規則。 */%>
+    <%/* 倒數跟複製、下載綁成一段推到行末：分開推的話兩段會把空位對分，
+         窄螢幕上折行時按鈕也會落到左邊，跟卡片頁不一致。 */%>
+    <span class="metaend">
     <% if (it.no_window) { %>
     <span class="lock">被引用之前都可以修改</span>
     <% } else { %>
     <span class="lock num" id="lock" data-until="<%= it.lock_at %>"></span>
     <% } %>
+    <%/* v3.3 §1：複製與下載，跟卡片頁同一個位置、同一組按鈕。
+         交出去的是文字框當下的內容，包含還沒存的修改——存檔的版本在卡片頁上有。
+         data-for 指向那個文字框；標題在按下去的當下從表單的標題欄讀（js/download.js）。 */%>
+    <% const field = it.single ? 'singletext' : 'bodytext'; %>
+    <span class="cardtools">
+      <button type="button" class="toolbtn copybtn" id="copybtn" aria-label="複製內文" data-for="<%= field %>">
+        <%~ include('icon', { name: 'copy' }) %><%~ include('icon', { name: 'check' }) %><span class="copysaid">已複製</span>
+      </button>
+      <button type="button" class="toolbtn dlbtn" id="dlbtn" aria-label="下載成 .md 檔"
+              data-for="<%= field %>" data-file="<%= it.card.id %>.md">
+        <%~ include('icon', { name: 'download' }) %>
+      </button>
+    </span>
+    </span>
   </p>
 
   <% if (it.single) { %>
@@ -34,15 +51,18 @@
     <textarea name="quick_body" id="singletext" rows="10" spellcheck="false" required data-mdbar><%= it.single_text %></textarea>
   </div>
   <% } else { %>
+  <%/* 標題與內文照表單上的樣子印（formFields）：沒有標題的資料，標題欄空著，
+       那段文字回到內文欄。資料的標題選填、內文必填（R16）——這裡補上標題，它就變回有標題的資料。 */%>
   <label class="field">
     <span>標題</span>
-    <input type="text" name="title" required autocomplete="off" value="<%= it.card.title %>">
+    <input type="text" name="title" autocomplete="off" value="<%= it.fields.title %>"
+           <%~ it.optional_title ? 'placeholder="可以不填"' : 'required' %>>
   </label>
 
   <div class="field">
     <label for="bodytext">內文</label>
     <%~ include('mdbar', { for: 'bodytext' }) %>
-    <textarea name="body" id="bodytext" rows="14" spellcheck="false" data-mdbar><%= it.card.body %></textarea>
+    <textarea name="body" id="bodytext" rows="14" spellcheck="false"<%= it.optional_title ? ' required' : '' %> data-mdbar><%= it.fields.body %></textarea>
   </div>
   <% } %>
 
@@ -104,6 +124,8 @@
 <script src="<%= it.asset('/static/js/tags.js') %>" defer></script>
 <script src="<%= it.asset('/static/js/editform.js') %>" defer></script>
 <script src="<%= it.asset('/static/js/mdbar.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/copy.js') %>" defer></script>
+<script src="<%= it.asset('/static/js/download.js') %>" defer></script>
 
 <%/* 新增的那幾列長什麼樣。跟建立頁同一份結構，選項由 links.js 畫。 */%>
 <template id="linkrowtpl">
