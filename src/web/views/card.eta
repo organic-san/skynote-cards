@@ -10,10 +10,11 @@
 <article class="card">
   <%/* v3.2 §2.5：已被更新或反駁的卡，第一眼就要知道它不再成立。
        這不是卡片的內容（舊卡已定案，寫不進去），是從反向連結算出來的。 */%>
+  <%/* 另一頭在別的環境時，環境名排在標題前面，跟引用串與清單一致（v3.3 §5）。 */%>
   <% if (it.superseded.length) { %>
   <div class="superseded">
     <% it.superseded.forEach(function (line) { %>
-    <p><strong><%= line.label %></strong>：<% line.cards.forEach(function (c, i) { %><%= i ? '、' : '' %><a href="/c/<%= c.id %>"><%= c.title %></a><% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %><% }) %></p>
+    <p><strong><%= line.label %></strong>：<% line.cards.forEach(function (c, i) { %><%= i ? '、' : '' %><% if (c.env) { %><span class="envmark"><%= c.env %></span><% } %><a href="/c/<%= c.id %>"><%= c.title %></a><% }) %></p>
     <% }) %>
   </div>
   <% } %>

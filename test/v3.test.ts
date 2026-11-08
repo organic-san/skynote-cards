@@ -439,7 +439,7 @@ describe('§3 產出（R15）', () => {
 
 describe('§4 思考需要標籤（R11）', () => {
   const deps = { cardExists: () => false, typeOf: () => null };
-  const base = { title: 't', body: '', url: null, provenance: null, links: [] };
+  const base = { title: 't', body: '內文', url: null, provenance: null, links: [] };
 
   test('思考至少要有一個標籤，其餘型別不強制', () => {
     assert.match(

@@ -1,16 +1,19 @@
 // 把卡片內文複製到剪貼簿。
 //
 // 複製的是**原始 Markdown**，不是畫面上那份 HTML——渲染是單向的，
-// 從 HTML 反解析回來拿不回原本的記號選擇。原文由伺服器印在 .body[data-md]
-// 上（見 routes.ts 的 body_md），這裡直接讀那個屬性。
+// 從 HTML 反解析回來拿不回原本的記號選擇。兩個地方有這顆鈕：
+// - 卡片頁：原文由伺服器印在 .body[data-md] 上（見 routes.ts 的 body_md）。
+// - 編輯頁（v3.3 §1）：按鈕的 data-for 指向文字框，讀它當下的內容，包含還沒存的修改。
 //
 // 沒有這支腳本按鈕根本不會出現（見 card.css 的 html:not(.js)），
 // 所以這裡不做「找不到就降級」的分支——找不到就是這一頁沒有內文。
 
 (function () {
   var btn = document.getElementById('copybtn');
+  if (!btn) return;
+  var field = btn.dataset.for ? document.getElementById(btn.dataset.for) : null;
   var body = document.querySelector('.body[data-md]') || document.querySelector('.body');
-  if (!btn || !body) return;
+  if (!field && !body) return;
 
   var back = null;
 
@@ -40,8 +43,9 @@
   }
 
   btn.addEventListener('click', function () {
-    // 按下去的當下才讀：勾選之後 data-md 會被換成新的原文（見 js/tasks.js）。
-    var md = body.dataset.md || '';
+    // 按下去的當下才讀：卡片頁勾選之後 data-md 會被換成新的原文（見 js/tasks.js），
+    // 編輯頁的文字框則一直在變。
+    var md = field ? field.value : body.dataset.md || '';
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(md).then(said, function () {
         if (legacy(md)) said();

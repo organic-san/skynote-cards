@@ -103,10 +103,12 @@
               <%= it.spec.single ? 'required' : 'disabled' %>><%= it.spec.single ? it.values.title : '' %></textarea>
   </div>
 
+  <%/* 資料的標題選填、內文必填（R16，v3.3 §6）：追加外部資料可以只貼一段文字。
+       沒填標題的資料照碎片的方式顯示。換型別時 typefields.js 照同一張表重設。 */%>
   <label class="field<%= it.spec.single ? ' off' : '' %>" id="titlefield">
     <span>標題</span>
     <input type="text" name="title" autocomplete="off" value="<%= it.spec.single ? '' : it.values.title %>"
-           <%= it.spec.single ? 'disabled' : 'required' %>>
+           <%~ it.spec.single ? 'disabled' : it.spec.optionalTitle ? 'placeholder="可以不填"' : 'required' %>>
   </label>
 
   <%/* url 對 original 是主要欄位，不藏在收合區裡。 */%>
@@ -119,7 +121,7 @@
   <div class="field<%= it.spec.single ? ' off' : '' %>" id="bodyfield">
     <label for="bodytext">內文</label>
     <%~ include('mdbar', { for: 'bodytext' }) %>
-    <textarea name="body" id="bodytext" rows="14" spellcheck="false" data-mdbar><%= it.values.body %></textarea>
+    <textarea name="body" id="bodytext" rows="14" spellcheck="false"<%= it.spec.optionalTitle ? ' required' : '' %> data-mdbar><%= it.values.body %></textarea>
   </div>
 
   <div class="field secondary<%= it.spec.source ? '' : ' off' %>" id="sourcefields">

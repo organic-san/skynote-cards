@@ -138,17 +138,18 @@
     results.forEach(function (r) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.textContent = r.title;
-      var meta = document.createElement('span');
-      meta.className = 'pid';
-      meta.textContent = ' ' + r.type + ' · ' + r.id;
-      b.appendChild(meta);
+      // 別的環境的卡，環境名排在標題前面，跟引用串與清單一致（v3.3 §5）。
       if (r.env !== undefined && r.env !== ENV) {
         var env = document.createElement('span');
         env.className = 'envmark';
         env.textContent = r.envLabel;
         b.appendChild(env);
       }
+      b.appendChild(document.createTextNode(r.title));
+      var meta = document.createElement('span');
+      meta.className = 'pid';
+      meta.textContent = ' ' + r.type + ' · ' + r.id;
+      b.appendChild(meta);
       b.addEventListener('click', function () {
         // U15：看得到的是標題，送出去的是 ID。整套設計的目的就是
         // 使用者永遠不必碰 ID——把 18 位數當欄位主值是主次相反。

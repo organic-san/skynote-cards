@@ -33,7 +33,7 @@
   function sync() {
     var type = currentType();
     // 沒選型別時什麼都不開——這一組要跟伺服器的 formSpec() 退回值一致。
-    var spec = SPECS[type] || { single: false, url: false, source: false, links: false };
+    var spec = SPECS[type] || { single: false, url: false, source: false, optionalTitle: false, links: false };
 
     var hint = document.getElementById('linkshint');
     if (hint) hint.classList.toggle('off', spec.links);
@@ -47,7 +47,13 @@
       Array.prototype.forEach.call(el.querySelectorAll('input, textarea, select'), function (c) {
         c.disabled = !on;
         // 標題與那句話互為替身：開著的那一個才是必填的。
-        if (c.name === 'title' || c.name === 'quick_body') c.required = on;
+        // 資料例外（R16）：標題選填、內文必填。
+        if (c.name === 'quick_body') c.required = on;
+        if (c.name === 'title') {
+          c.required = on && !spec.optionalTitle;
+          c.placeholder = spec.optionalTitle ? '可以不填' : '';
+        }
+        if (c.name === 'body') c.required = on && spec.optionalTitle;
       });
     });
 

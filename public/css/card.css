@@ -36,7 +36,7 @@
 .superseded p { margin: 0; }
 .superseded strong { color: var(--alert); font-weight: 600; }
 .superseded a { text-decoration: underline; text-underline-offset: 2px; }
-.superseded .envmark { margin-left: var(--sp-1); }
+.superseded .envmark { margin-right: var(--sp-1); }
 
 /*
   內文的複製鈕與下載鈕（v3 §6.1）。
@@ -249,6 +249,11 @@ html:not(.js) .toolbtn { display: none; }
 .nodebody:hover .nodetitle { text-decoration: underline; }
 .nodemissing { color: var(--alert); }
 
+/* 型別名在標題連結外面（窄螢幕要把它留在第一行）。寬螢幕上照舊讀成「思考：標題」：
+   冒號由這裡補，負的 margin 吃掉 flex 的間距，冒號跟標題之間不多一段空。 */
+.nodebody .tname { flex: 0 0 auto; margin-right: calc(var(--sp-2) * -1); }
+.nodebody .tname::after { content: "："; }
+
 /* 日期靠右對齊成一欄，時刻再退一階：它是補充精度，不是分界。 */
 .nodebody time { flex: 0 0 auto; margin-left: auto; color: var(--text-3); }
 .nodetime {
@@ -300,6 +305,52 @@ html:not(.js) .toolbtn { display: none; }
 */
 html:not(.js) .nodetoggle,
 html:not(.js) .threadtoggleall { display: none; }
+
+/*
+  窄螢幕的引用串（v3.3 §5.4，使用者的版面）：每一列兩行。
+
+    [色點][圖示][關係詞][已被更新][環境名][型別]        [日期 時刻]
+    [標題]
+
+  一列一行時，標題要跟關係詞、標記、環境名、型別、日期搶同一行；手機上
+  兩枚小籤加上型別名，標題就只剩「…」。所以標題自己一行，而且可以換行，不截斷。
+
+  第一行的高度固定成 --rail-h：色點與軌道的分枝都對著第一行的中線，
+  跟一列一行時一樣。做法是一個零寬、--rail-h 高的 ::before 撐住第一行，
+  負的 margin 吃掉它後面那一段 flex 間距。
+*/
+@media (max-width: 35.99rem) {
+  .nodebody {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    row-gap: 0;
+    padding-bottom: var(--sp-2);
+  }
+  .nodebody::before {
+    content: "";
+    height: var(--rail-h);
+    margin-right: calc(var(--sp-2) * -1);
+  }
+  .nodebody .tname { margin-right: 0; }
+  .nodebody .tname::after { content: none; }
+  .nodetitle {
+    order: 1;
+    flex-basis: 100%;
+    white-space: normal;
+    overflow: visible;
+    line-height: var(--lh-2);
+  }
+
+  /* 分枝接在第一行的中線，不是整列的一半。直線照舊穿過整列。 */
+  .rail-tee::after,
+  .rail-elbow::after { top: calc(var(--rail-h) / 2); }
+  .rail-elbow::before { bottom: auto; height: calc(var(--rail-h) / 2); }
+  /* 上游的軌道整個垂直鏡射過（.stream.up .rails），所以這裡寫的是鏡射前的位置：
+     從底下量回來 --rail-h 的一半，翻過來之後就落在第一行的中線。 */
+  .stream.up .rail-tee::after,
+  .stream.up .rail-elbow::after { top: auto; bottom: calc(var(--rail-h) / 2); }
+  .stream.up .rail-elbow::before { height: auto; bottom: calc(var(--rail-h) / 2); }
+}
 
 /*
   一次展開／收合整串。單顆 .nodetoggle 管的是它自己那一支，深的串要一層層點；

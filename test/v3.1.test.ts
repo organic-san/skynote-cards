@@ -88,11 +88,14 @@ async function cardIn(
   env: string,
   payload: Record<string, unknown> & { type: string; title: string },
 ): Promise<string> {
+  // 跟 helpers 的 postCard 一樣：思考補標籤（R11）、資料補內文（R16），測試在意的不是它們。
+  let sent: Record<string, unknown> = payload;
+  if (payload.type === 'thinking' && payload.tags === undefined) sent = { ...sent, tags: ['測試'] };
+  if (payload.type === 'original' && payload.body === undefined) sent = { ...sent, body: '原文' };
   const res = await h.app.fastify.inject({
     method: 'POST',
     url: `${base(env)}/new`,
-    payload:
-      payload.type === 'thinking' && payload.tags === undefined ? { ...payload, tags: ['測試'] } : payload,
+    payload: sent,
     headers: { 'content-type': 'application/json', accept: 'application/json' },
   });
   assert.equal(res.statusCode, 302, res.body);
@@ -518,10 +521,11 @@ describe('§2.6 新卡落在哪裡、§2.5 連結跨環境', () => {
     const id = (res.json() as { id: string }).id;
     assert.equal(findCard(h.corpus, id)?.env, '專題');
 
+    // 環境名排在型別與標題前面（v3.3 §5）。
     const child = main((await h.app.fastify.inject(`/c/${id}`)).body);
-    assert.match(child, /最早的發想<\/a>\s*<span class="envmark">故事<\/span>/);
+    assert.match(child, /<span class="envmark">故事<\/span>\s*<span class="tname">思考<\/span>\s*<a class="nodetitle"[^>]*>最早的發想<\/a>/);
     const parent = main((await h.app.fastify.inject(`/c/${idea}`)).body);
-    assert.match(parent, /專題的起點<\/a>\s*<span class="envmark">專題<\/span>/);
+    assert.match(parent, /<span class="envmark">專題<\/span>\s*<span class="tname">思考<\/span>\s*<a class="nodetitle"[^>]*>專題的起點<\/a>/);
 
     // 被任何環境的卡指向都會定案（R6）。
     const edit = await h.app.fastify.inject(`/c/${idea}/edit`);

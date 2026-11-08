@@ -4,7 +4,7 @@
 // 1. 文字框上方那一排按鈕（mdbar.eta）。待辦、清單、引用加在行首；粗體、斜體、程式碼、連結包住選取。
 //    同一顆再按一次就拿掉它加上的東西。
 // 2. 在清單項目上按 Enter，下一行自動帶出同樣的記號（待辦一律從 [ ] 起）。
-//    空的那一項再按一次 Enter 就結束清單。
+//    空的那一項再按一次 Enter 就結束清單。在編號清單中間插進一項，後面的編號跟著順延（v3.3 §7）。
 //
 // 文字框仍然是原生的 textarea，送出去的就是框裡的原文。這支檔案只替你打字。
 //
@@ -239,6 +239,46 @@
     return ((value.slice(0, from).match(/^[ \t]{0,3}(?:```|~~~)/gm) || []).length) % 2 === 1;
   }
 
+  // Enter 在編號清單中間插進一項之後，同一層後面的編號往後順延（v3.3 §7）。
+  // 渲染只看第一項的數字，畫面上本來就是連續的；這裡修的是原文——編輯時看到的、
+  // 複製與下載出去的 .md。
+  //
+  // 從 at（目前這一行的行尾）往下一行一行看：
+  // - 同一層的編號項目：引言與縮排（lead）一模一樣、分隔符號一樣（. 或 )）。照順序改成 n、n+1……
+  // - 比它深的行（子清單、項目裡縮排的續行）與空行：跳過，清單還沒結束。
+  // - 其他（同層換成 - 清單、換了分隔符號、縮排變淺、沒有縮排的一般文字）：這張清單到此為止。
+  // 交回從 at 到最後一個改到的行尾要換成什麼；一行都不用改就是 null。
+  function renumber(value, at, lead, delim, n) {
+    var lines = [];
+    var last = -1;
+    var pos = at;
+    while (pos < value.length) {
+      var from = pos + 1;
+      var stop = lineEnd(value, from);
+      var line = value.slice(from, stop);
+      var p = parse(line);
+      if (p.marker === '' && blank(line.slice(p.head))) {
+        // 空行（引言裡只剩 > 的也算）：清單可以隔著空行。
+      } else if (p.lead === lead && p.ordered && p.marker.slice(-1) === delim) {
+        var want = n + delim;
+        if (p.marker !== want) {
+          line = lead + want + line.slice(lead.length + p.marker.length);
+          last = lines.length;
+        }
+        n++;
+      } else if (!(p.lead.length > lead.length && p.lead.slice(0, lead.length) === lead)) {
+        break;
+      }
+      lines.push({ text: line, stop: stop });
+      pos = stop;
+    }
+    if (last === -1) return null;
+    return {
+      to: lines[last].stop,
+      text: lines.slice(0, last + 1).map(function (l) { return '\n' + l.text; }).join(''),
+    };
+  }
+
   function enter(value, s, e) {
     if (s !== e) return null;
     var from = lineStart(value, s);
@@ -258,7 +298,11 @@
     var marker = p.ordered ? parseInt(p.marker, 10) + 1 + p.marker.slice(-1) : p.marker;
     // 待辦的下一項一律從未完成開始：剛打下去的那一件不會已經做完。
     var next = '\n' + p.lead + marker + ' ' + (p.task === null ? '' : '[ ] ');
-    return { from: s, to: s, text: next, selStart: s + next.length, selEnd: s + next.length };
+    var caret = s + next.length;
+    var rest = p.ordered ? renumber(value, to, p.lead, p.marker.slice(-1), parseInt(p.marker, 10) + 2) : null;
+    if (!rest) return { from: s, to: s, text: next, selStart: caret, selEnd: caret };
+    // 後面的編號一起改，仍然是一次替換：Ctrl+Z 一次就連插入帶重排一起退回去。
+    return { from: s, to: rest.to, text: next + value.slice(s, to) + rest.text, selStart: caret, selEnd: caret };
   }
 
   function edit(name, value, s, e) {

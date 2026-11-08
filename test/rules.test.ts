@@ -160,7 +160,7 @@ describe('第四型與來源欄位', () => {
     };
     const draft = {
       title: 't',
-      body: '',
+      body: '原文',
       tags: [],
       url: null,
       provenance: null,
@@ -194,7 +194,7 @@ describe('第四型與來源欄位', () => {
       {
         type: 'original',
         title: 't',
-        body: '',
+        body: '原文',
         tags: [],
         url: null,
         provenance: null,
@@ -257,7 +257,7 @@ describe('驗證規則', () => {
     assert.equal(other.value?.provenance, null, 'provenance 不該寫進非 original 的卡片');
 
     const ok = validateDraft(
-      { type: 'original', title: 't', body: '', tags: [], url: null, provenance: null, links: [] },
+      { type: 'original', title: 't', body: '原文', tags: [], url: null, provenance: null, links: [] },
       deps,
     );
     assert.equal(ok.value?.provenance, 'default');
@@ -1493,6 +1493,7 @@ describe('側欄', () => {
     const aside = body.slice(body.indexOf('<aside'), body.indexOf('</aside>'));
 
     // 側欄依序包含：站名、首頁、環境（v3.1）、動作與工具、標籤清單。用只出現一次的記號定位。
+    // 「首頁」在 v3.3 拿掉過又補回來（v3.3 §4）：它在固定的位置，不必先找所在的環境是哪一列。
     const order = ['drawerbrand', 'icon-home', 'drawerenvs', '/new?type=original', 'sidetags'];
     let at = -1;
     for (const cls of order) {
@@ -2096,7 +2097,7 @@ describe('標題沒有長度上限', () => {
     const h = await fresh();
     const id = await createCard(h, { type: 'original', title: LONG, body: 'x', url: '' });
 
-    // 列表：完整標題照樣送出去，由 .rowtitle 截兩行。
+    // 列表：完整標題照樣送出去，由包著它的 .rowheading 截兩行（v3.3 §5.4）。
     const feed = (await h.app.fastify.inject('/')).body;
     assert.ok(feed.includes(LONG), '伺服器不截，能排幾個字是版面決定的');
 
@@ -2105,7 +2106,7 @@ describe('標題沒有長度上限', () => {
     assert.match(form, /<span class="linktarget" title="[^"]*一個很長的標題/);
 
     const css = readCss();
-    assert.match(css, /\.rowtitle\s*\{[^}]*-webkit-line-clamp:\s*2/);
+    assert.match(css, /\.rowheading\s*\{[^}]*-webkit-line-clamp:\s*2/);
     assert.match(css, /\.linktarget\s*\{[^}]*text-overflow:\s*ellipsis/);
   });
 });

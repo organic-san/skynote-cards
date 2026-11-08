@@ -145,6 +145,11 @@ export class CardIndex implements IndexDb {
     return q.linkTree(this, rootId, direction, maxDepth);
   }
 
+  /** 指著它的取代類關係（v3.3 §5）：清單上標「已被更新」「已被反駁」用。 */
+  supersedingRels(id: string): string[] {
+    return q.supersedingRels(this, id);
+  }
+
   tagCounts(env: string, sort: TagSort = 'count'): TagCount[] {
     return q.tagCounts(this, env, sort);
   }

@@ -39,6 +39,8 @@ export interface ThreadNode extends LinkRow {
   depth: number;
   /** 這個節點在別的分支已經展開過，這裡只留一行。 */
   repeated: boolean;
+  /** 指著它的取代類關係（SUPERSEDING_RELS），不算串上的上一層。見 supersedingRels。 */
+  superseded: string[];
   children: ThreadNode[];
 }
 
@@ -184,12 +186,35 @@ export function linkTree(
         body: r.body,
         depth,
         repeated,
+        superseded: missing ? [] : supersedingRels(idx, r.id, id),
         children:
           repeated || missing || depth + 1 >= maxDepth ? [] : expand(r.id, depth + 1),
       };
     });
   };
   return expand(rootId, 0);
+}
+
+/**
+ * 這張卡被哪幾種取代類的關係指著（v3.3 §3、§5），依 SUPERSEDING_RELS 的順序。
+ * 引用串、搜尋結果與「已隱藏」那一頁用它標出「已被更新」「已被反駁」。
+ *
+ * `except` 只有引用串會給：串上的上一層。在新版本的頁面上，上游那一列
+ * 「更新自 舊版」指過去的正是上一層，關係詞已經講過了，不必再標一次。
+ * 往下游走時上一層比它舊，不可能指向它，排除與否結果一樣——所以兩個方向用同一句。
+ * 清單沒有上一層，給空字串，什麼都不排除（ID 不會是空字串）。
+ */
+export function supersedingRels(idx: IndexDb, id: string, except = ''): string[] {
+  const marks = SUPERSEDING_RELS.map(() => '?').join(', ');
+  const found = new Set(
+    (
+      idx.s(
+        `SELECT DISTINCT rel FROM links
+          WHERE target_id = ? AND source_id <> ? AND rel IN (${marks})`,
+      ).all(id, except, ...SUPERSEDING_RELS) as { rel: string }[]
+    ).map((r) => r.rel),
+  );
+  return SUPERSEDING_RELS.filter((r) => found.has(r));
 }
 
 export interface TagCount {

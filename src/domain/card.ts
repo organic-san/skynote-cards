@@ -172,14 +172,51 @@ export function fleetingDraft(text: string): { title: string; body: string } {
   return { title: text.trim(), body: '' };
 }
 
+// ---------------------------------------------------------------- 沒有標題的資料（v3.3 §6）
+
 /**
- * 卡片「那段文字」：碎片是 title，其餘是 body。
+ * 沒有標題的卡：碎片，以及內文空著的資料。它們的那段文字存在 `title`。
+ *
+ * 資料走跟碎片同一個欄位反轉（理由見上面 fleetingText）：追加外部資料時可以只貼一段文字、
+ * 不填標題（R16），存檔時那段文字放進 title、body 留空。R16 要求資料的內文必填，
+ * 所以「有標題、內文空著」的資料不會出現——內文空著就代表它沒有標題，不必另外記一個旗標。
+ *
+ * 「有沒有標題」只在這裡判斷，顯示、勾選、複製、下載都問這一句。
+ * 型別收字串，因為索引裡的列也會問。
+ */
+export function isUntitled(card: { type: string; body: string }): boolean {
+  return card.type === 'fleeting' || (card.type === 'original' && card.body.trim() === '');
+}
+
+/**
+ * 資料的表單 → 存檔的欄位。沒填標題就照碎片的做法：那段文字進 title，body 留空。
+ * 驗證（R16：內文必填）要在這之前做——反轉之後，body 本來就是空的。
+ */
+export function sourceFields(title: string, body: string): { title: string; body: string } {
+  return title.trim() === '' ? { title: body.trim(), body: '' } : { title, body };
+}
+
+/**
+ * 反過來：存檔的欄位 → 表單上的標題與內文（編輯頁、「更新」帶入原卡）。
+ * 沒有標題的資料，標題欄空著，那段文字回到內文欄。碎片不走這裡：它的表單只有一個文字框。
+ */
+export function formFields(card: { type: string; title: string; body: string }): {
+  title: string;
+  body: string;
+} {
+  return card.type === 'original' && isUntitled(card)
+    ? { title: '', body: card.title }
+    : { title: card.title, body: card.body };
+}
+
+/**
+ * 卡片「那段文字」：沒有標題的卡是 title，其餘是 body。
  *
  * 勾選、複製、下載、渲染要的都是這一段，而它在哪個欄位只有這裡知道——
  * 理由見上面 fleetingText 的說明。型別收字串，因為索引裡的列也會問。
  */
 export function cardText(card: { type: string; title: string; body: string }): string {
-  return card.type === 'fleeting' ? fleetingText(card) : card.body;
+  return isUntitled(card) ? card.title : card.body;
 }
 
 /** 反過來：把那段文字放回它該在的欄位。 */
@@ -187,5 +224,5 @@ export function withCardText<T extends { type: string; title: string; body: stri
   card: T,
   text: string,
 ): T {
-  return card.type === 'fleeting' ? { ...card, title: text } : { ...card, body: text };
+  return isUntitled(card) ? { ...card, title: text } : { ...card, body: text };
 }

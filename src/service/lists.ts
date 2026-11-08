@@ -74,6 +74,11 @@ export interface ListRow extends CardRowWithTags {
   about: { id: string; title: string } | null;
   /** 只有搜尋結果有：命中的那一小段。其餘清單維持 excerpt。 */
   frag?: string;
+  /**
+   * 指著它的取代類關係（v3.3 §5）。搜尋結果與「已隱藏」那一頁靠它標出
+   * 「已被更新」「已被反駁」；一般的時間軸本來就不列被取代的卡，這裡一律是空的。
+   */
+  superseded: string[];
 }
 
 export function decorate(
@@ -81,23 +86,25 @@ export function decorate(
   rows: (CardRowWithTags & { frag?: string })[],
 ): ListRow[] {
   return rows.map((r) => {
+    const superseded = index.supersedingRels(r.id);
     if (r.type === 'original') {
       const b = index.inboundBreakdown(r.id);
-      return { ...r, inbound: b.total, restatements: b.restatements, about: null };
+      return { ...r, superseded, inbound: b.total, restatements: b.restatements, about: null };
     }
     if (r.type === 'restatement') {
-      return { ...r, inbound: 0, restatements: 0, about: index.aboutTarget(r.id) };
+      return { ...r, superseded, inbound: 0, restatements: 0, about: index.aboutTarget(r.id) };
     }
     // 產出跟思考一樣報兩個方向的連結數：被引用幾次，就是它被拿去用了幾次。
     if (r.type === 'thinking' || r.type === 'output') {
       return {
         ...r,
+        superseded,
         inbound: index.inboundBreakdown(r.id).total,
         restatements: 0,
         about: null,
       };
     }
-    return { ...r, inbound: 0, restatements: 0, about: null };
+    return { ...r, superseded, inbound: 0, restatements: 0, about: null };
   });
 }
 

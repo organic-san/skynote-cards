@@ -177,13 +177,27 @@ h1.long {
 .tname { color: var(--text-3); }
 
 /* v3.1：卡片在別的環境時標出的環境名（搜尋所有環境、引用串、連結的選卡器）。
-   淡底的小籤：它說的是「這張卡放在哪裡」，跟型別名、標籤都不是同一種東西。 */
+   淡底的小籤：它說的是「這張卡放在哪裡」，跟型別名、標籤都不是同一種東西。
+   v3.3 §5 起一律排在標題前面。 */
 .envmark {
   flex: 0 0 auto;
   padding: 0 var(--sp-1);
   border-radius: var(--radius-field);
   background: var(--selected-bg);
   color: var(--text-2);
+  font-size: var(--fs-1);
+  white-space: nowrap;
+}
+
+/* 「已被更新」「已被反駁」（v3.3 §3、§5）：引用串、搜尋結果與「已隱藏」那一頁。
+   卡片頁頂端提示（.superseded）的同一組顏色，縮成跟環境名一樣大的小籤，
+   排在環境名前面、標題前面。 */
+.supmark {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-field);
+  background: var(--superseded-bg);
+  color: var(--alert);
   font-size: var(--fs-1);
   white-space: nowrap;
 }

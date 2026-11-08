@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import type { Card, CardDraft, CardLink, CardType } from '../domain/types.ts';
 import { isCardType } from '../domain/types.ts';
 import { generateId } from '../domain/id.ts';
-import { cardText, serializeCard, withCardText } from '../domain/card.ts';
+import { cardText, formFields, serializeCard, sourceFields, withCardText } from '../domain/card.ts';
 import {
   LOCKED_MESSAGE,
   UNDELETABLE_MESSAGE,
   type Rumination,
   checkFleetingHasNoLinks,
+  checkOriginalHasBody,
   checkLinks,
   checkRelMatrix,
   checkThinkingHasTag,
@@ -151,11 +152,17 @@ async function createNow(deps: CardServiceDeps, draft: CardDraft, env: string): 
   const orderErrors = validateLinkOrder(id, checked.value.links);
   if (orderErrors.length > 0) return { ok: false, errors: orderErrors };
 
+  // 沒填標題的資料（R16）：那段文字進 title、body 留空，跟碎片同一個欄位反轉。
+  const text =
+    checked.value.type === 'original'
+      ? sourceFields(checked.value.title, draft.body)
+      : { title: checked.value.title, body: draft.body };
+
   const card: Card = {
     id,
     type: checked.value.type,
     created: new Date().toISOString(),
-    title: checked.value.title,
+    title: text.title,
     tags: checked.value.tags,
     url: checked.value.url,
     provenance: checked.value.provenance,
@@ -163,7 +170,7 @@ async function createNow(deps: CardServiceDeps, draft: CardDraft, env: string): 
     source_date: checked.value.source_date,
     revised: null,
     links: checked.value.links,
-    body: draft.body.replace(/\r\n/g, '\n'),
+    body: text.body.replace(/\r\n/g, '\n'),
   };
 
   if (!(await persist(deps, card, 'add', env))) {
@@ -220,8 +227,18 @@ async function updateNow(
   }
 
   // 可改的只有這四個欄位。類型、連結、id、created 不接受任何形式的修改。
-  const title = (patch.title ?? existing.title).trim();
-  if (title === '') return { ok: false, reason: 'invalid', errors: ['標題不得為空'] };
+  // 標題與內文以表單上的樣子來比對與驗證：沒有標題的資料，在表單上是空的標題欄加內文
+  // （formFields），存檔時再反轉回去（sourceFields）。其他型別兩者相同。
+  const current = formFields(existing);
+  const title = (patch.title ?? current.title).trim();
+  const bodyIn = (patch.body === undefined ? current.body : patch.body).replace(/\r\n/g, '\n');
+  if (existing.type === 'original') {
+    const missing = checkOriginalHasBody(bodyIn);
+    if (missing.length > 0) return { ok: false, reason: 'invalid', errors: missing };
+  } else if (title === '') {
+    return { ok: false, reason: 'invalid', errors: ['標題不得為空'] };
+  }
+  const text = existing.type === 'original' ? sourceFields(title, bodyIn) : { title, body: bodyIn };
 
   let tags = existing.tags;
   if (patch.tags !== undefined) {
@@ -248,12 +265,12 @@ async function updateNow(
 
   const updated: Card = {
     ...existing,
-    title,
+    title: text.title,
     tags,
     links,
     url,
     revised: new Date().toISOString(),
-    body: (patch.body === undefined ? existing.body : patch.body).replace(/\r\n/g, '\n'),
+    body: text.body,
   };
 
   if (!(await persist(deps, updated, 'edit', env))) {
