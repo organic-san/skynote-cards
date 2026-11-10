@@ -26,6 +26,52 @@ export const eta = new Eta({ views: VIEWS_DIR, cache: process.env.NODE_ENV === '
 */
 const md = new MarkdownIt({ html: false, linkify: true, typographer: false, breaks: true });
 
+/*
+  清單在空行處斷開——同一個方向上的第二個偏離。
+
+      - A
+      - B
+
+      - C
+      - D
+
+  照 CommonMark 這是**一個**四項的清單：項目之間隔著空行不會切開清單，
+  只會讓它變「鬆散」，每一項各自包成段落、彼此拉開段距。分組就這樣消失了，
+  而且四項之間全部一樣疏。在 textarea 裡打出一個空行，意思是「這裡分一組」，
+  所以它在這裡就是兩個清單。
+
+  做法是一條只掛在清單終止鏈（alt: ['list']）上的規則。清單每要往下吃一項，
+  會先問終止鏈「這一行是不是該結束了」；前一行是空行，這條就說是。
+  下一項於是開出新的清單，編號清單從自己的號碼起算（<ol start="3">）。
+  在主鏈上被呼叫時 silent 是 false，這條一律不認領。
+
+  代價：被空行隔開的兩組清單現在是兩個頂層區塊，後面區塊的錨點序號跟著多一。
+*/
+md.block.ruler.before(
+  'list',
+  'list_split',
+  (state, startLine, _endLine, silent) => silent && startLine > 0 && state.isEmpty(startLine - 1),
+  { alt: ['list'] },
+);
+
+/*
+  反過來，前一行不是空行的清單（「說明：」底下直接接 - 項目）貼著上一個區塊，
+  不拉開段距——跟段落裡的單一換行同一個道理。這裡只標 class="joined"，
+  間距在 card.css。
+
+  看的是原文的前一行。只有 `>` 與空白的那一行是引言裡的空行，也算空行。
+*/
+md.core.ruler.push('list_joined', (state) => {
+  let lines: string[] | undefined;
+  for (const t of state.tokens) {
+    if ((t.type !== 'bullet_list_open' && t.type !== 'ordered_list_open') || !t.map) continue;
+    lines ??= state.src.split('\n');
+    const prev = lines[t.map[0] - 1];
+    if (prev !== undefined && !/^[\s>]*$/.test(prev)) t.attrJoin('class', 'joined');
+  }
+  return true;
+});
+
 /**
  * 給每個頂層區塊掛上 b0、b1、b2……
  *

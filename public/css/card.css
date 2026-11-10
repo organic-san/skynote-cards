@@ -100,6 +100,18 @@ html:not(.js) .toolbtn { display: none; }
 .body :target { background: var(--hover-bg); }
 
 /*
+  清單的間距跟著原文的空行走（render.ts 的 list_split 與 list_joined）：
+  有空行才拉開，沒有空行就貼著。
+
+  項目裡的段落不用瀏覽器預設的 1em。項目裡會出現第二個段落或第二組清單，
+  一定是中間打了空行，那時才留一點距離。
+*/
+.body li > p { margin: 0; }
+.body li > * + :is(p, ul, ol) { margin-top: var(--sp-3); }
+.body .joined { margin-top: 0; }
+.body :has(+ .joined) { margin-bottom: 0; }
+
+/*
   待辦勾選（v3 §2）。核取方塊取代清單記號的位置：項目照樣縮排，
   方塊往左退進原本畫圓點的那一格。顏色走文字的灰階——U27 說畫面上的彩色
   只有型別色，瀏覽器預設的藍色核取方塊會是第五種顏色。

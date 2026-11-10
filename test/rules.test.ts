@@ -1708,6 +1708,37 @@ describe('內文的換行', () => {
     );
     assert.equal((html.match(/<br>/g) ?? []).length, 3, '段落內的換行各自成立');
   });
+
+  test('空行把清單切成兩組，各自是緊湊的清單', () => {
+    // CommonMark 會把它當成一個四項的鬆散清單：分組消失，每項都包成段落拉開。
+    const html = renderMarkdown('- A\n- B\n\n- C\n- D');
+    assert.equal((html.match(/<ul/g) ?? []).length, 2, '兩組就是兩個清單');
+    assert.ok(!html.includes('<p>'), '項目不該被包成段落');
+    assert.deepEqual(
+      [...html.matchAll(/data-b="(\d+)"/g)].map((m) => m[1]),
+      ['0', '1'],
+      '兩組各是一個頂層區塊',
+    );
+  });
+
+  test('編號清單切開之後，從自己的號碼接下去', () => {
+    const html = renderMarkdown('1. A\n2. B\n\n3. C');
+    assert.match(html, /<ol start="3"/);
+  });
+
+  test('空行在項目裡面時不切清單', () => {
+    // 第二段縮排在 A 底下，是 A 的一部分；B 的前一行不是空行。
+    const html = renderMarkdown('- A\n\n  A 的第二段\n- B');
+    assert.equal((html.match(/<ul/g) ?? []).length, 1);
+    // 程式碼區塊裡的「清單」是字面文字。
+    assert.ok(!renderMarkdown('```\n- x\n\n- y\n```').includes('<ul'));
+  });
+
+  test('清單的前一行不是空行，就標成貼著上一個區塊', () => {
+    assert.match(renderMarkdown('說明：\n- a'), /<ul class="joined"/);
+    assert.ok(!renderMarkdown('說明：\n\n- a').includes('joined'), '有空行就照常拉開');
+    assert.ok(!renderMarkdown('- a').includes('joined'), '開頭的清單前面沒有東西');
+  });
 });
 
 describe('引用錨點', () => {
