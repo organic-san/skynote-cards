@@ -224,6 +224,18 @@
     return u.origin === location.origin && u.pathname.indexOf('/static/') !== 0;
   }
 
+  // 內文裡寫成完整網址的站內連結（貼上的卡片網址），在按下去之前改成站內路徑（v3.3 §11.3）。
+  // Ferdium 的 Custom Website 服務在 document 的捕獲階段攔下所有 href 以 http 開頭的連結，
+  // 開到外部瀏覽器去；站內路徑不在那個範圍裡，留在 Ferdium 裡，由下面接手換頁。
+  // 掛在 window 的捕獲階段，是因為事件先經過 window 才到 document——攔截的人先掛也一樣。
+  // 指向別的網站的連結不碰：那些照舊開到外部。
+  add.call(window, 'click', function (ev) {
+    var a = ev.target instanceof Element ? ev.target.closest('a[href]') : null;
+    if (!a || !/^https?:/i.test(a.getAttribute('href'))) return;
+    var u = new URL(a.href);
+    if (u.origin === location.origin) a.setAttribute('href', u.pathname + u.search + u.hash);
+  }, true);
+
   add.call(document, 'click', function (ev) {
     if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
     var a = ev.target instanceof Element ? ev.target.closest('a[href]') : null;

@@ -138,7 +138,14 @@
     results.forEach(function (r) {
       var b = document.createElement('button');
       b.type = 'button';
-      // 別的環境的卡，環境名排在標題前面，跟引用串與清單一致（v3.3 §5）。
+      // 已被取代的卡照樣列，「已被更新」排在最前面（v3.3 §11.2）；
+      // 別的環境的卡，環境名接著排在標題前面。順序跟引用串與清單一致（v3.3 §5）。
+      (r.marks || []).forEach(function (text) {
+        var mark = document.createElement('span');
+        mark.className = 'supmark';
+        mark.textContent = text;
+        b.appendChild(mark);
+      });
       if (r.env !== undefined && r.env !== ENV) {
         var env = document.createElement('span');
         env.className = 'envmark';

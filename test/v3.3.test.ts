@@ -392,7 +392,7 @@ describe('§5 搜尋結果與「已隱藏」也標；標記與環境名排在標
     const envAt = src.indexOf("env.className = 'envmark'");
     const titleAt = src.indexOf('createTextNode(r.title)');
     assert.ok(envAt > -1 && titleAt > envAt);
-    assert.match(css('form'), /\.picker \.envmark \{ margin-right: var\(--sp-1\); \}/);
+    assert.match(css('form'), /\.picker \.envmark, \.picker \.supmark \{ margin-right: var\(--sp-1\); \}/);
   });
 });
 
@@ -607,5 +607,58 @@ describe('§6 資料可以只貼一段文字（R16）', () => {
     const src = await createCard(h, { type: 'original', title: '', body: '一段外來的情報' });
     const t = await createCard(h, { type: 'thinking', title: '想法', links: [{ rel: 'about', to: src }] });
     assert.match(await get(h, `/c/${t}`), /<a class="nodetitle"[^>]*>一段外來的情報<\/a>/);
+  });
+});
+
+// ---------------------------------------------------------------- §11
+
+describe('§11.1 換行之後，框跟著游標捲', () => {
+  test('工具列改完字、放好游標之後，把游標那一行捲進框裡', () => {
+    assert.match(js('mdbar'), /ta\.setSelectionRange\(ed\.selStart, ed\.selEnd\);\s*reveal\(ta\);/);
+  });
+
+  test('自己打字時，框跟著游標捲也留下上下的內距', () => {
+    const form = css('form');
+    assert.match(form, /\.field textarea \{[^}]*scroll-padding-block: var\(--sp-2\);/);
+    assert.match(form, /\.quick textarea \{[^}]*scroll-padding-block: var\(--sp-2\);/);
+  });
+});
+
+describe('§11.2 連結的選卡器也標出已被取代的卡', () => {
+  test('照樣列，已被更新、已被反駁各自標出；還成立的不標', async () => {
+    const h = await fresh();
+    const a = await createCard(h, { type: 'thinking', title: '選卡的舊版' });
+    await createCard(h, { type: 'thinking', title: '選卡的新版', links: [{ rel: 'updates', to: a }] });
+    const r = await createCard(h, { type: 'thinking', title: '選卡被推翻的' });
+    await createCard(h, { type: 'thinking', title: '反駁選卡', links: [{ rel: 'refutes', to: r }] });
+
+    const list = (await h.app.fastify.inject(`/api/search?q=${encodeURIComponent('選卡')}`)).json() as {
+      title: string;
+      marks: string[];
+    }[];
+    const marks = (title: string) => list.find((x) => x.title === title)?.marks;
+    assert.equal(list.length, 4);
+    assert.deepEqual(marks('選卡的舊版'), ['已被更新']);
+    assert.deepEqual(marks('選卡被推翻的'), ['已被反駁']);
+    assert.deepEqual(marks('選卡的新版'), []);
+    assert.deepEqual(marks('反駁選卡'), []);
+  });
+
+  test('順序是「已被更新」、環境名、標題，跟引用串與清單一致', () => {
+    const src = js('links');
+    const markAt = src.indexOf("mark.className = 'supmark'");
+    const envAt = src.indexOf("env.className = 'envmark'");
+    const titleAt = src.indexOf('createTextNode(r.title)');
+    assert.ok(markAt > -1 && envAt > markAt && titleAt > envAt);
+  });
+});
+
+describe('§11.3 站內的完整網址留在 Ferdium 裡', () => {
+  test('按下去之前（window 的捕獲階段）改成站內路徑；別的網站不碰', () => {
+    const nav = js('nav');
+    assert.match(
+      nav,
+      /add\.call\(window, 'click', function \(ev\) \{[\s\S]*?if \(u\.origin === location\.origin\) a\.setAttribute\('href', u\.pathname \+ u\.search \+ u\.hash\);\s*\}, true\);/,
+    );
   });
 });

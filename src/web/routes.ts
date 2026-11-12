@@ -33,6 +33,7 @@ import {
   relOptions,
   stampFull,
   stampShort,
+  supersededMarks,
   supersededNotice,
   toItem,
   updateView,
@@ -1077,6 +1078,8 @@ export function registerRoutes(
         created: r.created,
         env: r.env,
         envLabel: envLabel(r.env),
+        // 已被取代的卡照樣列，標出來（v3.3 §11.2）：新舊兩張常常同名。
+        marks: supersededMarks(r.type, index.supersedingRels(r.id)),
       })),
     );
   });

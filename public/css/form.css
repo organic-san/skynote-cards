@@ -89,6 +89,8 @@
   border-radius: var(--radius-field);
   background: var(--surface-raised);
   resize: vertical;
+  /* 跟著游標捲時留下內距，同下方的 .field textarea（v3.3 §11.1）。 */
+  scroll-padding-block: var(--sp-2);
 }
 .quick .primary { width: 100%; }
 
@@ -199,6 +201,9 @@
   overflow-y: auto;
   /* 打字時捲動錨定會跟游標可見那條規則互相拉扯。 */
   overflow-anchor: none;
+  /* 框跟著游標捲的時候留下上下的內距（v3.3 §11.1）。沒有它，新的一行會貼著框的下緣。
+     mdbar.js 自己捲的那幾次（清單上按 Enter）留的是同一段。 */
+  scroll-padding-block: var(--sp-2);
 }
 
 /*
@@ -336,7 +341,7 @@ html:not(.js) .carrylinks { display: none; }
 }
 .picker button:hover { background: var(--hover-bg); }
 .picker .pid { color: var(--text-3); font-size: var(--fs-1); }
-.picker .envmark { margin-right: var(--sp-1); }
+.picker .envmark, .picker .supmark { margin-right: var(--sp-1); }
 
 /* ---------------------------------------------------------- 按鈕 */
 

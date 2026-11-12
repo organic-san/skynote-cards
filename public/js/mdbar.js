@@ -327,6 +327,38 @@
 
   if (typeof document === 'undefined' || !document.querySelectorAll) return;
 
+  // 把游標那一行捲進框裡（v3.3 §11.1）。自己打字時瀏覽器會讓框跟著游標捲，
+  // execCommand 改的字跟 setSelectionRange 都不會：在框底那一項按 Enter，新的一項落在框外，
+  // 要再打一個字才捲進來。
+  // 游標在第幾個像素，用一個排版跟框裡一樣的影子量——框裡會自動折行，數換行符號算不準。
+  // 上下的內距一起留著，跟 CSS 的 scroll-padding-block（自己打字時的那一條）同一個樣子。
+  var MIRROR = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'wordSpacing',
+    'tabSize', 'textIndent', 'textTransform', 'whiteSpace', 'wordBreak', 'overflowWrap', 'lineBreak'];
+
+  function reveal(ta) {
+    var cs = getComputedStyle(ta);
+    var padTop = parseFloat(cs.paddingTop) || 0;
+    var padBottom = parseFloat(cs.paddingBottom) || 0;
+    var m = document.createElement('div');
+    MIRROR.forEach(function (p) { m.style[p] = cs[p]; });
+    m.style.position = 'absolute';
+    m.style.visibility = 'hidden';
+    m.style.top = '0';
+    m.style.left = '-9999px';
+    m.style.lineHeight = cs.lineHeight;
+    m.style.width = (ta.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)) + 'px';
+    m.textContent = ta.value.slice(0, ta.selectionEnd);
+    var mark = m.appendChild(document.createElement('span'));
+    mark.textContent = '​';
+    document.body.appendChild(m);
+    // 行內的 span 量到的是字的高度，不是行高；行高平均分在上下。
+    var lh = parseFloat(cs.lineHeight) || mark.offsetHeight;
+    var top = padTop + mark.offsetTop - (lh - mark.offsetHeight) / 2;
+    m.remove();
+    if (top + lh + padBottom > ta.scrollTop + ta.clientHeight) ta.scrollTop = top + lh + padBottom - ta.clientHeight;
+    else if (top - padTop < ta.scrollTop) ta.scrollTop = top - padTop;
+  }
+
   function apply(ta, ed) {
     if (!ed) return;
     if (document.activeElement !== ta) ta.focus();
@@ -342,6 +374,7 @@
       }
     }
     ta.setSelectionRange(ed.selStart, ed.selEnd);
+    reveal(ta);
   }
 
   function attach(ta) {
