@@ -6,9 +6,9 @@
 
 個人用的卡片筆記系統 v3.3。每張卡片存成獨立的 Markdown 檔，卡片之間用單向連結串起來。
 
-![左右參照編輯畫面：左側對照原卡，右側表單依規則自動帶入型別、環境、連結與標籤](docs/screenshots/compose.png)
+![首頁：一個環境裡依時間排列的卡片串流，側欄是環境清單與工具](docs/screenshots/feed.png)
 
-![卡片頁：內文下方，往上是這張卡的依據，往下是從它延伸出去的卡片](docs/screenshots/card.png)
+![左右參照編輯畫面：左側對照原卡，右側表單依規則自動帶入型別、環境、連結與標籤](docs/screenshots/compose.png)
 
 <sub>截圖使用示意內容。</sub>
 

@@ -10,6 +10,12 @@
 
 1 枚のカードを 1 つの Markdown ファイルとして保存し、新しいカードから古いカードへ一方向の繋ぎを持たせる。操作手順や日々の運用は [README.md](README.md) を参照。
 
+![フィード画面：環境ごとの時系列カード一覧とサイドバー](docs/screenshots/feed.png)
+
+![左右参照モードの編集画面：左に参照元カード、右に型・環境・繋ぎ・タグが自動入力されたフォーム](docs/screenshots/compose.png)
+
+<sub>※ 画面の文章はデモ用のダミーデータ（UI は繁体字中国語）</sub>
+
 ---
 
 ## 設計の背景
@@ -60,13 +66,7 @@ User ──Google ログイン (IAP)──▶ App Engine (asia-east1, F1, 1 台�
 
 ---
 
-## 画面と設計・テストの記録
-
-![左右参照モードの編集画面：左に参照元カード、右に型・環境・繋ぎ・タグが自動入力されたフォーム](docs/screenshots/compose.png)
-
-![カード詳細画面：本文と上下方向の引用関係チェーン](docs/screenshots/card.png)
-
-<sub>※ 画面の文章はデモ用のダミーデータ（UI は繁体字中国語）</sub>
+## 設計とテストの記録
 
 MVP から v3.3 までの仕様の変遷と、途中で見送った案の理由は [`spec/README.md`](spec/README.md) を参照。ドメイン規則 `R1`–`R16`（[`src/domain/rules.ts`](src/domain/rules.ts) に対応）と UI の判断 `U1`–`U28` は、判断の経緯を追えるよう番号を振り直さずに管理している。こうした仕様やクラウド同期の突合・IAP 検証は [`test/`](test/) の自動テスト（`node --test`）でカバーしており、`main` への push 時は GitHub Actions で型チェックとテストを通った場合のみデプロイされる。
 
